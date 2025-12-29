@@ -1,0 +1,5 @@
+orca-gym>=25.12.3
+numba
+termcolor>=2.4.0
+pyyaml
+h5py

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orca-manipulation"
+version = "0.1.0"
+description = "OrcaManipulation - Manipulation tasks for OrcaGym"
+requires-python = ">=3.12"
+dependencies = ["orca-gym"]
+
+[tool.setuptools.packages.find]
+include = ["envs*", "examples*"]
+
+
+
