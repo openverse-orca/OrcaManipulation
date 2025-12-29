@@ -9,7 +9,7 @@ import json
 
 orca_logger = OrcaLog.get_instance()
 
-class KpsDataStorage(AbstractDataStorage):
+class OpenLoongDataStorage(AbstractDataStorage):
     def __init__(self, dataset_path: str, hdf5_path: str = None):
         super().__init__(dataset_path=dataset_path, hdf5_path=hdf5_path)
         self.data["time_step"] = []

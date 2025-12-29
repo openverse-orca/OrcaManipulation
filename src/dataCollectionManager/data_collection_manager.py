@@ -181,15 +181,15 @@ class DataCollectionManager:
 
     def update_scene(self):
         if self.scene_manager is not None:
-            if self.mode == self.DataCollectionMode.TELECONTROL:
-                self.scene_manager.spawn_scene()
-                
+            self.scene_manager.spawn_scene()
+
+            if self.mode == self.DataCollectionMode.TELECONTROL:     
                 if self.task is not None:
                     self.scene_manager.update_actor_qpos()
                     self.task.get_task(self.scene_manager)
                     orca_logger.info(f"Task description: {self.task.get_task_description()}")
 
-                self.env.disable_actuator(self.disable_actuator_group)
+                
             elif self.mode == self.DataCollectionMode.AUGMENTATION:
                 from devices.data_device import DataDevice
                 if type(self.device) != DataDevice:
@@ -202,6 +202,8 @@ class DataCollectionManager:
                 scene_info = self.device.get_scene_info()
                 self.scene_manager.update_actor_qpos(restore=True, scene_info=scene_info)
                 self.task.get_task(self.scene_manager, task_info=task_info)
+
+            self.env.disable_actuator(self.disable_actuator_group)
         return True
 
     def run_episode(self):

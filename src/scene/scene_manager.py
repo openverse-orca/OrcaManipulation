@@ -81,11 +81,13 @@ class SceneManager:
             scene_info: 复原场景时用到的场景信息
         '''
         self.reset_actor_pos()
+        in_scene_actors = []
+
         if restore:
             for actor_name, actor_info in scene_info.items():
                 self.set_actor_qpos(actor_info["joint_name"], actor_info["joint_qpos"])
+                in_scene_actors.append(actor_info["joint_name"])
         else:
-            in_scene_actors = []
             random_config = self._config.get("actor", {}).get("random", {})
             is_random_qpos = random_config.get("qpos", False)
             if is_random_qpos:
@@ -122,7 +124,8 @@ class SceneManager:
                         orca_log.info(f"set actor qpos: {joint_name}, {qpos}")
                         self.set_actor_qpos(joint_name, qpos)
                         self.env.mj_forward()
-            self.serialize_scene(in_scene_actors)
+        
+        self.serialize_scene(in_scene_actors)
 
     def reset_actor_pos(self):
         joints_dof = self._config.get("actor", {}).get("joints_dof", [])

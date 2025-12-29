@@ -18,7 +18,7 @@ from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
 from conf import openloong_conf
 from yaml import load, Loader
-from dataStorage.kps_data_storage import KpsDataStorage
+from dataStorage.openloong_data_storage import OpenLoongDataStorage
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
 
@@ -61,7 +61,7 @@ def main():
     scene_manager = SceneManager(orcagym_addr, config=config)
 
     orca_logger.info("Creating data storage")
-    data_storage = KpsDataStorage(dataset_path=os.path.join(base_dir, "dataset"), hdf5_path="record/proprio_stats.hdf5")
+    data_storage = OpenLoongDataStorage(dataset_path=os.path.join(base_dir, "dataset"), hdf5_path="record/proprio_stats.hdf5")
     data_storage.set_video_path("video")
 
     orca_logger.info("Creating data collection manager")

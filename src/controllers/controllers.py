@@ -52,7 +52,7 @@ def add_arm_osc_pico_controller(data_collection_manager: DataCollectionManager,
     device.bind_transform_event(key, arm_osc_controller.update_goal)
     data_collection_manager.add_controller(arm_osc_controller)
 
-def add_arm_osc_kps_data_controller(data_collection_manager: DataCollectionManager,
+def add_arm_osc_openloong_data_controller(data_collection_manager: DataCollectionManager,
                                     env: OrcaGymLocalEnv,
                                     arm_config: dict,
                                     base_body: str,
@@ -100,7 +100,7 @@ def add_gripper_2f85_pico_controller(data_collection_manager: DataCollectionMana
             raise ValueError(f"Invalid key: {key}")
     data_collection_manager.add_controller(gripper_2f85_controller)
 
-def add_gripper_2f85_kps_data_controller(data_collection_manager: DataCollectionManager,
+def add_gripper_2f85_openloong_data_controller(data_collection_manager: DataCollectionManager,
                                         env: OrcaGymLocalEnv,
                                         gripper_config: dict,
                                         base_body: str,
@@ -123,7 +123,7 @@ def add_task_status_pico_controller(data_collection_manager: DataCollectionManag
     device.bind_grip_button_event(PicoJoystickKey.L_GRIPBUTTON, task_status_controller.update_task_status)
     data_collection_manager.set_task_status_controller(task_status_controller)
 
-def add_task_status_kps_data_controller(data_collection_manager: DataCollectionManager,
+def add_task_status_openloong_data_controller(data_collection_manager: DataCollectionManager,
                                         env: OrcaGymLocalEnv,
                                         device: DataDevice,
                                         base_body: str):

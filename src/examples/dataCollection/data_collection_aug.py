@@ -19,7 +19,8 @@ from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
 from conf import openloong_conf
 from yaml import load, Loader
-from dataStorage.kps_data_storage import KpsDataStorage
+from dataStorage.openloong_data_storage import OpenLoongDataStorage
+from devices.Interpolator.abstract_interpolator import OpenLoongInterpolator
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
 
@@ -32,7 +33,7 @@ orca_logger = get_orca_logger(name="DataCollection",
                               max_bytes=10*1024*1024, 
                               backup_count=5, 
                               console_level="INFO", 
-                              file_level="INFO",
+                              file_level="DEBUG",
                               log_dir=log_dir,
                               use_colors=True,
                               force_reinit=True)
@@ -54,7 +55,7 @@ def main():
         default_joint_values[joint_name] = value
         
     orca_logger.info("Creating device")
-    data_device = DataDevice(os.path.join(base_dir, "dataset"), "record/proprio_stats.hdf5")
+    data_device = DataDevice(os.path.join(base_dir, "dataset"), "record/proprio_stats.hdf5", interpolator=OpenLoongInterpolator(noise_value=0.03))
 
     orca_logger.info("Creating scene manager")
     with open(os.path.join(base_dir, "example.yaml"), "r") as f:
@@ -62,7 +63,7 @@ def main():
     scene_manager = SceneManager(orcagym_addr, config=config)
 
     orca_logger.info("Creating data storage")
-    data_storage = KpsDataStorage(dataset_path=os.path.join(base_dir, "aug_dataset"), hdf5_path="record/proprio_stats.hdf5")
+    data_storage = OpenLoongDataStorage(dataset_path=os.path.join(base_dir, "aug_dataset"), hdf5_path="record/proprio_stats.hdf5")
     data_storage.set_video_path("video")
 
     orca_logger.info("Creating data collection manager")
@@ -81,25 +82,26 @@ def main():
     env.reset()
 
     data_collection_manager.mode = DataCollectionManager.DataCollectionMode.AUGMENTATION
+    data_collection_manager.save_video = True
 
     orca_logger.info("Disabling position controller")
     data_collection_manager.set_disable_actuator_group([openloong_conf.positions_group])
     
     orca_logger.info("Creating left arm controller")
-    controllers.add_arm_osc_kps_data_controller(data_collection_manager, env, openloong_conf.l_arm, openloong_conf.base_body, data_device, left_arm=True)
+    controllers.add_arm_osc_openloong_data_controller(data_collection_manager, env, openloong_conf.l_arm, openloong_conf.base_body, data_device, left_arm=True)
 
     orca_logger.info("Creating right arm controller")
-    controllers.add_arm_osc_kps_data_controller(data_collection_manager, env, openloong_conf.r_arm, openloong_conf.base_body, data_device, left_arm=False)
+    controllers.add_arm_osc_openloong_data_controller(data_collection_manager, env, openloong_conf.r_arm, openloong_conf.base_body, data_device, left_arm=False)
     
     orca_logger.info("Creating left gripper controller")
-    controllers.add_gripper_2f85_kps_data_controller(data_collection_manager, env, openloong_conf.gripper_2f85_l, openloong_conf.base_body, data_device, left_gripper=True)
+    controllers.add_gripper_2f85_openloong_data_controller(data_collection_manager, env, openloong_conf.gripper_2f85_l, openloong_conf.base_body, data_device, left_gripper=True)
     
     orca_logger.info("Creating right gripper controller")
-    controllers.add_gripper_2f85_kps_data_controller(data_collection_manager, env, openloong_conf.gripper_2f85_r, openloong_conf.base_body, data_device, left_gripper=False)
+    controllers.add_gripper_2f85_openloong_data_controller(data_collection_manager, env, openloong_conf.gripper_2f85_r, openloong_conf.base_body, data_device, left_gripper=False)
     
     orca_logger.info("Creating pick place task")
     data_collection_manager.set_task(PickPlaceTask(env))
-    controllers.add_task_status_kps_data_controller(data_collection_manager, env, data_device, openloong_conf.base_body)
+    controllers.add_task_status_openloong_data_controller(data_collection_manager, env, data_device, openloong_conf.base_body)
 
     data_collection_manager.save_video = True
     

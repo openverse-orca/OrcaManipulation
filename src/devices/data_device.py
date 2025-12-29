@@ -4,15 +4,15 @@ import os
 from typing import Callable, override
 import numpy as np
 import h5py
-
+from devices.Interpolator.abstract_interpolator import AbstractInterpolator
 
 from orca_gym.log import OrcaLog
 orca_logger = OrcaLog.get_instance()
 
 class DataDevice(AbstractDevice):
-    def __init__(self, dataset_path: str, hdf5_path: str):
+    def __init__(self, dataset_path: str, hdf5_path: str, interpolator: AbstractInterpolator = None):
         '''
-        @description: 初始化KpsDataDevice
+        @description: 初始化DataDevice
         @param:
             dataset_path: 数据集保存路径，绝对路径，存放单元数据的目录
             hdf5_path: hdf5文件路径, 相对于单元数据目录的路径
@@ -29,6 +29,7 @@ class DataDevice(AbstractDevice):
         self.load_unit_dataset()
         self.task_info = None
         self.scene_info = None
+        self.interpolator = interpolator
 
     @override
     def update(self):
@@ -110,20 +111,58 @@ class DataDevice(AbstractDevice):
             
             self.task_info = json.loads(f["task_info"][()])
             self.scene_info = json.loads(f["scene_info"][()])
+        
+        if self.interpolator is not None:
+            self._apply_interpolation()
             
         self.update_task_status = True
         return True
 
     def _load_recursive(self, item):
-        '''递归加载HDF5数据到内存'''
+        '''递归加载HDF5数据到内存，Dataset数据flatten便于处理'''
         if isinstance(item, h5py.Dataset):
-            return list(item[:])
+            data = item[:]
+            # 对于多维数据，保持第一维（时间步），flatten其余维度
+            if len(data.shape) > 2:
+                # (N, D1, D2, ...) -> (N, D1*D2*...)
+                return [arr.flatten() for arr in data]
+            else:
+                return list(data)
         elif isinstance(item, h5py.Group):
             result = {}
             for key in item.keys():
                 result[key] = self._load_recursive(item[key])
             return result
         return item
+    
+    def _apply_interpolation(self):
+        '''对指定数据集应用插值'''
+        interpolation_paths = self.interpolator.get_interpolation_paths()
+        
+        for dataset_path in interpolation_paths:
+            try:
+                data = self.get_data(dataset_path)
+                if isinstance(data, list) and len(data) > 0:
+                    data_array = np.array(data)
+                    original_len = len(data)
+                    interpolated = self.interpolator.interpolate(data_array, dataset_path=dataset_path)
+                    interpolated_len = len(interpolated)
+                    inserted_count = interpolated_len - original_len
+                    self._set_data(dataset_path, list(interpolated))
+                    orca_logger.info(
+                        f"Interpolated {dataset_path}: {original_len} -> {interpolated_len} samples "
+                        f"(inserted: {inserted_count}, rate: {interpolated_len/original_len:.2f}x)"
+                    )
+            except Exception as e:
+                orca_logger.warning(f"Failed to interpolate {dataset_path}: {e}")
+    
+    def _set_data(self, dataset_path: str, value):
+        '''设置数据'''
+        parts = dataset_path.strip('/').split('/')
+        data = self.data
+        for part in parts[:-1]:
+            data = data[part]
+        data[parts[-1]] = value
 
     def bind_dataset_event(self, dataset_path: str, index: tuple[int, int], event: Callable[[np.array], None]):
         '''
