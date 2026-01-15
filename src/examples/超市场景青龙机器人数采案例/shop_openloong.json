@@ -1,0 +1,58 @@
+{
+    "version": "1.0",
+    "name": "root",
+    "path": "/",
+    "transform": {
+        "position": "[0,0,0]",
+        "rotation": "[1,0,0,0]",
+        "scale": 1.0
+    },
+    "type": "GroupActor",
+    "children": [
+        {
+            "name": "Group",
+            "path": "/Group",
+            "transform": {
+                "position": "[0.0,0.0,0.0]",
+                "rotation": "[1.0,0.0,0.0,0.0]",
+                "scale": 1.0
+            },
+            "type": "GroupActor",
+            "children": [
+                {
+                    "name": "Interactive_Objects",
+                    "path": "/Group/Interactive_Objects",
+                    "transform": {
+                        "position": "[0.0,0.0,0.0]",
+                        "rotation": "[1.0,0.0,0.0,0.0]",
+                        "scale": 1.0
+                    },
+                    "type": "GroupActor",
+                    "children": []
+                }
+            ]
+        },
+        {
+            "name": "openloong_gripper_2f85_fix_base_usda",
+            "path": "/openloong_gripper_2f85_fix_base_usda",
+            "transform": {
+                "position": "[-6.448356628417969,2.245821714401245,3.037810358819115e-07]",
+                "rotation": "[0.703541886341584,0.0,0.0,0.7106537934626999]",
+                "scale": 1.0
+            },
+            "type": "AssetActor",
+            "asset_path": "assets/38c4e8b18ef34414/robot_project/v20260106/prefabs/openloong_gripper_2f85_fix_base_usda"
+        },
+        {
+            "name": "basket",
+            "path": "/basket",
+            "transform": {
+                "position": "[-6.890142917633057,2.8074302673339844,1.094182014465332]",
+                "rotation": "[1.0,0.0,0.0,0.0]",
+                "scale": 1.0
+            },
+            "type": "AssetActor",
+            "asset_path": "assets/e071469a36d3c8aa/kps/v20260104/shop_scene/els/basket"
+        }
+    ]
+}
