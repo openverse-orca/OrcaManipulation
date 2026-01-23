@@ -3,6 +3,8 @@ from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
 from orca_gym.log.orca_log import OrcaLog
 import numpy as np
 
+from envs.dataCollection.tv_joint_animator import TVJointAnimator, TVJointAnimatorConfig
+
 orca_logger = OrcaLog.get_instance()
 
 class DataCollectionEnv(OrcaGymLocalEnv):
@@ -14,6 +16,7 @@ class DataCollectionEnv(OrcaGymLocalEnv):
         time_step: float,
         default_joint_values: dict[str, float],
         obs_callback: Callable[[OrcaGymLocalEnv], dict],
+        tv_animator_config: dict | None = None,
         **kwargs
     ):
         self.obs_callback = obs_callback
@@ -35,8 +38,19 @@ class DataCollectionEnv(OrcaGymLocalEnv):
         self.default_joint_values = None
         self.set_default_joint_values(default_joint_values)
 
+        # TV joint animator (可选，吞异常，不能影响主流程)
+        try:
+            cfg = TVJointAnimatorConfig(**(tv_animator_config or {}))
+        except Exception:
+            cfg = TVJointAnimatorConfig(enable=False)
+        self._tv_animator = TVJointAnimator(self, cfg)
+
     def step(self, action):
         self.ctrl = action
+        try:
+            self._tv_animator.step(self.data.time)
+        except Exception:
+            pass
         self.do_simulation(self.ctrl, self.frame_skip)
         obs = self._get_obs().copy()
         terminated = False
@@ -52,6 +66,10 @@ class DataCollectionEnv(OrcaGymLocalEnv):
 
         self.set_default_joint_values(self.default_joint_values)    
         self.mj_forward()
+        try:
+            self._tv_animator.refresh_joint_presence()
+        except Exception:
+            pass
         obs = self._get_obs().copy()
         return obs, {}
 
@@ -59,8 +77,21 @@ class DataCollectionEnv(OrcaGymLocalEnv):
         orca_logger.info(f"gym address: self.gym: {id(self.gym)}")
         self.model, self.data = self.initialize_simulation()
         self.reset()
+        try:
+            self._tv_animator.refresh_joint_presence()
+        except Exception:
+            pass
         orca_logger.info(f"gym address: self.gym: {id(self.gym)}")
         
+    def bind_tv_animator_device(self, device):
+        """
+        绑定 TVJointAnimator 的 Pico 设备按钮事件（吞异常，不影响主流程）。
+        """
+        try:
+            self._tv_animator.bind_pico_device(device)
+        except Exception:
+            pass
+
     def set_default_joint_values(self, default_joint_values: dict[str, float]):
         self.default_joint_values = default_joint_values
         self._default_joint_qpos = {self.joint(joint_name): np.float32(value) for joint_name, value in default_joint_values.items()}

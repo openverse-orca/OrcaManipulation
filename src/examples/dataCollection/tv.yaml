@@ -1,0 +1,48 @@
+# TV 手动数采配置（不 spawn 物品、不做抓取任务判断，按“保存键”落盘）
+#
+# 使用方式：
+# - 在 `data_collection_tele.py` 中把加载的 yaml 换成本文件（或直接替换 example.yaml）
+# - Pico 左手 Grip（L_GRIPBUTTON）用于切换状态：
+#   - 第一次按：开始采集/开始录视频（RUNNING）
+#   - 第二次按：结束并保存（END）
+#
+# 说明：
+# - 本配置不生成任何物品 actor，因此不会 spawnable 物品
+# - `type: manual_record` 会让示例脚本进入“空任务”模式（不判断抓取成功）
+
+level_name: "tv_manual"
+
+# 模式：manual_record / pick_and_place
+type: "manual_record"
+
+# TV 动画关节控制（可选）：仅在 joint 存在且 enable=true 时生效
+tv_animator:
+  enable: true
+  joint_name: "openloong_gripper_2f85_fix_base_usda_J_TV_joint"
+  speed: 0.3
+  use_pico_buttons: true
+
+# 不 spawn 任何物品
+actor:
+  names: []
+  spawnable: []
+  joints: []
+  joints_dof: []
+  random:
+    qpos: false
+    nums: [0, 0]
+
+# light 配置保持最小集（不随机）
+light:
+  names: ["spotlight1"]
+  spawnable: ["prefabs/spotlight"]
+  random:
+    position: false
+    rotation: false
+    center: [0, 0, 0]
+    bound_position: [[-1, 1], [-1, 1], [0, 2]]
+    bound_rotation: [[0, 3.14159], [0, 3.14159], [0, 3.14159]]
+    nums: [1, 1]
+    cycle: 20
+
+

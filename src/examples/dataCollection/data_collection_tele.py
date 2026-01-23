@@ -9,6 +9,7 @@ if project_root not in sys.path:
 
 from scene.scene_manager import SceneManager
 from task.pick_place_task import PickPlaceTask
+from task.abstract_task import EmptyTask
 from devices.abstract_device import PicoJoystickDevice
 from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
 from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
@@ -56,9 +57,10 @@ def main():
     pico_joystick_device = PicoJoystickDevice(PicoJoystick())
 
     orca_logger.info("Creating scene manager")
-    with open(os.path.join(base_dir, "example.yaml"), "r") as f:
+    with open(os.path.join(base_dir, "tv.yaml"), "r") as f:
         config = load(f, Loader=Loader)
     scene_manager = SceneManager(orcagym_addr, config=config)
+    tv_animator_config = config.get("tv_animator")
 
     orca_logger.info("Creating data storage")
     data_storage = OpenLoongDataStorage(dataset_path=os.path.join(base_dir, "dataset"), hdf5_path="record/proprio_stats.hdf5")
@@ -75,6 +77,7 @@ def main():
         device=pico_joystick_device,
         scene_manager=scene_manager,
         data_storage=data_storage,
+        tv_animator_config=tv_animator_config,
     )
     env = data_collection_manager.env
     env.reset()
@@ -95,7 +98,11 @@ def main():
     controllers.add_arm_osc_pico_controller(data_collection_manager, env, openloong_conf.r_arm, openloong_conf.base_body, pico_joystick_device, PicoJoystickKey.R_TRANSFORM)
     
     orca_logger.info("Creating pick place task")
-    data_collection_manager.set_task(PickPlaceTask(env))
+    if config.get("type") in ["manual_record", "manual", "tv_only"]:
+        orca_logger.info("Using manual_record mode (EmptyTask): press L_GRIPBUTTON to start/stop/save")
+        data_collection_manager.set_task(EmptyTask(env))
+    else:
+        data_collection_manager.set_task(PickPlaceTask(env))
     controllers.add_task_status_pico_controller(data_collection_manager, env, pico_joystick_device, openloong_conf.base_body)
 
     data_collection_manager.save_video = True

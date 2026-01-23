@@ -41,6 +41,12 @@ class DataCollectionManager:
         self.real_time_step = time_step * frame_skip
         self.scene_manager: SceneManager = scene_manager
         self.env : OrcaGymLocalEnv = self.create_env(agent_name, env_name, entry_point, default_joint_values, obs_callback, env_index, max_episode_steps, frame_skip, time_step, orcagym_addr, **kwargs)
+        # 绑定 TV 动画控制（可选，吞异常）
+        try:
+            if hasattr(self.env, "bind_tv_animator_device") and self.device is not None:
+                self.env.bind_tv_animator_device(self.device)
+        except Exception:
+            pass
         self.controllers: list[AbstractController] = []
         self.task: AbstractTask = task
         self.task_status_controller: TaskStatusController = task_status_controller
@@ -91,22 +97,24 @@ class DataCollectionManager:
         orcagym_addr_str = orcagym_addr.replace(":", "-")
         env_id = env_name + "-OrcaGym-" + orcagym_addr_str + f"-{env_index:03d}"
         agent_names = [f"{agent_name}"]
-        kwargs = {'frame_skip': frame_skip,   
+        base_kwargs = {'frame_skip': frame_skip,   
                     'orcagym_addr': orcagym_addr, 
                     'agent_names': agent_names, 
                     'time_step': time_step,
                     'default_joint_values': default_joint_values,
-                    'obs_callback': obs_callback}     
-        orca_logger.info(f"Creating env {env_name} with kwargs {kwargs}")
+                    'obs_callback': obs_callback}
+        # 透传额外 env kwargs（例如 tv_animator_config），避免被覆盖
+        base_kwargs.update(kwargs)
+        orca_logger.info(f"Creating env {env_name} with kwargs {base_kwargs}")
 
         gym.register(
             id=env_id,
             entry_point=entry_point,
-            kwargs=kwargs,
+            kwargs=base_kwargs,
             max_episode_steps= max_episode_steps,
             reward_threshold=0.0,
         )
-        env = gym.make(env_id, **kwargs)
+        env = gym.make(env_id, **base_kwargs)
 
         if self.scene_manager is not None:
             self.scene_manager.set_env(env.unwrapped)
