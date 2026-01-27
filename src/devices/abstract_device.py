@@ -14,11 +14,30 @@ class AbstractDevice(metaclass=abc.ABCMeta):
 class PicoJoystickDevice(AbstractDevice):
     def __init__(self, pico_joystick: PicoJoystick):
         self.pico_joystick = pico_joystick
-        self.keys = []
+        self.keys: list[PicoJoystickKey] = []
+        # Allow multiple subscribers per key by binding to underlying PicoJoystick only once,
+        # then dispatching to all registered callbacks.
+        self._key_callbacks: dict[
+            PicoJoystickKey, list[Callable[[list | None, dict | None], None]]
+        ] = {}
 
     def bind_key_event(self, key: PicoJoystickKey, event: Callable[[list | None, dict | None], None]):
-        self.pico_joystick.bind_key_event(key, event)
-        self.keys.append(key)
+        # orca_gym PicoJoystick rejects duplicate binds per key, so we bind once and fan-out.
+        if key not in self._key_callbacks:
+            self._key_callbacks[key] = []
+
+            def _dispatcher(transform: list | None, key_state: dict | None):
+                for cb in list(self._key_callbacks.get(key, [])):
+                    try:
+                        cb(transform, key_state)
+                    except Exception:
+                        continue
+
+            self.pico_joystick.bind_key_event(key, _dispatcher)
+            if key not in self.keys:
+                self.keys.append(key)
+
+        self._key_callbacks[key].append(event)
 
     @override
     def update(self):

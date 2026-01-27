@@ -29,28 +29,43 @@ class TaskStatusController(AbstractController):
         self.current_status = TaskStatus.NOT_STARTED
         self.current_time = time.time()
         self.is_controller = is_controller
+        # Input edge detection to avoid "auto start" caused by initial key_state being True.
+        self._input_initialized = False
+        self._last_input = False
 
     @override
     def run_controller(self)-> TaskStatus:
         return self.current_status
 
     def update_task_status(self, next_status: bool):
+        # Only toggle on rising edge (False -> True). First sample is used to initialize state only.
+        next_status = bool(next_status)
+        if not self._input_initialized:
+            self._input_initialized = True
+            self._last_input = next_status
+            return
+        rising_edge = next_status and (not self._last_input)
+        self._last_input = next_status
+        if not rising_edge:
+            return
+
         # pico控制器需要控制一下频率，否则任务状态会很快变化
         if self.is_controller:
             current_time = time.time()
             if current_time - self.current_time < 0.2:
                 return
             self.current_time = current_time
-        if next_status:
-            if self.current_status == TaskStatus.NOT_STARTED:
-                self.current_status = TaskStatus.RUNNING
-                orca_logger.info("Task status: RUNNING")
-            elif self.current_status == TaskStatus.RUNNING:
-                self.current_status = TaskStatus.END
-                orca_logger.info("Task status: END")
-            elif self.current_status == TaskStatus.END:
-                self.current_status = TaskStatus.NOT_STARTED
-                orca_logger.info("Task status: NOT_STARTED")
+        if self.current_status == TaskStatus.NOT_STARTED:
+            self.current_status = TaskStatus.RUNNING
+            orca_logger.info("Task status: RUNNING")
+        elif self.current_status == TaskStatus.RUNNING:
+            self.current_status = TaskStatus.END
+            orca_logger.info("Task status: END")
+        elif self.current_status == TaskStatus.END:
+            self.current_status = TaskStatus.NOT_STARTED
+            orca_logger.info("Task status: NOT_STARTED")
         
     def reset(self):
         self.current_status = TaskStatus.NOT_STARTED
+        self._input_initialized = False
+        self._last_input = False

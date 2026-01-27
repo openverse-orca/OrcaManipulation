@@ -1,0 +1,65 @@
+# 传送带采集模板（单独 yaml，不影响原 example.yaml）
+#
+# 目标：
+# - 传送带板子按时间函数直线移动（物品被动摩擦跟随，不写物品 qpos/qvel）
+# - 采集模式：无任务（不做抓取成功判断）
+# - 保存策略：always_save=true（不管“成功/失败”都保存视频 + hdf5）
+#
+# 运行方式：
+# - 在 `data_collection_tele.py` 里把读取的 yaml 从 `example.yaml` 改成此文件
+# - 按 Pico 左手 Grip（L_GRIPBUTTON）切换状态：NOT_STARTED → RUNNING（开始采集/录制）→ END（结束并落盘）
+
+level_name: "conveyor_collect"
+
+# 顶层 type 仅用于示例脚本选择任务模式（collect_only=无任务）
+type: "collect_only"
+
+collection:
+  # true：无论任务是否成功，都保存本次 episode（视频 + hdf5）
+  always_save: true
+
+conveyor:
+  enable: true
+  debug: false
+  # 板子 joint 名：按你场景里实际 joint 名填写
+  board_joint_name: "Geom_Track_Geom_Track_Joint"
+  start_pos: [13.984, -3.767, 0.676]
+  end_pos: [20.000, -3.767, 0.676]
+  speed: 0.2
+  # 物品摆放后先落稳，再启动传送带
+  settle_steps: 50
+  # 启动策略：auto=脚本一启动（摆放+settle 后）就开始移动；task_status=RUNNING 才动（默认）
+  start_mode: "auto"
+  # 选项B：一直同方向跑，不在终点停
+  stop_at_end: true
+  # 可选：Pico 组合键启停（X+Y 停，A+B 继续）
+  use_pico_buttons: true
+  
+
+# 你可以保留 actor 让物品被动随带运动；也可以清空不 spawn 物品
+# actor:
+#   names: ["bottle_red", "jar_01", "bottle_blue", "salt", "can"]
+#   spawnable: ["assets/e071469a36d3c8aa/kps/v20260104/shop_scene/prefabs/goods/kps/bottle_red", "assets/e071469a36d3c8aa/kps/v20260104/shop_scene/prefabs/goods/kps/jar_01", "assets/e071469a36d3c8aa/kps/v20260104/shop_scene/prefabs/goods/kps/bottle_blue", "assets/e071469a36d3c8aa/kps/v20260104/shop_scene/prefabs/goods/kps/salt", "assets/e071469a36d3c8aa/kps/v20260104/shop_scene/prefabs/goods/kps/can"]
+#   joints: ["bottle_red_joint", "jar_01_joint", "bottle_blue_joint", "salt_joint", "can_joint"]
+#   joints_dof: [6, 6, 6, 6, 6]
+#   random:
+#     qpos: true
+#     nums: [1, 3]
+#     six_dof:
+#       center: [-6.22, 2.78, 1.10]
+#       bound_position: [[-0.2, 0.2], [-0.2, 0.2], [0, 0]]
+#       bound_rotation: [[0, 0], [0, 0], [0, 1]]
+
+light:
+  names: ["spotlight1"]
+  spawnable: ["prefabs/spotlight"]
+  random:
+    position: false
+    rotation: false
+    center: [0, 0, 0]
+    bound_position: [[-1, 1], [-1, 1], [0, 2]]
+    bound_rotation: [[0, 3.14159], [0, 3.14159], [0, 3.14159]]
+    nums: [1, 1]
+    cycle: 20
+
+

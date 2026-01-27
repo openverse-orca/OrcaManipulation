@@ -126,6 +126,12 @@ class SceneManager:
                         self.env.mj_forward()
         
         self.serialize_scene(in_scene_actors)
+        # Hook: after actor placement, allow env to run conveyor reset/settle/start logic.
+        try:
+            if self.env is not None and hasattr(self.env, "_after_scene_actor_placement"):
+                self.env._after_scene_actor_placement()
+        except Exception:
+            pass
 
     def reset_actor_pos(self):
         joints_dof = self._config.get("actor", {}).get("joints_dof", [])

@@ -34,13 +34,21 @@ class DataCollectionManager:
                 task_status_controller: TaskStatusController = None,
                 scene_manager: SceneManager = None,
                 data_storage: AbstractDataStorage = None,
+                always_save: bool = False,
                 **kwargs):
         self.device = device
         self.time_step = time_step
         self.frame_skip = frame_skip
         self.real_time_step = time_step * frame_skip
         self.scene_manager: SceneManager = scene_manager
+        self.always_save = bool(always_save)
         self.env : OrcaGymLocalEnv = self.create_env(agent_name, env_name, entry_point, default_joint_values, obs_callback, env_index, max_episode_steps, frame_skip, time_step, orcagym_addr, **kwargs)
+        # Optional: bind device for conveyor animator (swallow failures)
+        try:
+            if hasattr(self.env, "bind_conveyor_device") and self.device is not None:
+                self.env.bind_conveyor_device(self.device)
+        except Exception:
+            pass
         self.controllers: list[AbstractController] = []
         self.task: AbstractTask = task
         self.task_status_controller: TaskStatusController = task_status_controller
@@ -91,22 +99,24 @@ class DataCollectionManager:
         orcagym_addr_str = orcagym_addr.replace(":", "-")
         env_id = env_name + "-OrcaGym-" + orcagym_addr_str + f"-{env_index:03d}"
         agent_names = [f"{agent_name}"]
-        kwargs = {'frame_skip': frame_skip,   
+        base_kwargs = {'frame_skip': frame_skip,   
                     'orcagym_addr': orcagym_addr, 
                     'agent_names': agent_names, 
                     'time_step': time_step,
                     'default_joint_values': default_joint_values,
                     'obs_callback': obs_callback}     
-        orca_logger.info(f"Creating env {env_name} with kwargs {kwargs}")
+        # merge extra kwargs (e.g. conveyor config) without losing base ones
+        base_kwargs.update(kwargs)
+        orca_logger.info(f"Creating env {env_name} with kwargs {base_kwargs}")
 
         gym.register(
             id=env_id,
             entry_point=entry_point,
-            kwargs=kwargs,
+            kwargs=base_kwargs,
             max_episode_steps= max_episode_steps,
             reward_threshold=0.0,
         )
-        env = gym.make(env_id, **kwargs)
+        env = gym.make(env_id, **base_kwargs)
 
         if self.scene_manager is not None:
             self.scene_manager.set_env(env.unwrapped)
@@ -165,11 +175,15 @@ class DataCollectionManager:
                     break
                 task_is_success = self.run_episode()
                 if self.data_storage is not None:
-                    if task_is_success:
-                        orca_logger.info("Task Success!")
-                        task_info = self.task.get_task_info()
-                        scene_info = self.scene_manager.get_scene_info()
-                        self.data_storage.save_data(task_info=task_info, scene_info=scene_info, task_description=self.task.get_task_description())
+                    if task_is_success or self.always_save:
+                        if task_is_success:
+                            orca_logger.info("Task Success!")
+                        else:
+                            orca_logger.info("Task Failed (always_save=True, saving anyway)")
+                        task_info = self.task.get_task_info() if self.task is not None else {}
+                        scene_info = self.scene_manager.get_scene_info() if self.scene_manager is not None else {}
+                        task_desc = self.task.get_task_description() if self.task is not None else "Empty Task"
+                        self.data_storage.save_data(task_info=task_info, scene_info=scene_info, task_description=task_desc)
                     else:
                         self.data_storage.clear_data()
                         orca_logger.info("Task Failed!")
@@ -216,6 +230,7 @@ class DataCollectionManager:
 
         if self.task_status_controller is not None:
             self.task_status_controller.reset()
+        last_task_status = None
 
         while True:
             start_time = time.time()
@@ -225,6 +240,19 @@ class DataCollectionManager:
 
             if self.task_status_controller is not None:
                 task_status = self.task_status_controller.run_controller()
+                # Gate conveyor start/stop by task status (RUNNING starts, others stop).
+                # Swallow any failures to avoid impacting main loop.
+                try:
+                    if hasattr(self.env, "set_conveyor_running") and task_status != last_task_status:
+                        # Only gate by TaskStatus when conveyor.start_mode == "task_status"
+                        start_mode = "task_status"
+                        if hasattr(self.env, "get_conveyor_start_mode"):
+                            start_mode = self.env.get_conveyor_start_mode()
+                        if str(start_mode) == "task_status":
+                            self.env.set_conveyor_running(task_status == TaskStatus.RUNNING)
+                except Exception:
+                    pass
+                last_task_status = task_status
                 if task_status == TaskStatus.RUNNING:
                     if self.data_storage is not None:
                         self.data_storage.collection_data(obs, self.env)
