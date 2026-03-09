@@ -58,7 +58,7 @@ def main():
     data_device = DataDevice(os.path.join(base_dir, "dataset"), "record/proprio_stats.hdf5", interpolator=OpenLoongInterpolator(noise_value=0.03))
 
     orca_logger.info("Creating scene manager")
-    with open(os.path.join(base_dir, "example.yaml"), "r") as f:
+    with open(os.path.join(base_dir, "example.yaml"), "r", encoding="utf-8") as f:
         config = load(f, Loader=Loader)
     scene_manager = SceneManager(orcagym_addr, config=config)
 

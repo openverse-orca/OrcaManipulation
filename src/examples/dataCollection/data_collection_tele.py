@@ -56,7 +56,7 @@ def main():
     pico_joystick_device = PicoJoystickDevice(PicoJoystick())
 
     orca_logger.info("Creating scene manager")
-    with open(os.path.join(base_dir, "example.yaml"), "r") as f:
+    with open(os.path.join(base_dir, "example.yaml"), "r", encoding="utf-8") as f:
         config = load(f, Loader=Loader)
     scene_manager = SceneManager(orcagym_addr, config=config)
 
