@@ -236,6 +236,16 @@ class SceneManager:
         actor = Actor(light_name, asset_path, position, rotation, scale)
         self._scene.add_actor(actor)
 
+    def set_actor_lua_param_string(self, actor_name: str, param_name: str, value: str):
+        """
+        Proxy to OrcaGymScene API for runtime lua string params.
+        """
+        self._scene.set_actor_lua_param_string(
+            actor_name=actor_name,
+            param_name=param_name,
+            value=value,
+        )
+
     
     def _config_check(self):
         '''

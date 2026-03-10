@@ -38,6 +38,23 @@ orca_logger = get_orca_logger(name="DataCollection",
                               force_reinit=True)
 
 
+def _init_actor_lua_param_string(scene_manager: SceneManager):
+    """
+    Initialize conveyor animation speed lua param at simulation startup.
+    """
+    try:
+        scene_manager.set_actor_lua_param_string(
+            actor_name="gongyechuansongdai_B",
+            param_name="updateanimspeed",
+            value="0.00 0",
+        )
+        orca_logger.info(
+            "Initialized actor lua param string: gongyechuansongdai_B.updateanimspeed=0.00 0"
+        )
+    except Exception as e:
+        orca_logger.warning(f"Failed to initialize actor lua param string: {e}")
+
+
 def main():
     orca_logger.info(f"log file: {log_file}")
     orca_logger.info(f"log dir: {log_dir}")
@@ -84,6 +101,7 @@ def main():
     )
     env = data_collection_manager.env
     env.reset()
+    _init_actor_lua_param_string(scene_manager)
 
     orca_logger.info("Disabling position controller")
     data_collection_manager.set_disable_actuator_group([openloong_conf.positions_group])
