@@ -7,7 +7,6 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from devices.data_device import DataDevice
 from scene.scene_manager import SceneManager
 from task.pick_place_task import PickPlaceTask
 from devices.abstract_device import PicoJoystickDevice
@@ -17,23 +16,22 @@ from orca_gym.log.orca_log import get_orca_logger, OrcaLog
 import numpy as np
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
-from conf import openloong_conf
+from conf import tiangong2_conf
 from yaml import load, Loader
-from dataStorage.openloong_data_storage import OpenLoongDataStorage
-from devices.Interpolator.abstract_interpolator import OpenLoongInterpolator
+from dataStorage.tiangong_data_storage import Tiangong2DataStorage
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
 log_dir = os.path.join(base_dir, "logs")
-log_file = "data_collection.log"
+log_file = "tiangong_collection.log"
 
 orca_logger = get_orca_logger(name="DataCollection", 
                               log_file=log_file, 
                               max_bytes=10*1024*1024, 
                               backup_count=5, 
                               console_level="INFO", 
-                              file_level="DEBUG",
+                              file_level="INFO",
                               log_dir=log_dir,
                               use_colors=True,
                               force_reinit=True)
@@ -46,24 +44,24 @@ def main():
     orcagym_addr = "localhost:50051"
     env_name = "DataCollection"
     env_index = 0
-    agent_name = "openloong_gripper_2f85_fix_base_usda"
+    agent_name = "tiangong2"
     default_joint_values = {}
 
-    for joint_name, value in zip(openloong_conf.l_arm["joint_names"], openloong_conf.l_arm["neutral_joint_values"]):
+    for joint_name, value in zip(tiangong2_conf.l_arm["joint_names"], tiangong2_conf.l_arm["neutral_joint_values"]):
         default_joint_values[joint_name] = value
-    for joint_name, value in zip(openloong_conf.r_arm["joint_names"], openloong_conf.r_arm["neutral_joint_values"]):
+    for joint_name, value in zip(tiangong2_conf.r_arm["joint_names"], tiangong2_conf.r_arm["neutral_joint_values"]):
         default_joint_values[joint_name] = value
-        
+    
     orca_logger.info("Creating device")
-    data_device = DataDevice(os.path.join(base_dir, "dataset"), "record/proprio_stats.hdf5", interpolator=OpenLoongInterpolator(noise_value=0.03))
+    pico_joystick_device = PicoJoystickDevice(PicoJoystick())
 
     orca_logger.info("Creating scene manager")
-    with open(os.path.join(base_dir, "example.yaml"), "r", encoding="utf-8") as f:
+    with open(os.path.join(base_dir, "example.yaml"), "r") as f:
         config = load(f, Loader=Loader)
     scene_manager = SceneManager(orcagym_addr, config=config)
 
     orca_logger.info("Creating data storage")
-    data_storage = OpenLoongDataStorage(dataset_path=os.path.join(base_dir, "aug_dataset"), hdf5_path="record/proprio_stats.hdf5")
+    data_storage = Tiangong2DataStorage(dataset_path=os.path.join(base_dir, "dataset"), hdf5_path="record/proprio_stats.hdf5")
     data_storage.set_video_path("video")
 
     orca_logger.info("Creating data collection manager")
@@ -74,36 +72,33 @@ def main():
         default_joint_values=default_joint_values,
         obs_callback=data_storage.obs_callback,
         env_index=env_index,
-        device=data_device,
+        device=pico_joystick_device,
         scene_manager=scene_manager,
         data_storage=data_storage,
     )
     env = data_collection_manager.env
     env.reset()
 
-    data_collection_manager.mode = DataCollectionManager.DataCollectionMode.AUGMENTATION
-    data_collection_manager.save_video = True
-
     orca_logger.info("Disabling position controller")
-    data_collection_manager.set_disable_actuator_group([openloong_conf.positions_group])
+    data_collection_manager.set_disable_actuator_group([tiangong2_conf.positions_group])
+
+    orca_logger.info("Creating left hand controller")
+    controllers.add_gripper_2f85_pico_controller(data_collection_manager, env, tiangong2_conf.l_hand, tiangong2_conf.base_body, pico_joystick_device, [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER])
+    
+    orca_logger.info("Creating right hand controller")
+    controllers.add_gripper_2f85_pico_controller(data_collection_manager, env, tiangong2_conf.r_hand, tiangong2_conf.base_body, pico_joystick_device, [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER])
     
     orca_logger.info("Creating left arm controller")
-    controllers.add_arm_osc_openloong_data_controller(data_collection_manager, env, openloong_conf.l_arm, openloong_conf.base_body, data_device, left_arm=True)
-
+    controllers.add_arm_osc_pico_controller(data_collection_manager, env, tiangong2_conf.l_arm, tiangong2_conf.base_body, pico_joystick_device, PicoJoystickKey.L_TRANSFORM)
+    
     orca_logger.info("Creating right arm controller")
-    controllers.add_arm_osc_openloong_data_controller(data_collection_manager, env, openloong_conf.r_arm, openloong_conf.base_body, data_device, left_arm=False)
-    
-    orca_logger.info("Creating left gripper controller")
-    controllers.add_gripper_2f85_openloong_data_controller(data_collection_manager, env, openloong_conf.gripper_2f85_l, openloong_conf.base_body, data_device, left_gripper=True)
-    
-    orca_logger.info("Creating right gripper controller")
-    controllers.add_gripper_2f85_openloong_data_controller(data_collection_manager, env, openloong_conf.gripper_2f85_r, openloong_conf.base_body, data_device, left_gripper=False)
+    controllers.add_arm_osc_pico_controller(data_collection_manager, env, tiangong2_conf.r_arm, tiangong2_conf.base_body, pico_joystick_device, PicoJoystickKey.R_TRANSFORM)
     
     orca_logger.info("Creating pick place task")
     data_collection_manager.set_task(PickPlaceTask(env))
-    controllers.add_task_status_openloong_data_controller(data_collection_manager, env, data_device, openloong_conf.base_body)
+    controllers.add_task_status_pico_controller(data_collection_manager, env, pico_joystick_device, tiangong2_conf.base_body)
 
-    data_collection_manager.save_video = True
+    data_collection_manager.save_video = False
     
     data_collection_manager.run()
 
