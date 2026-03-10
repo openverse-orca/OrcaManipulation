@@ -230,7 +230,15 @@ class SceneManager:
         actor = Actor(light_name, asset_path, position, rotation, scale)
         self._scene.add_actor(actor)
 
-    
+    def get_scene_data(self,scriptname: str,scenestage:str)-> dict:
+        self._scene.get_rundata(scriptname,scenestage)
+ 
+    def show_ui_message(self,actor_name: int =1, message: str = "",color: str = "0xffff00",blinkframe:int = 0,showtime:int = 0,size:int = 32):
+        self._scene.set_ui_text(actor_name, message, color, blinkframe, showtime, size)
+
+    def show_ui_icon(self,actor: int =1, show: bool = True):
+        self._scene.set_image_enabled(actor,show)
+
     def _config_check(self):
         '''
         check the config is valid
