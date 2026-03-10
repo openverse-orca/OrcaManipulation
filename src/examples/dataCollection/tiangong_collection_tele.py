@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import traceback
 
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -56,7 +57,7 @@ def main():
     pico_joystick_device = PicoJoystickDevice(PicoJoystick())
 
     orca_logger.info("Creating scene manager")
-    with open(os.path.join(base_dir, "example.yaml"), "r") as f:
+    with open(os.path.join(base_dir, "example.yaml"), "r", encoding="utf-8") as f:
         config = load(f, Loader=Loader)
     scene_manager = SceneManager(orcagym_addr, config=config)
 
@@ -98,9 +99,17 @@ def main():
     data_collection_manager.set_task(PickPlaceTask(env))
     controllers.add_task_status_pico_controller(data_collection_manager, env, pico_joystick_device, tiangong2_conf.base_body)
 
-    data_collection_manager.save_video = False
+    data_collection_manager.save_video = True
     
     data_collection_manager.run()
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        orca_logger.info("KeyboardInterrupt, End")
+    except Exception as e:
+        orca_logger.error(f"Unexpected error: {e}\n{traceback.format_exc()}")
+    finally:
+        orca_logger.info("Exiting program")
+        os._exit(0)

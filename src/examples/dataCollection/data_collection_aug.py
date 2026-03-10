@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import traceback
 
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -108,4 +109,12 @@ def main():
     data_collection_manager.run()
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        orca_logger.info("KeyboardInterrupt, End")
+    except Exception as e:
+        orca_logger.error(f"Unexpected error: {e}\n{traceback.format_exc()}")
+    finally:
+        orca_logger.info("Exiting program")
+        os._exit(0)

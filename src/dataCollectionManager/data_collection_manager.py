@@ -177,7 +177,7 @@ class DataCollectionManager:
         except KeyboardInterrupt:
             orca_logger.info("KeyboardInterrupt, End")
         except Exception as e:
-            orca_logger.error(f"Run error: {e}", exc_info=True)
+            orca_logger.error(f"Run error: {e}")
             raise
         finally:
             self.env.close()
