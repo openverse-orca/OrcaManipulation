@@ -68,7 +68,6 @@ def main():
 
     scene_manager.get_scene_data(script_name, "beginscene")
 
-    scene_manager.show_ui_icon(1, True)
 
     orca_logger.info("Creating data storage")
     data_storage = Tiangong2DataStorage(dataset_path=os.path.join(base_dir, "dataset"), hdf5_path="record/proprio_stats.hdf5")
