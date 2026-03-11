@@ -60,6 +60,11 @@ def main():
         config = load(f, Loader=Loader)
     scene_manager = SceneManager(orcagym_addr, config=config)
 
+    script_name = os.path.basename(sys.argv[0]) if sys.argv else os.path.basename(__file__)
+    scene_manager.show_ui_message(1, "开始仿真程序，请按左右遥杆进行操作 ", "0xffff00", showtime=10)
+
+    scene_manager.get_scene_data(script_name, "beginscene")
+
     orca_logger.info("Creating data storage")
     data_storage = OpenLoongDataStorage(dataset_path=os.path.join(base_dir, "dataset"), hdf5_path="record/proprio_stats.hdf5")
     data_storage.set_video_path("video")
