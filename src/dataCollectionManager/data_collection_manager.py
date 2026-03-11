@@ -192,7 +192,7 @@ class DataCollectionManager:
                     self.scene_manager.update_actor_qpos()
                     self.task.get_task(self.scene_manager)
                     orca_logger.info(f"Task description: {self.task.get_task_description()}")
-                    self.scene_manager.set_ui_message(1, self.task.get_task_description(),showtime=10,blinkframe=5)
+                    self.scene_manager.show_ui_message(1, self.task.get_task_description(),showtime=10,blinkframe=5)
 
                 
             elif self.mode == self.DataCollectionMode.AUGMENTATION:
