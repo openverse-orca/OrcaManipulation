@@ -56,6 +56,7 @@ class ConveyorBoardAnimator:
 
         self._has_joint: bool = False
         self._warned_missing_joint: bool = False
+        self._resolved_board_joint_name: Optional[str] = None
         self._episode_t0: float = 0.0
         self._last_time: float = 0.0
         self.belt_running: bool = False
@@ -71,6 +72,9 @@ class ConveyorBoardAnimator:
         self._right_primary: bool = False  # A
         self._right_secondary: bool = False  # B
 
+    def _joint_name(self) -> str:
+        return self._resolved_board_joint_name or self.cfg.board_joint_name
+
     @property
     def enabled(self) -> bool:
         return bool(self.cfg.enable and self._has_joint and self.cfg.board_joint_name)
@@ -79,14 +83,37 @@ class ConveyorBoardAnimator:
         """
         检测板子 joint 是否存在；不存在则禁用。吞异常。
         """
+        self._resolved_board_joint_name = None
+        all_joint_names: list[str] = []
         try:
             all_joints = self.env.gym.query_all_joints()
             if isinstance(all_joints, dict):
+                all_joint_names = list(all_joints.keys())
                 self._has_joint = all_joints.get(self.cfg.board_joint_name, None) is not None
             else:
+                all_joint_names = list(all_joints)
                 self._has_joint = self.cfg.board_joint_name in all_joints
         except Exception:
             self._has_joint = False
+
+        # Best-effort: allow "short name" matching (e.g. Geom_Track1 -> Geom_Track1_*_Joint)
+        if not self._has_joint and self.cfg.board_joint_name and all_joint_names:
+            try:
+                needle = str(self.cfg.board_joint_name)
+                matches = [n for n in all_joint_names if needle in n]
+                if len(matches) == 1:
+                    self._resolved_board_joint_name = matches[0]
+                    self._has_joint = True
+                elif bool(getattr(self.cfg, "debug", False)) and len(matches) > 0:
+                    # show top matches to help user pick correct joint name
+                    print(f"[Conveyor] joint name '{needle}' not found; candidates (contains '{needle}'):")
+                    for n in matches[:30]:
+                        print(f"  - {n}")
+            except Exception:
+                pass
+
+        if self._has_joint:
+            self._resolved_board_joint_name = self._resolved_board_joint_name or self.cfg.board_joint_name
 
         if not self._has_joint:
             self.belt_running = False
@@ -109,12 +136,12 @@ class ConveyorBoardAnimator:
     def _resolve_board_joint_key(self) -> Any:
         if self._board_joint_key is not None:
             return self._board_joint_key
-        self._board_joint_key = self.cfg.board_joint_name
+        self._board_joint_key = self._joint_name()
         try:
             if hasattr(self.env, "joint"):
-                self._board_joint_key = self.env.joint(self.cfg.board_joint_name)
+                self._board_joint_key = self.env.joint(self._joint_name())
         except Exception:
-            self._board_joint_key = self.cfg.board_joint_name
+            self._board_joint_key = self._joint_name()
         return self._board_joint_key
 
     def _set_joint_qpos_best_effort(self, value) -> None:
@@ -128,7 +155,7 @@ class ConveyorBoardAnimator:
 
         for v in candidates:
             try:
-                self.env.set_joint_qpos({self.cfg.board_joint_name: v})
+                self.env.set_joint_qpos({self._joint_name(): v})
                 return
             except Exception:
                 try:
@@ -155,7 +182,7 @@ class ConveyorBoardAnimator:
 
         for v in candidates:
             try:
-                setter({self.cfg.board_joint_name: v})
+                setter({self._joint_name(): v})
                 return True
             except Exception:
                 try:
@@ -233,7 +260,8 @@ class ConveyorBoardAnimator:
             return
 
         try:
-            qpos = self.env.query_joint_qpos([self.cfg.board_joint_name])[self.cfg.board_joint_name]
+            jn = self._joint_name()
+            qpos = self.env.query_joint_qpos([jn])[jn]
         except Exception:
             return
 
@@ -341,7 +369,8 @@ class ConveyorBoardAnimator:
             return
 
         try:
-            qpos = self.env.query_joint_qpos([self.cfg.board_joint_name])[self.cfg.board_joint_name]
+            jn = self._joint_name()
+            qpos = self.env.query_joint_qpos([jn])[jn]
         except Exception:
             return
 

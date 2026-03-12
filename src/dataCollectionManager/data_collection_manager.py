@@ -2,7 +2,7 @@ import enum
 import time
 import numpy as np
 import gymnasium as gym
-from typing import Callable
+from typing import Callable, List
 from orca_gym.log.orca_log import OrcaLog
 from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
 from controllers.abstract_controller import AbstractController
@@ -35,6 +35,8 @@ class DataCollectionManager:
                 scene_manager: SceneManager = None,
                 data_storage: AbstractDataStorage = None,
                 always_save: bool = False,
+                conveyor_configs: List[dict] = None,
+                render_all_envs: bool = False,
                 **kwargs):
         self.device = device
         self.time_step = time_step
@@ -42,20 +44,47 @@ class DataCollectionManager:
         self.real_time_step = time_step * frame_skip
         self.scene_manager: SceneManager = scene_manager
         self.always_save = bool(always_save)
-        self.env : OrcaGymLocalEnv = self.create_env(agent_name, env_name, entry_point, default_joint_values, obs_callback, env_index, max_episode_steps, frame_skip, time_step, orcagym_addr, **kwargs)
-        # Optional: bind device for conveyor animator (swallow failures)
-        try:
-            if hasattr(self.env, "bind_conveyor_device") and self.device is not None:
-                self.env.bind_conveyor_device(self.device)
-        except Exception:
-            pass
         self.controllers: list[AbstractController] = []
         self.task: AbstractTask = task
         self.task_status_controller: TaskStatusController = task_status_controller
         self.data_storage: AbstractDataStorage = data_storage
-        self.ctrl = np.zeros(self.env.nu, dtype=np.float32)
         self.disable_actuator_group = []
-        
+        self.render_all_envs = bool(render_all_envs)
+
+        if conveyor_configs and len(conveyor_configs) > 0:
+            # 多 env：按 conveyor_configs 创建多个 env，每个 env 对应一条传送带
+            kwargs_no_conveyor = {k: v for k, v in kwargs.items() if k != "conveyor"}
+            self.envs: List[OrcaGymLocalEnv] = []
+            for i, conv_cfg in enumerate(conveyor_configs):
+                env = self.create_env(
+                    agent_name, env_name, entry_point, default_joint_values, obs_callback,
+                    env_index=i, max_episode_steps=max_episode_steps, frame_skip=frame_skip,
+                    time_step=time_step, orcagym_addr=orcagym_addr,
+                    conveyor=conv_cfg, **kwargs_no_conveyor
+                )
+                self.envs.append(env)
+            self.env = self.envs[0]
+            self._current_env_index = 0
+            if self.scene_manager is not None:
+                self.scene_manager.set_env(self.envs[0])
+            for e in self.envs:
+                try:
+                    if hasattr(e, "bind_conveyor_device") and self.device is not None:
+                        e.bind_conveyor_device(self.device)
+                except Exception:
+                    pass
+        else:
+            self.envs = None
+            self._current_env_index = 0
+            self.env = self.create_env(agent_name, env_name, entry_point, default_joint_values, obs_callback, env_index, max_episode_steps, frame_skip, time_step, orcagym_addr, **kwargs)
+            try:
+                if hasattr(self.env, "bind_conveyor_device") and self.device is not None:
+                    self.env.bind_conveyor_device(self.device)
+            except Exception:
+                pass
+
+        self.ctrl = np.zeros(self.env.nu, dtype=np.float32)
+
         self._save_video = False
         self._saving = False
         self._mode = self.DataCollectionMode.TELECONTROL
@@ -143,6 +172,20 @@ class DataCollectionManager:
     def set_data_storage(self, data_storage: AbstractDataStorage):
         self.data_storage = data_storage
 
+    def _switch_current_env(self, index: int) -> None:
+        """多 env 时切换当前 env，并同步 scene_manager、task、controllers 的 env 引用。"""
+        if not self.envs or index < 0 or index >= len(self.envs):
+            return
+        self._current_env_index = index
+        self.env = self.envs[index]
+        if self.scene_manager is not None:
+            self.scene_manager.set_env(self.env)
+        if self.task is not None and hasattr(self.task, "env"):
+            self.task.env = self.env
+        for c in self.controllers:
+            if hasattr(c, "env"):
+                c.env = self.env
+
     def add_controller(self, controller: AbstractController):
         self.controllers.append(controller)
 
@@ -165,11 +208,36 @@ class DataCollectionManager:
 
     def run(self):
         self.env.disable_actuator(self.disable_actuator_group)
+        n_envs = len(self.envs) if self.envs else 0
 
         try:
             while True:
-                self.env.reset()  # self.env.mj_forward()
-                update_scene_ret = self.update_scene()
+                if n_envs > 0:
+                    # 多 env：每个 episode 开始时，先 reset & 更新场景（触发 _after_scene_actor_placement）
+                    for e in self.envs:
+                        try:
+                            e.reset()
+                        except Exception:
+                            pass
+                    if self.scene_manager is not None:
+                        for e in self.envs:
+                            try:
+                                self.scene_manager.set_env(e)
+                                self.scene_manager.spawn_scene()
+                                # 物品摆放后会触发 env._after_scene_actor_placement()，用于传送带 reset/settle/auto-start
+                                if self.mode == self.DataCollectionMode.TELECONTROL:
+                                    self.scene_manager.update_actor_qpos()
+                                else:
+                                    # augmentation 只对主 env 走原逻辑
+                                    pass
+                            except Exception:
+                                pass
+                    # 主 env 固定用 envs[0]（手柄/采集/渲染以主 env 为准）
+                    self._switch_current_env(0)
+                    update_scene_ret = True
+                else:
+                    self.env.reset()  # self.env.mj_forward()
+                    update_scene_ret = self.update_scene()
                 if not update_scene_ret:
                     orca_logger.info("Can't update scene, End")
                     break
@@ -187,11 +255,18 @@ class DataCollectionManager:
                     else:
                         self.data_storage.clear_data()
                         orca_logger.info("Task Failed!")
-        
+
         except KeyboardInterrupt:
             orca_logger.info("KeyboardInterrupt, End")
         finally:
-            self.env.close()
+            if self.envs:
+                for e in self.envs:
+                    try:
+                        e.close()
+                    except Exception:
+                        pass
+            else:
+                self.env.close()
 
     def update_scene(self):
         if self.scene_manager is not None:
@@ -225,6 +300,19 @@ class DataCollectionManager:
         self.set_init_ctrl()
         self.env.set_ctrl(self.ctrl)
         self.env.mj_forward()
+
+        # 多 env：为非主 env 预生成零动作（保证它们也在 step，从而传送带会动）
+        other_envs = []
+        zero_actions = []
+        if self.envs:
+            for e in self.envs:
+                if e is self.env:
+                    continue
+                other_envs.append(e)
+                try:
+                    zero_actions.append(np.zeros(e.nu, dtype=np.float32))
+                except Exception:
+                    zero_actions.append(None)
         
         task_is_success = False
 
@@ -237,6 +325,17 @@ class DataCollectionManager:
             action = self.run_controllers()
             obs, reward, terminated, truncated, info = self.env.step(action)
             self.env.render()
+
+            # 多 env：同步推进其它 env（默认零动作），保证传送带同时运动
+            for e, z in zip(other_envs, zero_actions):
+                try:
+                    if z is None:
+                        z = np.zeros(e.nu, dtype=np.float32)
+                    e.step(z)
+                    if self.render_all_envs:
+                        e.render()
+                except Exception:
+                    pass
 
             if self.task_status_controller is not None:
                 task_status = self.task_status_controller.run_controller()

@@ -41,22 +41,44 @@ class DataCollectionEnv(OrcaGymLocalEnv):
         self.default_joint_values = None
         self.set_default_joint_values(default_joint_values)
 
-        # Conveyor board animator (optional, swallow all failures)
-        try:
-            cfg = ConveyorBoardAnimatorConfig(**(conveyor or {}))
-        except Exception:
-            cfg = ConveyorBoardAnimatorConfig(enable=False)
-        self._conveyor_animator = ConveyorBoardAnimator(self, cfg)
+        # Conveyor board animator(s) (optional, swallow all failures)
+        self._conveyor_animators: list[ConveyorBoardAnimator] = []
         self._conveyor_ready = False
+        conveyor_cfg = conveyor or {}
         try:
-            self._conveyor_animator.refresh()
+            # Support multi-belt in ONE env:
+            # - conveyor.board_joint_names: ["Geom_Track1_Joint", ...]
+            # - OR conveyor.board_joint_name: ["..."] (tolerate list)
+            names = None
+            if isinstance(conveyor_cfg, dict):
+                if isinstance(conveyor_cfg.get("board_joint_names"), list):
+                    names = conveyor_cfg.get("board_joint_names")
+                elif isinstance(conveyor_cfg.get("board_joint_name"), list):
+                    names = conveyor_cfg.get("board_joint_name")
+            if names:
+                base = dict(conveyor_cfg)
+                base.pop("board_joint_names", None)
+                base.pop("board_joint_name", None)
+                for n in names:
+                    cfg = ConveyorBoardAnimatorConfig(**{**base, "board_joint_name": str(n)})
+                    self._conveyor_animators.append(ConveyorBoardAnimator(self, cfg))
+            else:
+                cfg = ConveyorBoardAnimatorConfig(**conveyor_cfg)
+                self._conveyor_animators.append(ConveyorBoardAnimator(self, cfg))
         except Exception:
-            pass
+            self._conveyor_animators = [ConveyorBoardAnimator(self, ConveyorBoardAnimatorConfig(enable=False))]
+
+        for a in self._conveyor_animators:
+            try:
+                a.refresh()
+            except Exception:
+                pass
 
     def step(self, action):
         self.ctrl = action
         try:
-            self._conveyor_animator.step(self.data.time)
+            for a in self._conveyor_animators:
+                a.step(self.data.time)
         except Exception:
             pass
         self.do_simulation(self.ctrl, self.frame_skip)
@@ -82,10 +104,11 @@ class DataCollectionEnv(OrcaGymLocalEnv):
         self.model, self.data = self.initialize_simulation()
         self.reset()
         # model may reload; refresh joint presence
-        try:
-            self._conveyor_animator.refresh()
-        except Exception:
-            pass
+        for a in self._conveyor_animators:
+            try:
+                a.refresh()
+            except Exception:
+                pass
         orca_logger.info(f"gym address: self.gym: {id(self.gym)}")
         
     def bind_conveyor_device(self, device):
@@ -93,7 +116,8 @@ class DataCollectionEnv(OrcaGymLocalEnv):
         可选：绑定 Pico 组合键启停。吞异常，不影响主流程。
         """
         try:
-            self._conveyor_animator.bind_device(device)
+            for a in self._conveyor_animators:
+                a.bind_device(device)
         except Exception:
             pass
 
@@ -106,16 +130,20 @@ class DataCollectionEnv(OrcaGymLocalEnv):
         """
         try:
             if not running:
-                self._conveyor_animator.stop(self.data.time)
+                for a in self._conveyor_animators:
+                    a.stop()
                 return
             if self._conveyor_ready:
-                self._conveyor_animator.start(self.data.time)
+                for a in self._conveyor_animators:
+                    a.start(self.data.time)
         except Exception:
             pass
 
     def get_conveyor_start_mode(self) -> str:
         try:
-            return str(getattr(self._conveyor_animator.cfg, "start_mode", "task_status"))
+            if self._conveyor_animators:
+                return str(getattr(self._conveyor_animators[0].cfg, "start_mode", "task_status"))
+            return "task_status"
         except Exception:
             return "task_status"
 
@@ -128,12 +156,14 @@ class DataCollectionEnv(OrcaGymLocalEnv):
         吞异常，不影响主流程。
         """
         try:
-            self._conveyor_animator.reset_episode()
+            for a in self._conveyor_animators:
+                a.reset_episode()
         except Exception:
             return
 
         try:
-            settle_steps = int(getattr(self._conveyor_animator.cfg, "settle_steps", 0))
+            cfg0 = self._conveyor_animators[0].cfg if self._conveyor_animators else None
+            settle_steps = int(getattr(cfg0, "settle_steps", 0)) if cfg0 is not None else 0
         except Exception:
             settle_steps = 0
 
@@ -148,14 +178,15 @@ class DataCollectionEnv(OrcaGymLocalEnv):
 
         # Arm conveyor for later start (do NOT auto-start here)
         try:
-            self._conveyor_ready = bool(self._conveyor_animator.enabled)
+            self._conveyor_ready = any(bool(a.enabled) for a in self._conveyor_animators)
         except Exception:
             self._conveyor_ready = False
 
         # Optional: auto start after placement+settle
         try:
             if self._conveyor_ready and self.get_conveyor_start_mode() == "auto":
-                self._conveyor_animator.start(self.data.time)
+                for a in self._conveyor_animators:
+                    a.start(self.data.time)
         except Exception:
             pass
 
