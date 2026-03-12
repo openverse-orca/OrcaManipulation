@@ -71,6 +71,8 @@ class ConveyorBoardAnimator:
         self._left_secondary: bool = False  # Y
         self._right_primary: bool = False  # A
         self._right_secondary: bool = False  # B
+        self._xy_combo_prev: bool = False
+        self._ab_combo_prev: bool = False
 
     def _joint_name(self) -> str:
         return self._resolved_board_joint_name or self.cfg.board_joint_name
@@ -234,13 +236,20 @@ class ConveyorBoardAnimator:
     def _update_from_buttons(self) -> None:
         if not self.enabled:
             return
-        if self._left_primary and self._left_secondary:
+        xy_combo = bool(self._left_primary and self._left_secondary)
+        ab_combo = bool(self._right_primary and self._right_secondary)
+
+        # Rising-edge trigger only (avoid repeatedly calling start/stop every frame while buttons are held)
+        if xy_combo and not self._xy_combo_prev:
             self.stop()
-        if self._right_primary and self._right_secondary:
+        if ab_combo and not self._ab_combo_prev:
             try:
                 self.start(float(self.env.data.time))
             except Exception:
                 self.start(0.0)
+
+        self._xy_combo_prev = xy_combo
+        self._ab_combo_prev = ab_combo
 
     def reset_episode(self) -> None:
         """
@@ -334,6 +343,13 @@ class ConveyorBoardAnimator:
             except Exception:
                 pass
             self.belt_running = False
+            # best-effort: zero joint velocity so the board really stops
+            try:
+                self._set_joint_qvel_best_effort(0.0)
+                self._set_joint_qvel_best_effort(np.zeros(6, dtype=np.float32))
+                self.env.mj_forward()
+            except Exception:
+                pass
         except Exception:
             return
 
