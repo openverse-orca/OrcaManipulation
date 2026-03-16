@@ -89,6 +89,9 @@ class ConveyorBoardAnimator:
                 self._has_joint = self.cfg.board_joint_name in all_joints
         except Exception:
             self._has_joint = False
+        
+        if self._has_joint:
+            print(f"ConveyorBoardAnimator.refresh: enabled={self.enabled}, _has_joint={self._has_joint}")
 
         if not self._has_joint:
             self.belt_running = False
@@ -329,6 +332,7 @@ class ConveyorBoardAnimator:
         """
         在 env.step() 的 do_simulation() 之前调用。
         """
+        
         if not self.enabled or not self.belt_running:
             return
 
@@ -371,8 +375,9 @@ class ConveyorBoardAnimator:
                     v_target = 0.0
                 else:
                     v_target = float(self.cfg.speed)
-
+            #    print(f"ConveyorBoardAnimator.step: v_target={v_target}")
                 if not self._set_joint_qvel_best_effort(float(v_target)):
+                   
                     # fallback: position profile (scalar)
                     self._set_joint_qpos_best_effort(float(self._start_qpos_scalar + s_used))
                 self.env.mj_forward()

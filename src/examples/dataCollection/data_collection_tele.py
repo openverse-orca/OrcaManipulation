@@ -62,7 +62,7 @@ def main():
     orcagym_addr = "localhost:50051"
     env_name = "DataCollection"
     env_index = 0
-    agent_name = "openloong_gripper_2f85_fix_base_usda"
+    agent_name = "humanoid_industrial_robot_1" #"openloong_gripper_2f85_fix_base_usda" #"humanoid_industrial_robot_1" #"openloong_gripper_2f85_fix_base_usda"
     default_joint_values = {}
 
     for joint_name, value in zip(openloong_conf.l_arm["joint_names"], openloong_conf.l_arm["neutral_joint_values"]):
@@ -101,7 +101,8 @@ def main():
     )
     env = data_collection_manager.env
     env.reset()
-    _init_actor_lua_param_string(scene_manager)
+   # _init_actor_lua_param_string(scene_manager)
+    scene_manager.set_movespeed(0.00)
 
     orca_logger.info("Disabling position controller")
     data_collection_manager.set_disable_actuator_group([openloong_conf.positions_group])

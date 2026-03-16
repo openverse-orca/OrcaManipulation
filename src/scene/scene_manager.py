@@ -245,6 +245,12 @@ class SceneManager:
     def show_ui_icon(self,actor: int =1, show: bool = True):
         self._scene.set_image_enabled(actor,show)
 
+    def set_movespeed(self, speed: float):
+        actor_name = "gongyechuansongdai_B"
+        param_name = "updateanimspeed"
+        value = f"{speed} 0"
+        self._scene.set_actor_lua_param_string(actor_name, param_name, value)
+
     
     def _config_check(self):
         '''
