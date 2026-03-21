@@ -25,11 +25,14 @@ conveyor:
   board_joint_name: "Geom_Track_Geom_Track_Joint"
   start_pos: [13.984, -3.767, 0.676]
   end_pos: [20.000, -3.767, 0.676]
-  speed: 0.2
+  speed: 0.1
+  # 动画速度系数：最终动画速度 = 物理速度 * anim_speed_scale
+  # 该值可按视觉效果手动调整
+  #anim_speed_scale: 1.0
   # 物品摆放后先落稳，再启动传送带
   settle_steps: 50
   # 启动策略：auto=脚本一启动（摆放+settle 后）就开始移动；task_status=RUNNING 才动（默认）
-  start_mode: "auto"
+  start_mode: "task_status"
   # 选项B：一直同方向跑，不在终点停
   stop_at_end: true
   # 可选：Pico 组合键启停（X+Y 停，A+B 继续）

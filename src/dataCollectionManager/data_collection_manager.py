@@ -35,6 +35,7 @@ class DataCollectionManager:
                 scene_manager: SceneManager = None,
                 data_storage: AbstractDataStorage = None,
                 always_save: bool = False,
+                conveyor_anim_speed_scale: float = 1.0,
                 **kwargs):
         self.device = device
         self.time_step = time_step
@@ -42,7 +43,14 @@ class DataCollectionManager:
         self.real_time_step = time_step * frame_skip
         self.scene_manager: SceneManager = scene_manager
         self.always_save = bool(always_save)
+        self._conveyor_anim_speed_scale = float(conveyor_anim_speed_scale)
         self.env : OrcaGymLocalEnv = self.create_env(agent_name, env_name, entry_point, default_joint_values, obs_callback, env_index, max_episode_steps, frame_skip, time_step, orcagym_addr, **kwargs)
+        # Allow env-level speed interface to sync animation speed too.
+        try:
+            if hasattr(self.env, "register_conveyor_speed_sync_callback"):
+                self.env.register_conveyor_speed_sync_callback(self._sync_conveyor_anim_speed)
+        except Exception:
+            pass
         # Optional: bind device for conveyor animator (swallow failures)
         try:
             if hasattr(self.env, "bind_conveyor_device") and self.device is not None:
@@ -142,6 +150,68 @@ class DataCollectionManager:
 
     def set_data_storage(self, data_storage: AbstractDataStorage):
         self.data_storage = data_storage
+
+    def get_conveyor_anim_speed_scale(self) -> float:
+        return float(self._conveyor_anim_speed_scale)
+
+    def set_conveyor_anim_speed_scale(self, scale: float) -> float:
+        try:
+            self._conveyor_anim_speed_scale = float(scale)
+        except Exception:
+            self._conveyor_anim_speed_scale = 1.0
+        # Apply new scale immediately to current conveyor speed.
+        self._sync_conveyor_anim_speed(self.get_conveyor_speed())
+        return float(self._conveyor_anim_speed_scale)
+
+    def _sync_conveyor_anim_speed(self, conveyor_speed: float) -> None:
+        try:
+            if self.scene_manager is None:
+                return
+            anim_speed = float(conveyor_speed) *  0.21 #float(self._conveyor_anim_speed_scale)
+            self.scene_manager.set_movespeed(anim_speed)
+        except Exception:
+            pass
+
+    def get_conveyor_speed(self) -> float:
+        """
+        获取当前传送带速度（m/s）。
+        """
+        try:
+            if hasattr(self.env, "get_conveyor_speed"):
+                return float(self.env.get_conveyor_speed())
+        except Exception:
+            pass
+        return 0.0
+
+    def set_conveyor_speed(self, speed: float, keep_continuity: bool = True) -> float:
+        """
+        运行时设置传送带速度（m/s），并同步动画速度。
+        """
+        try:
+            if hasattr(self.env, "set_conveyor_speed"):
+                applied_speed = float(self.env.set_conveyor_speed(speed, keep_continuity=keep_continuity))
+                self._sync_conveyor_anim_speed(applied_speed)
+                return applied_speed
+        except Exception:
+            pass
+        fallback_speed = self.get_conveyor_speed()
+        self._sync_conveyor_anim_speed(fallback_speed)
+        return fallback_speed
+
+    def change_conveyor_speed(self, delta: float, keep_continuity: bool = True) -> float:
+        """
+        运行时按增量调整传送带速度（m/s），并同步动画速度。
+        """
+        try:
+            if hasattr(self.env, "change_conveyor_speed"):
+                applied_speed = float(self.env.change_conveyor_speed(delta, keep_continuity=keep_continuity))
+                self._sync_conveyor_anim_speed(applied_speed)
+                return applied_speed
+        except Exception:
+            pass
+        fallback_speed = self.get_conveyor_speed()
+        self._sync_conveyor_anim_speed(fallback_speed)
+        return fallback_speed
 
     def add_controller(self, controller: AbstractController):
         self.controllers.append(controller)
@@ -249,7 +319,12 @@ class DataCollectionManager:
                         if hasattr(self.env, "get_conveyor_start_mode"):
                             start_mode = self.env.get_conveyor_start_mode()
                         if str(start_mode) == "task_status":
-                            self.env.set_conveyor_running(task_status == TaskStatus.RUNNING)
+                            if task_status == TaskStatus.RUNNING:
+                                self.env.set_conveyor_running(True)
+                                self.set_conveyor_speed(self.get_conveyor_speed())
+                            else:
+                                self.env.set_conveyor_running(False)
+                                self._sync_conveyor_anim_speed(0.0)
                 except Exception:
                     pass
                 last_task_status = task_status

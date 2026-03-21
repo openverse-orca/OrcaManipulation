@@ -48,8 +48,22 @@ class DataCollectionEnv(OrcaGymLocalEnv):
             cfg = ConveyorBoardAnimatorConfig(enable=False)
         self._conveyor_animator = ConveyorBoardAnimator(self, cfg)
         self._conveyor_ready = False
+        self._conveyor_speed_sync_callback = None
         try:
             self._conveyor_animator.refresh()
+        except Exception:
+            pass
+
+    def register_conveyor_speed_sync_callback(self, callback):
+        """
+        注册速度同步回调：当 conveyor 速度变化时，把实际速度回传给上层（例如驱动动画速度）。
+        """
+        self._conveyor_speed_sync_callback = callback
+
+    def _notify_conveyor_speed_changed(self, speed: float) -> None:
+        try:
+            if callable(self._conveyor_speed_sync_callback):
+                self._conveyor_speed_sync_callback(float(speed))
         except Exception:
             pass
 
@@ -106,9 +120,11 @@ class DataCollectionEnv(OrcaGymLocalEnv):
         """
         try:
             if not running:
-                self._conveyor_animator.stop(self.data.time)
+                self._conveyor_animator.stop()
                 return
             if self._conveyor_ready:
+                # Ensure speed interface is applied before starting.
+                self.set_conveyor_speed(self.get_conveyor_speed())
                 self._conveyor_animator.start(self.data.time)
         except Exception:
             pass
@@ -118,6 +134,37 @@ class DataCollectionEnv(OrcaGymLocalEnv):
             return str(getattr(self._conveyor_animator.cfg, "start_mode", "task_status"))
         except Exception:
             return "task_status"
+
+    def get_conveyor_speed(self) -> float:
+        """
+        获取当前传送带速度（m/s）。
+        """
+        try:
+            return float(self._conveyor_animator.get_speed())
+        except Exception:
+            return 0.0
+
+    def set_conveyor_speed(self, speed: float, keep_continuity: bool = True) -> float:
+        """
+        运行时设置传送带速度（m/s）。
+        """
+        try:
+            applied_speed = float(self._conveyor_animator.set_speed(float(speed), keep_continuity=keep_continuity))
+            self._notify_conveyor_speed_changed(applied_speed*0.21)
+            return applied_speed
+        except Exception:
+            return self.get_conveyor_speed()
+
+    def change_conveyor_speed(self, delta: float, keep_continuity: bool = True) -> float:
+        """
+        运行时按增量调整传送带速度（m/s）。
+        """
+        try:
+            applied_speed = float(self._conveyor_animator.change_speed(float(delta), keep_continuity=keep_continuity))
+            self._notify_conveyor_speed_changed(applied_speed)
+            return applied_speed
+        except Exception:
+            return self.get_conveyor_speed()
 
     def _after_scene_actor_placement(self):
         """
@@ -155,6 +202,8 @@ class DataCollectionEnv(OrcaGymLocalEnv):
         # Optional: auto start after placement+settle
         try:
             if self._conveyor_ready and self.get_conveyor_start_mode() == "auto":
+                # Ensure speed interface is applied before auto-start.
+                self.set_conveyor_speed(self.get_conveyor_speed())
                 self._conveyor_animator.start(self.data.time)
         except Exception:
             pass

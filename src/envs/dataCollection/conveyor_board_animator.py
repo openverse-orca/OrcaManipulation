@@ -33,6 +33,9 @@ class ConveyorBoardAnimatorConfig:
     debug: bool = False
     # 是否到达 end 后停止（默认 True 保持旧行为；False=一直同方向跑）
     stop_at_end: bool = True
+    # 运行时动态调速限制（None 表示不限制）
+    min_speed: Optional[float] = 0.0
+    max_speed: Optional[float] = None
 
     def __post_init__(self):
         if self.start_pos is None:
@@ -170,6 +173,72 @@ class ConveyorBoardAnimator:
                     continue
         return False
 
+    def _notify_anim_stop_best_effort(self) -> None:
+        """
+        通知上层同步动画停带（例如 SceneManager.set_movespeed(0)）。
+        """
+        try:
+            if hasattr(self.env, "_notify_conveyor_speed_changed"):
+                self.env._notify_conveyor_speed_changed(0.0)
+        except Exception:
+            pass
+
+    def _get_sim_time_best_effort(self) -> float:
+        try:
+            return float(self.env.data.time)
+        except Exception:
+            return float(self._last_time)
+
+    def _clamp_speed(self, speed: float) -> float:
+        v = float(speed)
+        min_speed = getattr(self.cfg, "min_speed", 0.0)
+        max_speed = getattr(self.cfg, "max_speed", None)
+        try:
+            if min_speed is not None:
+                v = max(float(min_speed), v)
+        except Exception:
+            pass
+        try:
+            if max_speed is not None:
+                v = min(float(max_speed), v)
+        except Exception:
+            pass
+        return float(v)
+
+    def get_speed(self) -> float:
+        try:
+            return float(self.cfg.speed)
+        except Exception:
+            return 0.0
+
+    def set_speed(self, speed: float, keep_continuity: bool = True) -> float:
+        """
+        运行时设置传送带速度（m/s）。
+        keep_continuity=True 时，调速瞬间保持位移连续，避免跳变。
+        """
+        new_speed = self._clamp_speed(speed)
+        old_speed = self.get_speed()
+        sim_time = self._get_sim_time_best_effort()
+
+        if keep_continuity and self.belt_running:
+            try:
+                elapsed = max(0.0, float(sim_time) - float(self._episode_t0))
+                traveled = float(old_speed) * elapsed
+                self._paused_s = max(0.0, traveled)
+                if new_speed > 1e-8:
+                    self._episode_t0 = float(sim_time) - self._paused_s / float(new_speed)
+                else:
+                    self.belt_running = False
+                    self._set_joint_qvel_best_effort(0.0)
+            except Exception:
+                pass
+
+        self.cfg.speed = float(new_speed)
+        return float(self.cfg.speed)
+
+    def change_speed(self, delta: float, keep_continuity: bool = True) -> float:
+        return self.set_speed(self.get_speed() + float(delta), keep_continuity=keep_continuity)
+
     def bind_device(self, device: _PicoBindableDevice) -> None:
         """
         可选：绑定 Pico 组合键启停
@@ -220,8 +289,11 @@ class ConveyorBoardAnimator:
             self.stop()
         if ab_combo and not self._ab_combo_prev:
             try:
+                # Apply speed-setting interface before start for consistency.
+                self.set_speed(self.get_speed())
                 self.start(float(self.env.data.time))
             except Exception:
+                self.set_speed(self.get_speed())
                 self.start(0.0)
 
         self._xy_combo_prev = xy_combo
@@ -290,6 +362,7 @@ class ConveyorBoardAnimator:
         启动传送带：以当前 sim_time 作为 t0（确保“按开始键才动”）。
         吞异常，不影响主流程。
         """
+      #  print(f"ConveyorBoardAnimator........fffffffffffffffffffffffffff: {self.cfg.speed} {self.cfg.board_joint_name}")
         if not self.enabled:
             return
         try:
@@ -318,6 +391,8 @@ class ConveyorBoardAnimator:
             except Exception:
                 pass
             self.belt_running = False
+            # sync animation stop through env callback
+            self._notify_anim_stop_best_effort()
             # best-effort: zero joint velocity so the board really stops
             try:
                 self._set_joint_qvel_best_effort(0.0)
@@ -375,6 +450,8 @@ class ConveyorBoardAnimator:
                     v_target = 0.0
                 else:
                     v_target = float(self.cfg.speed)
+                if v_target == 0.0:
+                    self._notify_anim_stop_best_effort()
             #    print(f"ConveyorBoardAnimator.step: v_target={v_target}")
                 if not self._set_joint_qvel_best_effort(float(v_target)):
                    
