@@ -150,7 +150,7 @@ def main():
     import numpy as np
     from dataCollectionManager.data_collection_manager import DataCollectionManager
     from controllers import controllers
-    from conf import openloong_conf
+    from conf import d12_conf as openloong_conf
     from dataStorage.openloong_data_storage import OpenLoongDataStorage
 
     ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
@@ -186,6 +186,8 @@ def main():
         openloong_conf.r_arm["joint_names"], openloong_conf.r_arm["neutral_joint_values"]
     ):
         default_joint_values[joint_name] = value
+    if hasattr(openloong_conf, "waist"):
+        default_joint_values[openloong_conf.waist["joint_name"]] = openloong_conf.waist.get("neutral_joint_value", 0.0)
 
     orca_logger.info("Creating device")
     pico_joystick_device = PicoJoystickDevice(PicoJoystick())
@@ -271,6 +273,11 @@ def main():
         data_collection_manager, env, openloong_conf.r_arm, openloong_conf.base_body,
         pico_joystick_device, PicoJoystickKey.R_TRANSFORM,
     )
+    if hasattr(openloong_conf, "waist"):
+        orca_logger.info("Creating waist controller")
+        controllers.add_waist_pico_controller(
+            data_collection_manager, env, openloong_conf.waist, openloong_conf.base_body, pico_joystick_device
+        )
     orca_logger.info("Collect-only mode: using EmptyTask")
     data_collection_manager.set_task(EmptyTask(env))
     controllers.add_task_status_pico_controller(

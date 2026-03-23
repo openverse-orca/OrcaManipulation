@@ -34,6 +34,26 @@ class ControllerArm(AbstractController):
         self.action = np.zeros(6, dtype=np.float32)
         self.action[0:3] = self.initial_ee_pos
         self.action[3:6] = R.from_quat(self.initial_ee_quat[[1, 2, 3, 0]]).as_rotvec()
+
+    def _get_waist_angle(self) -> float:
+        """
+        尝试读取腰部关节角度；若模型无腰部则回退为 0。
+        """
+        try:
+            waist_joint = self.env.joint("waist_yaw_joint")
+            waist_qpos = self.env.query_joint_qpos([waist_joint])
+            return float(waist_qpos[waist_joint])
+        except Exception:
+            return 0.0
+
+    def _get_base_waist_transform(self):
+        """
+        返回基座位置与基座+腰部组合旋转。
+        """
+        base_body_xpos, _, base_body_xquat = self.env.get_body_xpos_xmat_xquat([self.base_link])
+        base_body_rot = R.from_quat(base_body_xquat[[1, 2, 3, 0]])
+        waist_rot = R.from_euler("z", self._get_waist_angle(), degrees=False)
+        return base_body_xpos, (base_body_rot * waist_rot)
         
     @override
     def run_controller(self)-> dict[int, float]:
@@ -42,15 +62,14 @@ class ControllerArm(AbstractController):
         return {self.ctrl_index[i]: ctrl[i] for i in range(len(self.ctrl_index))}
     
     def update_goal(self, relative_position: np.array, relative_quat: np.array):
-        base_body_xpos, _, base_body_xquat = self.env.get_body_xpos_xmat_xquat([self.base_link])
-        base_body_rot = R.from_quat(base_body_xquat[[1, 2, 3, 0]])
+        base_body_xpos, combined_rot = self._get_base_waist_transform()
 
         goal_rot_B = R.from_quat(self.initial_ee_quat_B[[1, 2, 3, 0]]) * R.from_quat(relative_quat[[1, 2, 3, 0]])
         goal_pos_B = self.initial_ee_pos_B + relative_position
 
-        goal_rot = base_body_rot * goal_rot_B
+        goal_rot = combined_rot * goal_rot_B
         goal_axisangle = goal_rot.as_rotvec()
-        goal_pos = base_body_rot.apply(goal_pos_B) + base_body_xpos
+        goal_pos = combined_rot.apply(goal_pos_B) + base_body_xpos
         
         self.action = np.concatenate([goal_pos, goal_axisangle])
 
@@ -60,9 +79,8 @@ class ControllerArm(AbstractController):
         @param:
             position: 位置
         '''
-        base_body_xpos, _, base_body_xquat = self.env.get_body_xpos_xmat_xquat([self.base_link])
-        base_body_rot = R.from_quat(base_body_xquat[[1, 2, 3, 0]])
-        position = base_body_rot.apply(position) + base_body_xpos
+        base_body_xpos, combined_rot = self._get_base_waist_transform()
+        position = combined_rot.apply(position) + base_body_xpos
         self.action[:3] = position
 
     def update_action_axisangle(self, quat: np.array):
@@ -71,9 +89,8 @@ class ControllerArm(AbstractController):
         @param:
             quat: 四元数
         '''
-        _, _, base_body_xquat = self.env.get_body_xpos_xmat_xquat([self.base_link])
-        base_body_rot = R.from_quat(base_body_xquat[[1, 2, 3, 0]])
-        ee_rot = base_body_rot * R.from_quat(quat)
+        _, combined_rot = self._get_base_waist_transform()
+        ee_rot = combined_rot * R.from_quat(quat)
         axisangle = ee_rot.as_rotvec()
         self.action[3:6] = axisangle
         

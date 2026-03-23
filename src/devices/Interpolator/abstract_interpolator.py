@@ -30,7 +30,8 @@ class OpenLoongInterpolator(AbstractInterpolator):
         return [
             "/action/effector/motor",
             "/action/end/position",
-            "/action/end/orientation"
+            "/action/end/orientation",
+            "/action/waist/angle",
         ]
 
     def interpolate(self, dataset: np.array, **kwargs):
@@ -43,6 +44,8 @@ class OpenLoongInterpolator(AbstractInterpolator):
             return self.interpolate_end_position(dataset)
         elif dataset_path == "/action/end/orientation":
             return self.interpolate_end_orientation(dataset)
+        elif dataset_path == "/action/waist/angle":
+            return self.interpolate_waist_angle(dataset)
         
 
     def interpolate_effector_motor(self, dataset: np.array):
@@ -109,8 +112,29 @@ class OpenLoongInterpolator(AbstractInterpolator):
         # 单臂或未flatten的情况
         result = self._interpolate_quaternion(dataset, use_saved_indices=True)
         return result
+
+    def interpolate_waist_angle(self, dataset: np.array):
+        """
+        腰部角度插值：
+        - 与末端位置使用同一组插值索引，保持时间对齐
+        - 噪声强度降低为基础噪声的 10%
+        """
+        data_array = np.array(dataset, dtype=np.float32)
+        reduced_noise = max(float(self.noise_value) * 0.1, 0.0)
+        return self._interpolate_linear(
+            data_array,
+            save_indices=False,
+            use_saved_indices=True,
+            noise_scale=reduced_noise,
+        )
     
-    def _interpolate_linear(self, dataset: np.array, save_indices: bool = False) -> np.array:
+    def _interpolate_linear(
+        self,
+        dataset: np.array,
+        save_indices: bool = False,
+        use_saved_indices: bool = False,
+        noise_scale: float | None = None,
+    ) -> np.array:
         """
         线性数据插值：每4个值插入1个新值
         根据相邻点之间的距离，在变化最大的位置插值
@@ -135,14 +159,18 @@ class OpenLoongInterpolator(AbstractInterpolator):
                 dist = np.linalg.norm(group[j+1] - group[j])
                 distances.append(dist)
             
-            # 找到距离最大的位置（变化最剧烈）
-            max_dist_idx = np.argmax(distances)
+            # 找到插值位置：默认取变化最大处；也可复用已保存位置
+            if use_saved_indices and self._insertion_indices is not None and i < len(self._insertion_indices):
+                max_dist_idx = self._insertion_indices[i]
+            else:
+                max_dist_idx = np.argmax(distances)
             insertion_indices.append(max_dist_idx)
             
             # 计算插值值
             mean = np.mean(group, axis=0)
             std = np.std(group, axis=0)
-            noise = np.random.uniform(0, self.noise_value, size=group[0].shape)
+            current_noise = float(self.noise_value if noise_scale is None else noise_scale)
+            noise = np.random.uniform(0, current_noise, size=group[0].shape)
             interpolated = mean + std + noise
             new_values.append(interpolated)
             
@@ -245,7 +273,8 @@ class OpenLoongInterpolatorAdvanced(AbstractInterpolator):
         return [
             "/action/effector/motor",
             "/action/end/position",
-            "/action/end/orientation"
+            "/action/end/orientation",
+            "/action/waist/angle",
         ]
 
     def interpolate(self, dataset: np.array, **kwargs):
@@ -258,6 +287,8 @@ class OpenLoongInterpolatorAdvanced(AbstractInterpolator):
             return self.interpolate_end_position(dataset)
         elif dataset_path == "/action/end/orientation":
             return self.interpolate_end_orientation(dataset)
+        elif dataset_path == "/action/waist/angle":
+            return self.interpolate_waist_angle(dataset)
         
     def interpolate_effector_motor(self, dataset: np.array):
         """使用三次样条插值抓夹控制值"""
@@ -270,6 +301,15 @@ class OpenLoongInterpolatorAdvanced(AbstractInterpolator):
     def interpolate_end_orientation(self, dataset: np.array):
         """使用SLERP插值末端方向(四元数)"""
         return self._slerp_interpolate(dataset)
+
+    def interpolate_waist_angle(self, dataset: np.array):
+        """腰部角度插值，使用较低噪声以减少不自然摆动"""
+        original_noise = float(self.noise_value)
+        self.noise_value = original_noise * 0.1
+        try:
+            return self._cubic_spline_interpolate(dataset)
+        finally:
+            self.noise_value = original_noise
     
     def _cubic_spline_interpolate(self, dataset: np.array) -> np.array:
         """使用三次样条插值，生成平滑曲线"""

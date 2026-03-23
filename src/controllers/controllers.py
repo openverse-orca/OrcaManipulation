@@ -1,6 +1,7 @@
 from functools import partial
 from controllers.controller_arm import ControllerArm
 from controllers.controller_task import TaskStatusController
+from controllers.controller_waist import ControllerWaist
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
 from orca_gym.adapters.robosuite.controllers import controller_config, controller_factory
@@ -130,3 +131,46 @@ def add_task_status_openloong_data_controller(data_collection_manager: DataColle
     task_status_controller = TaskStatusController(env, base_body, is_controller=False)
     device.bind_task_status_event(task_status_controller.update_task_status)
     data_collection_manager.set_task_status_controller(task_status_controller)
+
+
+def create_waist_controller(
+    env: OrcaGymLocalEnv,
+    waist_config: dict,
+    base_body: str,
+) -> ControllerWaist:
+    ctrl_name = [env.actuator(waist_config["position_name"])]
+    init_val = float(waist_config.get("neutral_joint_value", 0.0))
+    init_ctrl = {ctrl_name[0]: init_val}
+    angle_min, angle_max = waist_config.get("position_range", (-1.57079632679, 1.57079632679))
+    return ControllerWaist(
+        env=env,
+        ctrl_name=ctrl_name,
+        init_ctrl=init_ctrl,
+        base_body=base_body,
+        min_angle=float(angle_min),
+        max_angle=float(angle_max),
+    )
+
+
+def add_waist_pico_controller(
+    data_collection_manager: DataCollectionManager,
+    env: OrcaGymLocalEnv,
+    waist_config: dict,
+    base_body: str,
+    device: PicoJoystickDevice,
+):
+    waist_controller = create_waist_controller(env, waist_config, base_body)
+    device.bind_joystick_position_event(PicoJoystickKey.R_JOYSTICK_POSITION, waist_controller.update_joystick_xy)
+    data_collection_manager.add_controller(waist_controller)
+
+
+def add_waist_openloong_data_controller(
+    data_collection_manager: DataCollectionManager,
+    env: OrcaGymLocalEnv,
+    waist_config: dict,
+    base_body: str,
+    device: DataDevice,
+):
+    waist_controller = create_waist_controller(env, waist_config, base_body)
+    device.bind_dataset_event("/action/waist/angle", (0, 1), waist_controller.update_angle)
+    data_collection_manager.add_controller(waist_controller)

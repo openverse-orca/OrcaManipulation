@@ -28,6 +28,14 @@ r_arm = {
     "ee_site_name": "ee_center_site_r",
 }
 
+waist = {
+    "joint_name": "waist_yaw_joint",
+    "neutral_joint_value": 0.0,
+    "position_name": "P_waist",
+    # 录制/回放腰部统一使用 [-pi/2, pi/2] 的物理范围
+    "position_range": (-1.57079632679, 1.57079632679),
+}
+
 gripper_2f85_l = {
     "joint_names": ["l_left_driver_joint"],
     "actuator_names": ["l_fingers_actuator"],

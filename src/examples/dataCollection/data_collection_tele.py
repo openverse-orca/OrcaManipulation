@@ -17,7 +17,7 @@ from orca_gym.log.orca_log import get_orca_logger, OrcaLog
 import numpy as np
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
-from conf import openloong_conf
+from conf import d12_conf as openloong_conf
 from yaml import load, Loader
 from dataStorage.openloong_data_storage import OpenLoongDataStorage
 
@@ -62,13 +62,15 @@ def main():
     orcagym_addr = "localhost:50051"
     env_name = "DataCollection"
     env_index = 0
-    agent_name = "humanoid_industrial_robot_1" #"openloong_gripper_2f85_fix_base_usda" #"humanoid_industrial_robot_1" #"openloong_gripper_2f85_fix_base_usda"
+    agent_name = "d12_waist_motor_usda"#"humanoid_industrial_robot_1" #"openloong_gripper_2f85_fix_base_usda" #"humanoid_industrial_robot_1" #"openloong_gripper_2f85_fix_base_usda"
     default_joint_values = {}
 
     for joint_name, value in zip(openloong_conf.l_arm["joint_names"], openloong_conf.l_arm["neutral_joint_values"]):
         default_joint_values[joint_name] = value
     for joint_name, value in zip(openloong_conf.r_arm["joint_names"], openloong_conf.r_arm["neutral_joint_values"]):
         default_joint_values[joint_name] = value
+    if hasattr(openloong_conf, "waist"):
+        default_joint_values[openloong_conf.waist["joint_name"]] = openloong_conf.waist.get("neutral_joint_value", 0.0)
     
     orca_logger.info("Creating device")
     pico_joystick_device = PicoJoystickDevice(PicoJoystick())
@@ -118,6 +120,10 @@ def main():
     
     orca_logger.info("Creating right arm controller")
     controllers.add_arm_osc_pico_controller(data_collection_manager, env, openloong_conf.r_arm, openloong_conf.base_body, pico_joystick_device, PicoJoystickKey.R_TRANSFORM)
+
+    if hasattr(openloong_conf, "waist"):
+        orca_logger.info("Creating waist controller")
+        controllers.add_waist_pico_controller(data_collection_manager, env, openloong_conf.waist, openloong_conf.base_body, pico_joystick_device)
     
     orca_logger.info("Creating pick place task")
     if config.get("type") in ["collect_only", "collection", "manual_record"]:

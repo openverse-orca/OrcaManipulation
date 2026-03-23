@@ -17,7 +17,7 @@ from orca_gym.log.orca_log import get_orca_logger, OrcaLog
 import numpy as np
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
-from conf import openloong_conf
+from conf import d12_conf as openloong_conf
 from yaml import load, Loader
 from dataStorage.openloong_data_storage import OpenLoongDataStorage
 from devices.Interpolator.abstract_interpolator import OpenLoongInterpolator
@@ -53,6 +53,8 @@ def main():
         default_joint_values[joint_name] = value
     for joint_name, value in zip(openloong_conf.r_arm["joint_names"], openloong_conf.r_arm["neutral_joint_values"]):
         default_joint_values[joint_name] = value
+    if hasattr(openloong_conf, "waist"):
+        default_joint_values[openloong_conf.waist["joint_name"]] = openloong_conf.waist.get("neutral_joint_value", 0.0)
         
     orca_logger.info("Creating device")
     data_device = DataDevice(os.path.join(base_dir, "dataset"), "record/proprio_stats.hdf5", interpolator=OpenLoongInterpolator(noise_value=0.03))
@@ -98,6 +100,10 @@ def main():
     
     orca_logger.info("Creating right gripper controller")
     controllers.add_gripper_2f85_openloong_data_controller(data_collection_manager, env, openloong_conf.gripper_2f85_r, openloong_conf.base_body, data_device, left_gripper=False)
+
+    if hasattr(openloong_conf, "waist"):
+        orca_logger.info("Creating waist data controller")
+        controllers.add_waist_openloong_data_controller(data_collection_manager, env, openloong_conf.waist, openloong_conf.base_body, data_device)
     
     orca_logger.info("Creating pick place task")
     data_collection_manager.set_task(PickPlaceTask(env))

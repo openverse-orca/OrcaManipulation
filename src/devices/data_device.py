@@ -30,6 +30,7 @@ class DataDevice(AbstractDevice):
         self.task_info = None
         self.scene_info = None
         self.interpolator = interpolator
+        self._missing_dataset_warned = set()
 
     @override
     def update(self):
@@ -38,7 +39,13 @@ class DataDevice(AbstractDevice):
         '''
         end = False
         for dataset_path, events in self.dataset_event.items():
-            data = self.get_data(dataset_path)
+            try:
+                data = self.get_data(dataset_path)
+            except Exception as e:
+                if dataset_path not in self._missing_dataset_warned:
+                    self._missing_dataset_warned.add(dataset_path)
+                    orca_logger.warning(f"Dataset path not found, skip binding: {dataset_path}, error: {e}")
+                continue
             raw_data = data.pop(0)
             for index, event in events:
                 event(raw_data.flatten()[index[0]:index[1]])
