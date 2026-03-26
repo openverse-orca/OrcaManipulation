@@ -74,7 +74,11 @@ def main():
         default_joint_values[joint_name] = value
 
     orca_logger.info("Creating device")
-    data_device = DataDevice(os.path.join(base_dir, "dataset", agent_name, level), "record/proprio_stats.hdf5")
+    data_device = DataDevice(
+        os.path.join(base_dir, "dataset", agent_name, level),
+        "record/proprio_stats.hdf5",
+        loop_playback=True,
+    )
 
     orca_logger.info("Creating scene manager")
     with open(os.path.join(base_dir, task_config), "r", encoding="utf-8") as f:
