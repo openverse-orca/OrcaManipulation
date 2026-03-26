@@ -98,6 +98,7 @@ def main():
         device=data_device,
         scene_manager=scene_manager,
         data_storage=data_storage,
+        frame_skip=5,
     )
     env = data_collection_manager.env
     env.reset()

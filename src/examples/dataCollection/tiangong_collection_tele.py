@@ -82,8 +82,9 @@ def main():
         obs_callback=data_storage.obs_callback,
         env_index=env_index,
         device=pico_joystick_device,
-        scene_manager=scene_manager,
+        scene_manager=scene_manager,    
         data_storage=data_storage,
+        frame_skip=5,
     )
     env = data_collection_manager.env
     env.reset()
