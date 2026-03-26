@@ -56,10 +56,8 @@ class DataCollectionEnv(OrcaGymLocalEnv):
         return obs, {}
 
     def init_env(self):
-        orca_logger.info(f"gym address: self.gym: {id(self.gym)}")
         self.model, self.data = self.initialize_simulation()
         self.reset()
-        orca_logger.info(f"gym address: self.gym: {id(self.gym)}")
         
     def set_default_joint_values(self, default_joint_values: dict[str, float]):
         self.default_joint_values = default_joint_values

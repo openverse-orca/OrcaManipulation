@@ -84,6 +84,7 @@ class SceneManager:
         in_scene_actors = []
 
         if restore:
+            orca_log.info(f"restore scene, scene_info: {scene_info}")
             for actor_name, actor_info in scene_info.items():
                 self.set_actor_qpos(actor_info["joint_name"], actor_info["joint_qpos"])
                 in_scene_actors.append(actor_info["joint_name"])

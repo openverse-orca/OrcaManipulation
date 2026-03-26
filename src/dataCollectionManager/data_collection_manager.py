@@ -216,7 +216,10 @@ class DataCollectionManager:
         self.set_init_ctrl()
         self.env.set_ctrl(self.ctrl)
         self.env.mj_forward()
-        
+
+        for controller in self.controllers:
+            controller.reset()
+
         task_is_success = False
 
         if self.task_status_controller is not None:
