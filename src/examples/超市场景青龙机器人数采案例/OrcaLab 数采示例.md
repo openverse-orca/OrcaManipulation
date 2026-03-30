@@ -112,7 +112,7 @@
 2. 进入数采脚本目录并启动：
 
        cd ~/OrcaManipulation/src/examples/dataCollection
-       python data_collection_tele.py
+       python data_collection_tele.py  --level shop_scaning --agent_name openloong  --task_config example.yaml
 
 ---
 
