@@ -41,7 +41,7 @@
                 "scale": 1.0
             },
             "type": "AssetActor",
-            "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/openloong_gripper_2f85_fix_base_usda"
+            "asset_path": "assets/e071469a36d3c8aa/robot_project/prefabs/openloong_gripper_2f85_fix_base_usda"
         },
         {
             "name": "basket",
@@ -52,7 +52,7 @@
                 "scale": 1.0
             },
             "type": "AssetActor",
-            "asset_path": "assets/e071469a36d3c8aa/shopscene_scaning/shop_scene/els/basket"
+            "asset_path": "assets/e071469a36d3c8aa/default_project/shop_scene/els/basket"
         }
     ]
 }

@@ -132,3 +132,16 @@
    - **B 键长按**：右手抓取
    - **A 键长按**：右手放开
 
+## 五、FAQ
+1. 在 OrcaLab 中选择 **打开布局**，加载 `shop_openloong.json` 文件时出现，布局加载失败，eg： Request failed. Spawnable not found., asset_path: assets/e071469a36d3c8aa/shopscene_scaning/shop_scene/els/basket
+
+   去看JSON文件中asset_path的路径是否与订阅资产路径一致，不一致请修改：
+
+       eg：JSON文件中"asset_path": " assets/e071469a36d3c8aa/shopscene_scaning/shop_scene/els/basket"与实际订阅不同，修改路径为：
+       "asset_path": "assets/e071469a36d3c8aa/default_project/shop_scene/els/basket"
+2. 在启动数采脚本时报找不到spawnable物品
+    去看(../dataCollection/example.yaml)文件中actor:spawnable路径是否与订阅资产路径一致，不一致请修改：
+
+       eg：yaml文件中"assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/jar_01",与实际订阅不同，修改路径为：
+       "assets/e071469a36d3c8aa/shopscene_scaning/shop_scene/prefabs/goods/jar_01",
+---
