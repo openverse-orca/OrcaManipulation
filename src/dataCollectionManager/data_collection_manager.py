@@ -1,4 +1,6 @@
 import enum
+import os
+from textwrap import shorten
 import time
 import numpy as np
 import gymnasium as gym
@@ -177,7 +179,7 @@ class DataCollectionManager:
         except KeyboardInterrupt:
             orca_logger.info("KeyboardInterrupt, End")
         except Exception as e:
-            orca_logger.error(f"Run error: {e}", exc_info=True)
+            orca_logger.error(f"Run error: {e}")
             raise
         finally:
             self.env.close()
@@ -191,6 +193,7 @@ class DataCollectionManager:
                     self.scene_manager.update_actor_qpos()
                     self.task.get_task(self.scene_manager)
                     orca_logger.info(f"Task description: {self.task.get_task_description()}")
+                    self.scene_manager.show_ui_message(1, self.task.get_task_description(),showtime=5)
 
                 
             elif self.mode == self.DataCollectionMode.AUGMENTATION:
@@ -201,6 +204,15 @@ class DataCollectionManager:
                 if not load_ret:
                     orca_logger.info("Augmentation End")
                     return load_ret
+                unit_path = self.device.get_current_unit_path()
+                if unit_path is not None:
+                    # 回放提示只展示当前回放目录名
+                    current_dir_name = os.path.basename(unit_path)
+                    if current_dir_name == "":
+                        current_dir_name = os.path.basename(os.path.dirname(unit_path))
+                    orca_logger.info(f"Replay data unit: {unit_path}")
+                    replay_msg = shorten(f"回放目录: {current_dir_name}", width=80, placeholder="...")
+                   # self.scene_manager.show_ui_message(1, replay_msg, "0x00bfff", showtime=0)
                 task_info = self.device.get_task_info()
                 scene_info = self.device.get_scene_info()
                 self.scene_manager.update_actor_qpos(restore=True, scene_info=scene_info)
@@ -214,8 +226,12 @@ class DataCollectionManager:
         self.set_init_ctrl()
         self.env.set_ctrl(self.ctrl)
         self.env.mj_forward()
-        
+
+        for controller in self.controllers:
+            controller.reset()
+
         task_is_success = False
+        data_recording_started = False
 
         if self.task_status_controller is not None:
             self.task_status_controller.reset()
@@ -229,6 +245,16 @@ class DataCollectionManager:
             if self.task_status_controller is not None:
                 task_status = self.task_status_controller.run_controller()
                 if task_status == TaskStatus.RUNNING:
+                    if not data_recording_started:
+                        unit_path = None
+                        if self.data_storage is not None:
+                            unit_path = self.data_storage.get_current_unit_path()
+                            orca_logger.info(f"Start recording data unit: {unit_path}")
+                        else:
+                            orca_logger.info("Start recording data unit")
+                        if self.scene_manager is not None and self.mode == self.DataCollectionMode.TELECONTROL:
+                            self.scene_manager.show_ui_message(1, "开始采集", "0x00ff00", showtime=2)
+                        data_recording_started = True
                     if self.data_storage is not None:
                         self.data_storage.collection_data(obs, self.env)
                     if self.save_video and not self.saving and self.data_storage is not None:
@@ -238,6 +264,15 @@ class DataCollectionManager:
                     if self.save_video and self.saving and self.data_storage is not None:
                         self.data_storage.stop_save_video(self.env)
                         self.saving = False
+                    if data_recording_started:
+                        unit_path = None
+                        if self.data_storage is not None:
+                            unit_path = self.data_storage.get_current_unit_path()
+                            orca_logger.info(f"Stop recording data unit: {unit_path}")
+                        else:
+                            orca_logger.info("Stop recording data unit")
+                        if self.scene_manager is not None and self.mode == self.DataCollectionMode.TELECONTROL:
+                            self.scene_manager.show_ui_message(1, "结束采集", "0xff8800", showtime=2)
                     orca_logger.info("Task end")
                     task_is_success = self.task.is_success()
                     return task_is_success

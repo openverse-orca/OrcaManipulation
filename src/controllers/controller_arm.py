@@ -30,29 +30,52 @@ class ControllerArm(AbstractController):
         self.initial_ee_pos_B, self.initial_ee_quat_B = ee_pos_quat_B[self.ee_name]["xpos"], ee_pos_quat_B[self.ee_name]["xquat"]
         ee_pos_quat = self.env.query_site_pos_and_quat([self.ee_name])[self.ee_name]
         self.initial_ee_pos, self.initial_ee_quat = ee_pos_quat["xpos"], ee_pos_quat["xquat"]
-        
         self.action = np.zeros(6, dtype=np.float32)
         self.action[0:3] = self.initial_ee_pos
         self.action[3:6] = R.from_quat(self.initial_ee_quat[[1, 2, 3, 0]]).as_rotvec()
-        
+
     @override
-    def run_controller(self)-> dict[int, float]:
+    def reset(self):
+        """重新查询当前末端位姿，更新 action 和 B 系参考，同步 IK/OSC 控制器目标。"""
+        ee_pos_quat_B = self.env.query_site_pos_and_quat_B([self.ee_name], [self.base_link])
+        self.initial_ee_pos_B = ee_pos_quat_B[self.ee_name]["xpos"]
+        self.initial_ee_quat_B = ee_pos_quat_B[self.ee_name]["xquat"]
+
+        ee_pos_quat = self.env.query_site_pos_and_quat([self.ee_name])[self.ee_name]
+        self.initial_ee_pos = ee_pos_quat["xpos"]
+        self.initial_ee_quat = ee_pos_quat["xquat"]
+
+        self.action = np.zeros(6, dtype=np.float32)
+        self.action[0:3] = self.initial_ee_pos
+        self.action[3:6] = R.from_quat(self.initial_ee_quat[[1, 2, 3, 0]]).as_rotvec()
+
+        # update() must be called before reset_goal() to ensure joint_pos / ee_pos
+        # reflect the current physics state (after mj_forward), not stale values.
+        self.controller.update()
+        self.controller.reset_goal()
+
+    @override
+    def run_controller(self) -> dict[int, float]:
         self.controller.set_goal(self.action)
-        ctrl = self.controller.run_controller() 
+        ctrl = self.controller.run_controller()
         return {self.ctrl_index[i]: ctrl[i] for i in range(len(self.ctrl_index))}
     
-    def update_goal(self, relative_position: np.array, relative_quat: np.array):
+    def update_goal(self, relative_position: np.ndarray, relative_quat: np.ndarray):
+        """
+        relative_position: 手柄相对其初始位置的位移，B系 (x, y, z)
+        relative_quat:     手柄相对其初始朝向的旋转增量，B系 (w, x, y, z)
+        """
         base_body_xpos, _, base_body_xquat = self.env.get_body_xpos_xmat_xquat([self.base_link])
         base_body_rot = R.from_quat(base_body_xquat[[1, 2, 3, 0]])
 
+        # 位置和旋转增量均在B系下，整体转换到世界系
         goal_rot_B = R.from_quat(self.initial_ee_quat_B[[1, 2, 3, 0]]) * R.from_quat(relative_quat[[1, 2, 3, 0]])
         goal_pos_B = self.initial_ee_pos_B + relative_position
 
         goal_rot = base_body_rot * goal_rot_B
-        goal_axisangle = goal_rot.as_rotvec()
         goal_pos = base_body_rot.apply(goal_pos_B) + base_body_xpos
-        
-        self.action = np.concatenate([goal_pos, goal_axisangle])
+
+        self.action = np.concatenate([goal_pos, goal_rot.as_rotvec()])
 
     def update_action_position(self, position: np.array):
         '''

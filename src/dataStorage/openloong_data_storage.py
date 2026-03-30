@@ -26,10 +26,10 @@ class OpenLoongDataStorage(AbstractDataStorage):
         joint_names = openloong_conf.l_arm["joint_names"] + openloong_conf.r_arm["joint_names"]
         joint_names = [env.joint(joint_name) for joint_name in joint_names]
 
-        gripper_names = openloong_conf.gripper_2f85_l["joint_names"] + openloong_conf.gripper_2f85_r["joint_names"]
+        gripper_names = openloong_conf.gripper_l["joint_names"] + openloong_conf.gripper_r["joint_names"]
         gripper_names = [env.joint(gripper_name) for gripper_name in gripper_names]
 
-        gripper_motor_names = openloong_conf.gripper_2f85_l["actuator_names"] + openloong_conf.gripper_2f85_r["actuator_names"]
+        gripper_motor_names = openloong_conf.gripper_l["actuator_names"] + openloong_conf.gripper_r["actuator_names"]
         gripper_motor_names = [env.actuator(gripper_motor_name) for gripper_motor_name in gripper_motor_names]
         gripper_motor_id = [env.model.actuator_name2id(gripper_motor_name) for gripper_motor_name in gripper_motor_names]
 

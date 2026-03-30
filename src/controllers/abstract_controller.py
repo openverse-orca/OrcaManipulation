@@ -29,6 +29,10 @@ class AbstractController(metaclass=abc.ABCMeta):
         return {self.env.model.actuator_name2id(name): self.init_ctrl[name] 
                 for name in self.ctrl_name if name in self.init_ctrl}
     
+    def reset(self):
+        """每个 episode 开始时调用，用于同步控制器内部状态到当前物理状态。"""
+        pass
+
     @abc.abstractmethod
     def run_controller(self)-> dict[int, float]:
         raise NotImplementedError("Subclasses must implement this method")

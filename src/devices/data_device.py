@@ -10,7 +10,13 @@ from orca_gym.log import OrcaLog
 orca_logger = OrcaLog.get_instance()
 
 class DataDevice(AbstractDevice):
-    def __init__(self, dataset_path: str, hdf5_path: str, interpolator: AbstractInterpolator = None):
+    def __init__(
+        self,
+        dataset_path: str,
+        hdf5_path: str,
+        interpolator: AbstractInterpolator = None,
+        loop_playback: bool = False,
+    ):
         '''
         @description: 初始化DataDevice
         @param:
@@ -20,13 +26,17 @@ class DataDevice(AbstractDevice):
         super().__init__()
         self.dataset_path = dataset_path
         self.dataset_event = {}
+        self.dataset_cursor = {}
         self.task_status_event : Callable[[bool], None] = None
         self.update_task_status = False
         
         self.unit_datasets_path = []
         self.data = None
         self.hdf5_path = hdf5_path
+        self.loop_playback = loop_playback
+        self._all_unit_datasets_path = []
         self.load_unit_dataset()
+        self.current_unit_path = None
         self.task_info = None
         self.scene_info = None
         self.interpolator = interpolator
@@ -39,10 +49,18 @@ class DataDevice(AbstractDevice):
         end = False
         for dataset_path, events in self.dataset_event.items():
             data = self.get_data(dataset_path)
-            raw_data = data.pop(0)
+            cursor = self.dataset_cursor.get(dataset_path, 0)
+            if cursor >= len(data):
+                self.update_task_status = True
+                end = True
+                continue
+
+            raw_data = data[cursor]
             for index, event in events:
                 event(raw_data.flatten()[index[0]:index[1]])
-            if len(data) == 0:
+            cursor += 1
+            self.dataset_cursor[dataset_path] = cursor
+            if cursor >= len(data):
                 self.update_task_status = True
                 end = True
 
@@ -82,15 +100,29 @@ class DataDevice(AbstractDevice):
         '''
         return self.scene_info
 
+    def get_current_unit_path(self) -> str | None:
+        '''
+        @description: 获取当前回放的数据目录
+        '''
+        return self.current_unit_path
+
     def load_unit_dataset(self):
         '''
         @description: 加载数据集下的所有单元数据集
         '''
         # 收集dataset_path下的子目录
-        for subdir in os.listdir(self.dataset_path):
+        self.unit_datasets_path.clear()
+        for subdir in sorted(os.listdir(self.dataset_path)):
             dir_path = os.path.join(self.dataset_path, subdir)
             if os.path.isdir(dir_path):
                 self.unit_datasets_path.append(dir_path)
+        self._all_unit_datasets_path = list(self.unit_datasets_path)
+
+    def _reset_unit_dataset_queue(self):
+        '''
+        @description: 重置待回放数据队列，用于循环回放
+        '''
+        self.unit_datasets_path = list(self._all_unit_datasets_path)
  
     def load_data(self) ->bool:
         '''
@@ -99,9 +131,15 @@ class DataDevice(AbstractDevice):
             hdf5_path: hdf5文件路径, 相对于单元数据目录的路径
         '''
         if len(self.unit_datasets_path) == 0:
-            self.data = None
-            return False
+            if self.loop_playback and len(self._all_unit_datasets_path) > 0:
+                self._reset_unit_dataset_queue()
+                orca_logger.info("Replay dataset exhausted, restarting from beginning.")
+            else:
+                self.data = None
+                self.current_unit_path = None
+                return False
         unit_path = self.unit_datasets_path.pop()
+        self.current_unit_path = unit_path
         hdf5_path = os.path.join(unit_path, self.hdf5_path)
         with h5py.File(hdf5_path, "r") as f:
             self.data = {}
@@ -114,7 +152,9 @@ class DataDevice(AbstractDevice):
         
         if self.interpolator is not None:
             self._apply_interpolation()
-            
+
+        # 每次加载新数据单元后重置回放游标，避免使用 pop(0) 造成 O(n) 开销
+        self.dataset_cursor = {dataset_path: 0 for dataset_path in self.dataset_event.keys()}
         self.update_task_status = True
         return True
 

@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import traceback
 
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -56,9 +57,17 @@ def main():
     pico_joystick_device = PicoJoystickDevice(PicoJoystick())
 
     orca_logger.info("Creating scene manager")
-    with open(os.path.join(base_dir, "example.yaml"), "r") as f:
+    with open(os.path.join(base_dir, "example.yaml"), "r", encoding="utf-8") as f:
         config = load(f, Loader=Loader)
+
+    script_name = os.path.basename(sys.argv[0]) if sys.argv else os.path.basename(__file__)
+
     scene_manager = SceneManager(orcagym_addr, config=config)
+
+    scene_manager.show_ui_message(1, "开始仿真程序，请按左右遥杆进行操作 ", "0xffff00", showtime=10)
+
+    scene_manager.get_scene_data(script_name, "beginscene")
+
 
     orca_logger.info("Creating data storage")
     data_storage = Tiangong2DataStorage(dataset_path=os.path.join(base_dir, "dataset"), hdf5_path="record/proprio_stats.hdf5")
@@ -73,8 +82,9 @@ def main():
         obs_callback=data_storage.obs_callback,
         env_index=env_index,
         device=pico_joystick_device,
-        scene_manager=scene_manager,
+        scene_manager=scene_manager,    
         data_storage=data_storage,
+        frame_skip=5,
     )
     env = data_collection_manager.env
     env.reset()
@@ -98,9 +108,17 @@ def main():
     data_collection_manager.set_task(PickPlaceTask(env))
     controllers.add_task_status_pico_controller(data_collection_manager, env, pico_joystick_device, tiangong2_conf.base_body)
 
-    data_collection_manager.save_video = False
+    data_collection_manager.save_video = True
     
     data_collection_manager.run()
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        orca_logger.info("KeyboardInterrupt, End")
+    except Exception as e:
+        orca_logger.error(f"Unexpected error: {e}\n{traceback.format_exc()}")
+    finally:
+        orca_logger.info("Exiting program")
+        os._exit(0)

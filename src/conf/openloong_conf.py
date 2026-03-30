@@ -28,14 +28,14 @@ r_arm = {
     "ee_site_name": "ee_center_site_r",
 }
 
-gripper_2f85_l = {
+gripper_l = {
     "joint_names": ["l_left_driver_joint"],
     "actuator_names": ["l_fingers_actuator"],
     "actuator_ranges": [(0, 255)],
     "init_ctrl": [0],
 }
 
-gripper_2f85_r = {
+gripper_r = {
     "joint_names": ["r_right_driver_joint"],
     "actuator_names": ["r_fingers_actuator"],
     "actuator_ranges": [(0, 255)],

@@ -7,6 +7,10 @@
         "rotation": "[1,0,0,0]",
         "scale": 1.0
     },
+    "is_visible": true,
+    "is_parent_visible": true,
+    "is_locked": false,
+    "is_parent_locked": false,
     "type": "GroupActor",
     "children": [
         {
@@ -17,6 +21,10 @@
                 "rotation": "[1.0,0.0,0.0,0.0]",
                 "scale": 1.0
             },
+            "is_visible": true,
+            "is_parent_visible": true,
+            "is_locked": false,
+            "is_parent_locked": false,
             "type": "GroupActor",
             "children": [
                 {
@@ -27,21 +35,30 @@
                         "rotation": "[1.0,0.0,0.0,0.0]",
                         "scale": 1.0
                     },
+                    "is_visible": true,
+                    "is_parent_visible": true,
+                    "is_locked": false,
+                    "is_parent_locked": false,
                     "type": "GroupActor",
                     "children": []
                 }
             ]
         },
         {
-            "name": "openloong_gripper_2f85_fix_base_usda",
-            "path": "/openloong_gripper_2f85_fix_base_usda",
+            "name": "openloong",
+            "path": "/openloong",
             "transform": {
                 "position": "[-6.448356628417969,2.245821714401245,3.037810358819115e-07]",
                 "rotation": "[0.703541886341584,0.0,0.0,0.7106537934626999]",
                 "scale": 1.0
             },
+            "is_visible": true,
+            "is_parent_visible": true,
+            "is_locked": false,
+            "is_parent_locked": false,
             "type": "AssetActor",
-            "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/openloong_gripper_2f85_fix_base_usda"
+            "asset_path": "assets/e071469a36d3c8aa/robot_project/prefabs/openloong_gripper_2f85_fix_base_usda",
+            "modified_properties": []
         },
         {
             "name": "basket",
@@ -51,8 +68,13 @@
                 "rotation": "[1.0,0.0,0.0,0.0]",
                 "scale": 1.0
             },
+            "is_visible": true,
+            "is_parent_visible": true,
+            "is_locked": false,
+            "is_parent_locked": false,
             "type": "AssetActor",
-            "asset_path": "assets/e071469a36d3c8aa/shopscene_scaning/shop_scene/els/basket"
+            "asset_path": "assets/e071469a36d3c8aa/default_project/shop_scene/els/basket",
+            "modified_properties": []
         }
     ]
 }
