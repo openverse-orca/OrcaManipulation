@@ -6,7 +6,7 @@
 
 ## ✨ 特性
 
-- 🎮 **双模式支持**: TELECONTROL (VR遥控) + AUGMENTATION (数据增强)
+- 🎮 **双模式支持**: TELECONTROL (VR遥控) + AUGMENTATION（HDF5 **数据回放** + 再采集/可选增广）
 - 🎯 **模块化设计**: 清晰的分层架构，易于扩展和定制
 - 🔧 **开箱即用**: 提供常用控制器（OSC臂控制、夹爪控制）
 - 🎲 **场景随机化**: 支持物体位姿、光照的随机化配置
@@ -105,10 +105,45 @@ HDF5 → DataDevice → Interpolator → Controllers → Robot → DataStorage
     Task Info                                          Enhanced HDF5
 ```
 
-1. 指定已有数据集路径
-2. 配置插值器（可选）
-3. 运行数据增强脚本
-4. 框架自动读取数据、插值、回放、保存
+1. 指定已有数据集路径（含 `record/*.hdf5`）
+2. 配置插值器（可选，在 `DataDevice` 上接入）
+3. 运行 `data_collection_aug.py`（AUGMENTATION 模式）
+4. 框架 **按时间步回放 HDF5 动作** 驱动仿真，可选插值后再次采集并保存
+
+### 小节：以 OpenLoong 在 OrcaLab 中为例
+
+您需要在https://simassets.orca3d.cn/中资产中心->机器人资产->订阅openloong资产和服务资产->ShopScene_Scaning
+
+订阅后下次启动OrcaLab后您可以手动加载 src/examples/超市场景青龙机器人数采案例/openloong_shop.json 来自动装配好布局。
+
+在示例目录 `src/examples/dataCollection` 下，通过 `--level`、`--agent_name` 与 `--task_config` 指定 OpenLoong 与场景配置，即可开展采集、**数据回放**与增广再采集：
+
+**简单用法**
+
+- 安装依赖（见上文「快速开始」），启动 OrcaLab 并加载与 `example.yaml` 一致的场景；**遥控采集**需连接 VR 手柄。
+- 在仓库中进入 `src/examples/dataCollection` 后执行下方命令；`--level example` 对应子目录名，原始数据会落在 `dataset/openloong/example/`，回放再采集结果在 `aug_dataset/openloong/example/`。
+- **数据回放**：由 [`DataDevice`](src/devices/data_device.py) 读取 HDF5，在仿真中逐步把记录的动作注入臂/夹爪控制器；调度逻辑见 `DataCollectionManager` 的 AUGMENTATION 分支（`load_data`、恢复 `scene_info`/`task_info` 后进入 `run_episode`）。
+- 跑**数据回放 / 增广脚本**前，请确保 `dataset/openloong/example/` 下已有若干条采集轨迹（每个 UUID 子目录内含 `record/proprio_stats.hdf5` 等）。
+
+**遥控采集**
+
+```bash
+cd src/examples/dataCollection
+python data_collection_tele.py --level example --agent_name openloong --task_config example.yaml
+```
+
+**数据回放**
+
+示例中与 **数据增广（再采集）** 共用同一入口：运行 `data_collection_aug.py` 即进入 AUGMENTATION 模式——按轨迹单元依次 `load_data`，每仿真步 `device.update()` 推进 HDF5 游标并驱动控制器，轨迹跑完后可将新数据写入 `aug_dataset/`（`loop_playback=True` 时会从头循环单元队列）。
+
+**数据增广**
+
+与回放共用下列命令；在代码中为 `DataDevice(..., interpolator=...)` 接入插值器即可在回放前对时间序列做增广（参见 `devices/data_device.py`）。
+
+```bash
+cd src/examples/dataCollection
+python data_collection_aug.py --level example --agent_name openloong --task_config example.yaml
+```
 
 ---
 
