@@ -116,14 +116,14 @@ HDF5 → DataDevice → Interpolator → Controllers → Robot → DataStorage
 
 订阅后下次启动OrcaLab后您可以手动加载 src/examples/超市场景青龙机器人数采案例/openloong_shop.json 来自动装配好布局。
 
-在示例目录 `src/examples/dataCollection` 下，通过 `--level`、`--agent_name` 与 `--task_config` 指定 OpenLoong 与场景配置，即可开展采集、**数据回放**与增广再采集：
+在示例目录 `src/examples/dataCollection` 下，通过 `--level`、`--agent_name` 与 `--task_config` 指定机器人与场景配置，即可开展采集、**仅回放**与**增广再采集**：
 
 **简单用法**
 
 - 安装依赖（见上文「快速开始」），启动 OrcaLab 并加载与 `example.yaml` 一致的场景；**遥控采集**需连接 VR 手柄。
-- 在仓库中进入 `src/examples/dataCollection` 后执行下方命令；`--level example` 对应子目录名，原始数据会落在 `dataset/openloong/example/`，回放再采集结果在 `aug_dataset/openloong/example/`。
-- **数据回放**：由 [`DataDevice`](src/devices/data_device.py) 读取 HDF5，在仿真中逐步把记录的动作注入臂/夹爪控制器；调度逻辑见 `DataCollectionManager` 的 AUGMENTATION 分支（`load_data`、恢复 `scene_info`/`task_info` 后进入 `run_episode`）。
-- 跑**数据回放 / 增广脚本**前，请确保 `dataset/openloong/example/` 下已有若干条采集轨迹（每个 UUID 子目录内含 `record/proprio_stats.hdf5` 等）。
+- 在仓库中进入 `src/examples/dataCollection` 后执行下方命令；`--level example` 对应子目录名，原始数据在 `dataset/<agent>/<level>/`；**增广再采集**会额外写入 `aug_dataset/<agent>/<level>/`，**仅回放**不写 `aug_dataset/`。
+- **仅回放 / 增广回放**：均由 [`DataDevice`](src/devices/data_device.py) 读 HDF5，在仿真中逐步把记录注入臂/夹爪控制器；调度见 `DataCollectionManager` 的 AUGMENTATION 分支（`load_data`、恢复 `scene_info`/`task_info` 后进入 `run_episode`）。
+- 跑 `data_collection_replay.py` 或 `data_collection_aug.py` 前，请确保 `dataset/<agent>/<level>/` 下已有若干条采集轨迹（每个 UUID 子目录内含 `record/proprio_stats.hdf5` 等）。
 
 **遥控采集**
 
@@ -132,13 +132,18 @@ cd src/examples/dataCollection
 python data_collection_tele.py --level example --agent_name openloong --task_config example.yaml
 ```
 
-**数据回放**
+**数据仅回放**
 
-示例中与 **数据增广（再采集）** 共用同一入口：运行 `data_collection_aug.py` 即进入 AUGMENTATION 模式——按轨迹单元依次 `load_data`，每仿真步 `device.update()` 推进 HDF5 游标并驱动控制器，轨迹跑完后可将新数据写入 `aug_dataset/`（`loop_playback=True` 时会从头循环单元队列）。
+运行 [`data_collection_replay.py`](src/examples/dataCollection/data_collection_replay.py)：仍为 AUGMENTATION 调度（按轨迹单元 `load_data` 读取 `dataset/<agent>/<level>/`，每步 `device.update()` 推进 HDF5 游标并驱动臂/夹爪控制器），但**不挂载** `DataStorage`（`data_storage=None`），因此不会向 `aug_dataset/` 写入再采集数据；`DataDevice` 固定 `interpolator=None`，加载时不对时间序列做插值增密。观测由脚本内 `obs_callback` 提供占位的 `replay` 向量。`loop_playback=True` 时单元队列耗尽后会从头循环。
 
-**数据增广**
+```bash
+cd src/examples/dataCollection
+python data_collection_replay.py --level example --agent_name openloong --task_config example.yaml
+```
 
-与回放共用下列命令；在代码中为 `DataDevice(..., interpolator=...)` 接入插值器即可在回放前对时间序列做增广（参见 `devices/data_device.py`）。
+**数据增广（再采集）**
+
+运行 [`data_collection_aug.py`](src/examples/dataCollection/data_collection_aug.py)：从 `dataset/` 读入原始轨迹，回放过程中通过 `DataStorage` 将新轨迹写入 `aug_dataset/<agent>/<level>/`，并可按需配合 `save_video` 录屏。若要在**加载 HDF5 后、仿真回放前**对时间序列做插值/噪声等增广，在代码里为 `DataDevice(..., interpolator=OpenLoongInterpolator(...))` 传入插值器（逻辑见 [`data_device.py`](src/devices/data_device.py) 中 `_apply_interpolation`）。
 
 ```bash
 cd src/examples/dataCollection
