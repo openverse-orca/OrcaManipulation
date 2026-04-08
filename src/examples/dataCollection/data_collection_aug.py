@@ -9,6 +9,8 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+sys.path.append(os.path.join("/home/orca/Projects/", "OrcaGym"))
+
 from devices.data_device import DataDevice
 from scene.scene_manager import SceneManager
 from task.pick_place_task import PickPlaceTask
@@ -60,7 +62,7 @@ def main():
     if agent_name == "openloong":
         from conf import openloong_conf as agent_conf
         from dataStorage.openloong_data_storage import OpenLoongDataStorage
-        data_storage = OpenLoongDataStorage(dataset_path=os.path.join(base_dir, "aug_dataset", agent_name, level), hdf5_path="record/proprio_stats.hdf5")
+        data_storage = OpenLoongDataStorage(dataset_path=os.path.join(base_dir, "aug_dataset", agent_name, level), hdf5_path="record/proprio_stats.hdf5",)
     elif agent_name == "tiangong2":
         from conf import tiangong2_conf as agent_conf
         from dataStorage.tiangong_data_storage import Tiangong2DataStorage
@@ -74,11 +76,7 @@ def main():
         default_joint_values[joint_name] = value
 
     orca_logger.info("Creating device")
-    data_device = DataDevice(
-        os.path.join(base_dir, "dataset", agent_name, level),
-        "record/proprio_stats.hdf5",
-        loop_playback=True,
-    )
+    data_device = DataDevice(os.path.join(base_dir, "dataset", agent_name, level), "record/proprio_stats.hdf5", interpolator=OpenLoongInterpolator(noise_value=0.03))
 
     orca_logger.info("Creating scene manager")
     with open(os.path.join(base_dir, task_config), "r", encoding="utf-8") as f:
@@ -107,13 +105,13 @@ def main():
     data_collection_manager.save_video = True
 
     orca_logger.info("Disabling position controller")
-    data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
+    # data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
 
     orca_logger.info("Creating left arm controller")
-    controllers.add_arm_osc_openloong_data_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, data_device, left_arm=True)
+    controllers.add_arm_ik_data_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, data_device, left_arm=True)
 
     orca_logger.info("Creating right arm controller")
-    controllers.add_arm_osc_openloong_data_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, data_device, left_arm=False)
+    controllers.add_arm_ik_data_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, data_device, left_arm=False)
 
     if agent_name == "openloong":
         orca_logger.info("Creating left gripper controller")
@@ -131,7 +129,7 @@ def main():
         raise ValueError(f"Invalid agent name: {agent_name}")
 
     orca_logger.info("Creating pick place task")
-    data_collection_manager.set_task(EmptyTask(env))
+    data_collection_manager.set_task(PickPlaceTask(env))
     controllers.add_task_status_openloong_data_controller(data_collection_manager, env, data_device, agent_conf.base_body)
 
     data_collection_manager.run()

@@ -182,6 +182,10 @@ class DataCollectionManager:
             orca_logger.error(f"Run error: {e}")
             raise
         finally:
+            if self.data_storage is not None:
+                self.data_storage.clear_data()
+            self.env.reset()
+            self.env.render()
             self.env.close()
 
     def update_scene(self):

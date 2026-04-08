@@ -33,15 +33,21 @@ class Tiangong2DataStorage(AbstractDataStorage):
         hand_motor_names = [env.actuator(hand_motor_name) for hand_motor_name in hand_motor_names]
         hand_motor_id = [env.model.actuator_name2id(hand_motor_name) for hand_motor_name in hand_motor_names]
 
+        arm_motor_names = tiangong2_conf.l_arm["motors_names"] + tiangong2_conf.r_arm["motors_names"]
+        arm_motor_names = [env.actuator(name) for name in arm_motor_names]
+        arm_motor_id = [env.model.actuator_name2id(name) for name in arm_motor_names]
+
         ee_site_names = [tiangong2_conf.l_arm["ee_site_name"], tiangong2_conf.r_arm["ee_site_name"]]
         ee_site_names = [env.site(ee_site_name) for ee_site_name in ee_site_names]
 
         qpos = env.query_joint_qpos(joint_names)
         hand_qpos = env.query_joint_qpos(hand_names)
         ee_site_pos_quat = env.query_site_pos_and_quat_B(ee_site_names, [env.body(tiangong2_conf.base_body)])
-        hand_motor_values = [env.ctrl[hand_motor_id] for hand_motor_id in hand_motor_id]
+        hand_motor_values = [env.ctrl[id] for id in hand_motor_id]
+        arm_motor_values = [env.ctrl[id] for id in arm_motor_id]
 
         obs["/action/joint/position"] = np.array([qpos[joint_name] for joint_name in joint_names], dtype=np.float32).flatten()
+        obs["/action/joint/motor"] = np.array(arm_motor_values, dtype=np.float32).flatten()
         obs["/action/effector/position"] = np.array([hand_qpos[hand_name] for hand_name in hand_names], dtype=np.float32).flatten()
         obs["/action/effector/motor"] = np.array([hand_motor_values], dtype=np.float32).flatten()
         obs["/action/end/position"] = np.array([ee_site_pos_quat[ee_site_name]["xpos"] for ee_site_name in ee_site_names], dtype=np.float32)

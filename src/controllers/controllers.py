@@ -84,17 +84,21 @@ def add_arm_osc_pico_controller(data_collection_manager: DataCollectionManager,
     data_collection_manager.add_controller(arm_osc_controller)
 
 
-def add_arm_ik_pico_controller(data_collection_manager: DataCollectionManager,
+def add_arm_ik_data_controller(data_collection_manager: DataCollectionManager,
                                env: OrcaGymLocalEnv,
                                arm_config: dict,
                                base_body: str,
-                               device: PicoJoystickDevice,
-                               key: PicoJoystickKey):
+                               device: DataDevice,
+                               left_arm: bool):
     ctrl_name = [env.actuator(pos_name) for pos_name in arm_config["positions_names"]]
     init_ctrl = {name: init_val for name, init_val in zip(ctrl_name, arm_config["positions_init_ctrl"])}
-    print(f"inif_ctrl: {init_ctrl}")
     arm_ik_controller = create_arm_ik_controller(env, arm_config, base_body, ctrl_name, init_ctrl)
-    device.bind_transform_event(key, arm_ik_controller.update_goal)
+    if left_arm:
+        device.bind_dataset_event("/action/end/position", (0, 3), arm_ik_controller.update_action_position)
+        device.bind_dataset_event("/action/end/orientation", (0, 4), arm_ik_controller.update_action_axisangle)
+    else:
+        device.bind_dataset_event("/action/end/position", (3, 6), arm_ik_controller.update_action_position)
+        device.bind_dataset_event("/action/end/orientation", (4, 8), arm_ik_controller.update_action_axisangle)
     data_collection_manager.add_controller(arm_ik_controller)
 
 def add_arm_osc_openloong_data_controller(data_collection_manager: DataCollectionManager,
@@ -114,6 +118,21 @@ def add_arm_osc_openloong_data_controller(data_collection_manager: DataCollectio
         device.bind_dataset_event("/action/end/position", (3, 6), arm_osc_controller.update_action_position)
         device.bind_dataset_event("/action/end/orientation", (4, 8), arm_osc_controller.update_action_axisangle)
     data_collection_manager.add_controller(arm_osc_controller)
+
+
+def add_arm_position_data_controller(data_collection_manager: DataCollectionManager,
+                                  env: OrcaGymLocalEnv,
+                                  arm_config: dict,
+                                  base_body: str,
+                                  device: DataDevice,
+                                  left_arm: bool):
+    n = len(arm_config["positions_names"])
+    ctrl_name = [env.actuator(name) for name in arm_config["positions_names"]]
+    init_ctrl = {name: val for name, val in zip(ctrl_name, arm_config["positions_init_ctrl"])}
+    arm_controller = create_gripper_2f85_controller(env, {"actuator_ranges": arm_config["positions_ranges"]}, base_body, ctrl_name, init_ctrl, Controller2F85.ControllerType.DATA)
+    index = (0, n) if left_arm else (n, 2 * n)
+    device.bind_dataset_event("/action/joint/position", index, arm_controller.update_ctrl)
+    data_collection_manager.add_controller(arm_controller)
 
 def create_gripper_2f85_controller(env: OrcaGymLocalEnv,
                                   gripper_config: dict,

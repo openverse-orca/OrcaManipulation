@@ -9,7 +9,7 @@ import numpy as np
 from orca_gym.environment import OrcaGymLocalEnv
 from orca_gym.scene.orca_gym_scene import Actor, MaterialInfo, LightInfo, OrcaGymScene
 from orca_gym.log import OrcaLog
-from scene.random_util import choose_random_indices, get_random_qpos, get_random_transform
+from scene.random_util import choose_random_indices, get_random_qpos, get_random_transform, get_random_material
 
 orca_log = OrcaLog.get_instance()
 
@@ -144,12 +144,15 @@ class SceneManager:
             self.spawn_actors()
             self.spawn_lights()
             self.publish_scene()
+            self.set_actor_material()
             self._first_spawn_actor = False
         if self._first_spawn_actor:
             self.publish_scene_without_init_env()
             self._first_spawn_actor = False
             self.spawn_actors()
             self.publish_scene()
+            self.set_actor_material()
+            
         self._random_count += 1
 
     def spawn_actors(self):
@@ -170,7 +173,19 @@ class SceneManager:
             elif dof == 1:
                 center = self._config.get("actor", {}).get("random", {}).get("one_dof", {}).get("center")
                 self.add_actor(actor_name, actor_spawnable, [center[0], center[1], center[2]], [0, 0, 0, 1])
-    
+
+
+    def set_actor_material(self):
+        random_material = self._config.get("actor", {}).get("random", {}).get("material", False) 
+        orca_log.info(f"random_material is {random_material}")    
+        if not random_material:
+            return
+        actor_names = self._config.get("actor", {}).get("names", [])
+        for i in range(len(actor_names)):
+            actor_name = actor_names[i]
+            base_color = MaterialInfo(get_random_material())
+            self._scene.set_material_info(actor_name, base_color)
+
     def is_update_light(self):
         light_config = self._config.get("light", {})
         light_random = light_config.get("random", {})

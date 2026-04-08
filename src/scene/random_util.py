@@ -30,3 +30,6 @@ def choose_random_indices(nums: int, nums_range: list[int])-> list[int]:
     pick_nums = (np.random.randint(nums_range[0], nums_range[1]) 
                 if nums_range[0] != nums_range[1] else nums_range[0])
     return np.random.choice(range(nums), pick_nums, replace=False)
+
+def get_random_material() -> np.array:
+    return np.array([np.random.uniform(0, 255), np.random.uniform(0, 255), np.random.uniform(0, 255), np.random.uniform(0, 1)])

@@ -9,6 +9,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from scene.scene_manager import SceneManager
+from task.abstract_task import EmptyTask
 from task.pick_place_task import PickPlaceTask
 from devices.abstract_device import PicoJoystickDevice
 from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
@@ -105,7 +106,7 @@ def main():
     controllers.add_arm_osc_pico_controller(data_collection_manager, env, tiangong2_conf.r_arm, tiangong2_conf.base_body, pico_joystick_device, PicoJoystickKey.R_TRANSFORM)
     
     orca_logger.info("Creating pick place task")
-    data_collection_manager.set_task(PickPlaceTask(env))
+    data_collection_manager.set_task(EmptyTask(env))
     controllers.add_task_status_pico_controller(data_collection_manager, env, pico_joystick_device, tiangong2_conf.base_body)
 
     data_collection_manager.save_video = True
