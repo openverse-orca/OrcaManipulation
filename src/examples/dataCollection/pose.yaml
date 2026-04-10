@@ -1,0 +1,34 @@
+# 右臂：啤酒瓶 → 篮子上方松开（相对 openloong_base_link）
+#
+# dump_pose 显示：瓶与篮的 X 几乎相同（≈0.544），主要差在 Y（瓶约 -0.125，篮约 +0.22）。
+# 放置段应优先对准「篮子 body」的 r_target_b，而不是大改 r_delta_b 的 X。
+# 改场景后请重新 --dump_pose。
+
+gripper_open: 0
+gripper_close: 220
+
+segments:
+  # 1) 对准瓶身（请按你当前能抓稳的数值微调）
+  - steps: 450
+    l_hold: true
+    r_target_b: [0.6, -0.20465117, -0.14]
+    gripper_l: hold
+    gripper_r: open
+
+  - steps: 180
+    l_hold: true
+    r_hold: true
+    gripper_r: close
+
+  # 3) 右臂移到篮子上方；左臂同步避让（不设 l_hold，用 l_delta_b 相对段起点平移）
+  #    速度由「位移 / steps」决定，与右臂同段则时长一致。挡路或方向反了：改 l_delta_b 符号/量级。
+  #    常见 OpenLoong 基座系：+Y 朝机器人左侧，可把第二项调大以更明显左让。
+  - steps: 450
+    l_delta_b: [-0.05, 0.12, 0.0]
+    r_target_b: [0.56387447, 0.22171457, 0.45]
+    gripper_r: close
+
+  - steps: 160
+    l_hold: true
+    r_hold: true
+    gripper_r: open

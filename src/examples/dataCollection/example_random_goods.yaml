@@ -1,0 +1,40 @@
+# 商店多物体随机生成（原 example 默认行为备份）
+# 需要随机货架物体用于数据采集时，可将 task_config 指向本文件
+
+level_name: "example"
+type: "pick_and_place"
+
+actor:
+  names: ["bottle_red", "jar_01", "bottle_blue", "salt", "can"]
+  spawnable: ["assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/bottle_red", 
+    "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/jar_01", 
+    "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/bottle_blue", 
+    "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/salt", 
+    "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/can"]
+  joints: ["bottle_red_joint", "jar_01_joint", "bottle_blue_joint", "salt_joint", "can_joint"]
+  joints_dof: [6, 6, 6, 6, 6]
+  random:
+    qpos: true
+    nums: [1, 3]
+    six_dof:
+      center: [-6.22, 2.78, 1.10]
+      bound_position: [[-0.2, 0.2], [-0.2, 0.2], [0, 0]]
+      bound_rotation: [[0, 0], [0, 0], [0, 1]]
+
+light:
+  names: ["spotlight1"]
+  spawnable: ["prefabs/spotlight"]
+  random:
+    position: false
+    rotation: false
+    center: [0, 0, 0]
+    bound_position: [[-1, 1], [-1, 1], [0, 2]]
+    bound_rotation: [[0, 3.14159], [0, 3.14159], [0, 3.14159]]
+    nums: [1, 1]
+    cycle: 20  
+
+task:
+  type: "pick_and_place"
+  goal:
+    name: "basket"
+    site: "basket_site"

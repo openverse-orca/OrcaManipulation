@@ -288,11 +288,19 @@ class SceneManager:
         actor_random_one_dof = actor_random.get("one_dof", None)
 
         if actor_random_qpos:
-            if not (actor_random_nums[0] > 0 
-                and actor_random_nums[1] > actor_random_nums[0]
-                and actor_random_nums[1] <= len(actor_names)):
-                orca_log.error("The actor.random.nums is invalid, the first number must be greater than 0, the second number must be greater than the first number, and the second number must be less than the number of actors.")
-                raise ValueError("The actor.random.nums is invalid, the first number must be greater than 0, the second number must be greater than the first number, and the second number must be less than the number of actors.")
+            # nums 为 [min_count, max_count]：每次随机生成数量 ∈ [min, max]；二者相等则固定为该数量。
+            # 仅 1 个 actor 时必须允许 [1,1]，否则无法通过校验。
+            if not (
+                actor_random_nums[0] > 0
+                and actor_random_nums[1] >= actor_random_nums[0]
+                and actor_random_nums[1] <= len(actor_names)
+            ):
+                orca_log.error(
+                    "The actor.random.nums is invalid: require 0 < nums[0] <= nums[1] <= len(actor.names)."
+                )
+                raise ValueError(
+                    "The actor.random.nums is invalid: require 0 < nums[0] <= nums[1] <= len(actor.names)."
+                )
             
         if 6 in actor_joints_dof:
             if actor_random_six_dof is None:
