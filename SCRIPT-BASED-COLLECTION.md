@@ -33,16 +33,14 @@ pip install -r requirements.txt
 1. 资产库链接: https://simassets.orca3d.cn/
 
 2. 资产中心 → 订阅 **ShopScene_Scaning**
-![](../../img/shucai/shop_scan.png)
 
-1. 资产中心 → 订阅 **openloong**
-![](../../img/shucai/openloong.png)
+3. 资产中心 → 订阅 **openloong**
 
 ## 二、数据采集
 
 完成以上准备工作后，以 `青龙机器人` + `超市场景` 为例，添加布局后，开始数据采集任务。
 
- - **资产包订阅成功**：个人中心有已订阅`ShopScene_Scaning`、`openloong`资产包，
+ - **资产包订阅成功**：个人中心应显示已订阅 **`ShopScene_Scaning`**、**`openloong`** 资产包。
 
 #### 2.1 打开 OrcaLab 中的场景与布局
 
@@ -57,30 +55,21 @@ conda activate orcalab
 orcalab
 ```
 3. 启动过程中会自动下载已订阅的资产，请等待下载与同步完成。
-![](../../img/shucai/shop_download.png)
-
 4. 资产下载完成后，在选择场景弹框中，选择 **shop 场景** ，选择默认布局。
-![](../../img/shucai/shop_select.png)
-
 5. 在 OrcaLab 客户端菜单栏中，选择 **打开布局**，加载 `shop_openloong_script_based.json` 文件。
-```bash
-#布局JSON 文件路径（注：布局文件定义了机器人初始位置及姿态）
-  ~/OrcaManipulation/src/examples/超市场景青龙机器人数采案例/shop_openloong_script_based.json
+```text
+# 布局 JSON 路径（布局文件定义机器人初始位姿）
+~/OrcaManipulation/src/examples/超市场景青龙机器人数采案例/shop_openloong_script_based.json
 ```
-![](../../img/shucai/shop_layout.png)
-
-6.shopScense示例场景的yaml文件已配置为scriped_example.yaml，如需详细了解配置参数含义，请参考第三章节 数据采集任务配置文件说明
-```bash
-#scriped_example.yaml文件路径
+6. 超市场景示例的任务 YAML 为 **`scripted-example.yaml`**（与遥操作示例同结构的任务配置）；字段含义见 **`DEVELOPER_GUIDE.md`** 中与任务 YAML、**`example.yaml`** 相关的说明。
+```text
+# 任务与 pose 示例所在目录
 ~/OrcaManipulation/src/examples/dataCollection
 ```
-![](../../img/shucai/shop_example1.png)
-
 ### 2.2 启动仿真
 
 1. 点击界面右上角 **绿色启动按钮**
 2. 选择 **无仿真程序（手动启动）**
-![](../../img/shucai/shop_sim1.png)
 
 ### 2.3 开启数采脚本
 
@@ -90,12 +79,11 @@ conda activate orcalab
 ```
 
 2. 进入数采脚本目录并启动
-1) 确认 **`scripted-example.yaml`**、**`pose.yaml`** 已按任务配置（或直接使用仓库内示例）。
+1)  确认 **`scripted-example.yaml`**、**`pose.yaml`** 已按任务配置（或直接使用仓库内示例）。
 2) 在 **`src/examples/dataCollection`** 下执行：
 ```bash
 cd ~/OrcaManipulation/src/examples/dataCollection
-#启动数据采集脚本,确保example.yaml文件中资产配置正确
-#参数说明（根据实际填写）:level 场景名称，agent_name 机器人名称，task_config 任务文件
+#启动数据采集脚本，参数说明（根据实际填写）:level 场景名称，agent_name 机器人名称，task_config 任务文件
 python data_collection_scripted.py --level shop_scaning --task_config scripted-example.yaml --pose_file pose.yaml
 ```
 
@@ -121,13 +109,13 @@ python data_collection_scripted.py --level shop_scaning --task_config scripted-e
 python data_collection_scripted.py --level shop_scaning --task_config scripted-example.yaml --pose_file pose.yaml --dump_pose
 ```
 
-场景就绪后，脚本会打印基座系下左/右臂末端及名称含 **`bottle`**、**`basket`** 的 body 位置，随后退出。将数值抄入 **`pose.yaml`** 后，再回到 **步骤 4** 正式执行轨迹。
+场景就绪后，脚本会打印基座系下左/右臂末端及名称含 **`bottle`**、**`basket`** 的 body 位置，随后退出。将数值抄入 **`pose.yaml`** 后，再回到 **2.3** 正式执行轨迹。
 
 ---
 
 ### 2.5（可选）：录制 HDF5 `--record_hdf5`
 
-需要生成与 **`data_collection_tele`** 相同结构的 HDF5，供 **`data_collection_aug.py`** 回放时，在 **步骤 4** 的命令末尾增加 **`--record_hdf5`**：
+需要生成与 **`data_collection_tele`** 相同结构的 HDF5，供 **`data_collection_aug.py`** 回放时，在 **2.3** 的命令末尾增加 **`--record_hdf5`**：
 
 ```bash
 python data_collection_scripted.py --level shop_scaning --task_config scripted-example.yaml --pose_file pose.yaml --record_hdf5
@@ -145,7 +133,7 @@ python data_collection_scripted.py --level shop_scaning --task_config scripted-e
 在 **OrcaLab 仿真已运行**、**`--level`** 与录制时一致、且 **`dataset/openloong/<level>/`** 下已有单元目录时：
 
 ```bash
-cd src/examples/dataCollection
+cd ~/OrcaManipulation/src/examples/dataCollection
 python data_collection_aug.py --level shop_scaning --agent_name openloong --task_config scripted-example.yaml
 ```
 
@@ -155,7 +143,7 @@ python data_collection_aug.py --level shop_scaning --agent_name openloong --task
 
 ## 附录 A：命令行参数补充
 
-- **`--dump_pose`**：仅打印位姿，不执行轨迹（见步骤 5）。
+- **`--dump_pose`**：仅打印位姿，不执行轨迹（见 **2.4**）。
 - **`--delta_b BX BY BZ`**：无分段文件时，双臂同加基座系位移。
 - **`--l_target_b` / `--r_target_b`**、**`--l_quat_b` / `--r_quat_b`**、**`--steps`**、**`--gripper_open` / `--gripper_close`**：单段模式或覆盖文件默认值；详见 **`data_collection_scripted.py`** 文件头与 `argparse`。
 
@@ -211,7 +199,7 @@ python data_collection_aug.py --level shop_scaning --agent_name openloong --task
 |------|------|
 | `src/examples/dataCollection/data_collection_scripted.py` | 脚本采集入口 |
 | `src/examples/dataCollection/data_collection_aug.py` | HDF5 回放与增强采集 |
-| `src/examples/超市场景青龙机器人数采案例/shop_openloong_script_based.json` | 推荐 OrcaLab 布局（步骤 2） |
+| `src/examples/超市场景青龙机器人数采案例/shop_openloong_script_based.json` | 推荐 OrcaLab 布局（见 **2.1** 第 5 步） |
 | `src/examples/dataCollection/pose.yaml` | 分段位姿与夹爪示例 |
 | `src/examples/dataCollection/scripted-example.yaml` | 场景任务配置示例 |
 | `src/conf/openloong_conf.py` | OpenLoong 臂、末端 site、夹爪、基座 |
