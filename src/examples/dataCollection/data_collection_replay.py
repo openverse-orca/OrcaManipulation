@@ -47,6 +47,13 @@ def main():
     parser.add_argument("--task_config", type=str, required=True, help="任务配置文件")
     parser.add_argument("--replay_mode", type=str, default="osc", choices=["osc", "ik", "position"], 
                         help="回放数据模式， osc, ik使用末端位置轨迹进行回放， position使用位置控制器数值进行回放")
+    parser.add_argument(
+        "--data_root",
+        type=str,
+        default="aug_dataset",
+        choices=["dataset", "aug_dataset"],
+        help="回放数据根目录（位于本脚本同级目录下）：dataset=遥操作/脚本原始数据，aug_dataset=增强后的数据（默认）",
+    )
 
     args = parser.parse_args()
 
@@ -54,6 +61,7 @@ def main():
     agent_name = args.agent_name
     task_config = args.task_config
     replay_mode = args.replay_mode
+    data_root = args.data_root
 
     orca_logger.info(f"log file: {log_file}")
     orca_logger.info(f"log dir: {log_dir}")
@@ -76,7 +84,9 @@ def main():
         default_joint_values[joint_name] = value
 
     orca_logger.info("Creating device")
-    data_device = DataDevice(os.path.join(base_dir, "aug_dataset", agent_name, level), "record/proprio_stats.hdf5")
+    dataset_path = os.path.join(base_dir, data_root, agent_name, level)
+    orca_logger.info(f"Dataset path: {dataset_path}")
+    data_device = DataDevice(dataset_path, "record/proprio_stats.hdf5")
 
     orca_logger.info("Creating scene manager")
     with open(os.path.join(base_dir, task_config), "r", encoding="utf-8") as f:
