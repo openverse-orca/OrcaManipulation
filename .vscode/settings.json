@@ -1,3 +1,5 @@
 {
-    "python.defaultInterpreterPath": "/home/orca/miniconda3/envs/orca_gym/bin/python"
+    "python.defaultInterpreterPath": "/home/orca/miniconda3/envs/orca_gym/bin/python",
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda"
 }

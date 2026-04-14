@@ -1,0 +1,44 @@
+level_name: "warehouse"
+
+type: "scan_qr"
+
+actor:
+  names: ["blue_bottle", "red_bottle", 'wifi', 'fan']
+  spawnable: [
+    "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/bottle_blue",
+    "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/bottle_red",
+    "assets/e071469a36d3c8aa/default_project/warehouse_scanning/prop/prefabs/3c_littlebox_02", 
+    "assets/e071469a36d3c8aa/default_project/warehouse_scanning/prop/prefabs/3c_c12c"]
+  joints: ["bottle_blue_joint", "bottle_red_joint", "3c_littlebox_02_joint", "3c_c12c_joint"]
+  joints_dof: [6, 6, 6, 6]
+  bodys: ["bottle_blue", "bottle_red", "3c_littlebox_02", "3c_c12c"]
+  random:
+    qpos: true
+    nums: [1, 3]
+    six_dof:
+      center: [-8.40, 1.53, 0.76]
+      bound_position: [[-0.12, 0.12], [-0.18, 0.18], [0, 0]]
+      bound_rotation: [[0, 0], [0, 0], [90, 90]]
+
+light:
+  names: ["spotlight1"]
+  spawnable: ["prefabs/spotlight"]
+  random:
+    position: false
+    rotation: false
+    center: [0, 0, 0]
+    bound_position: [[-1, 1], [-1, 1], [0, 2]]
+    bound_rotation: [[0, 3.14159], [0, 3.14159], [0, 3.14159]]
+    nums: [1, 1]
+    # 控制多少个任务后更新灯光
+    cycle: 20  
+
+
+task:
+  type: "scan_qr"
+  goal:
+    name: "barcode"
+    body: "Me_Prop_Barcode_01"
+    site: "Me_Prop_Barcode_01site"
+
+    

@@ -43,15 +43,22 @@ class SceneManager:
 
         return actor_joints
 
+    def get_actors_bodys_in_env(self)-> list[str]:
+        actor_names = self._config.get("actor", {}).get("names", [])
+        actor_bodys = self._config.get("actor", {}).get("bodys", [])
+        return [actor_names[i] + f"_{actor_bodys[i]}" for i in range(len(actor_names))]
+
     def serialize_scene(self, in_scene_actors: list[str])-> dict:
         self.scene_info = {}
         actor_names = self._config.get("actor", {}).get("names", [])
         actor_joints = self.get_actors_joints_in_env()
+        actor_bodys = self.get_actors_bodys_in_env()
         for i in range(len(actor_joints)):
             if actor_joints[i] in in_scene_actors:
                 self.scene_info[actor_names[i]] = {
                     "joint_name": actor_joints[i],
                     "joint_qpos": list(self.get_actor_qpos(actor_joints[i])),
+                    "body_name": actor_bodys[i],
                 }
         return self.scene_info
 
