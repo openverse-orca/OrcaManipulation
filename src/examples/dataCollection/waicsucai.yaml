@@ -63,7 +63,7 @@ light:
 task:
   type: "pick_and_place"
   goal:
-    name: "open_cardboard_box_1"
-    site: "cardboardbox_01site"
+    name: "blue_plastic_storage_bin_1"
+    site: "bluebox_01site"
 
     
