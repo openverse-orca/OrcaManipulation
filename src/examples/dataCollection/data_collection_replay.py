@@ -43,7 +43,7 @@ orca_logger = get_orca_logger(name="DataCollection",
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--level", type=str, required=True, help="场景的名称")
-    parser.add_argument("--agent_name", type=str, required=True, choices=["openloong","tiangong2"], help="机器人型号")
+    parser.add_argument("--agent_name", type=str, required=True, choices=["openloong","tiangong2","d12"], help="机器人型号")
     parser.add_argument("--task_config", type=str, required=True, help="任务配置文件")
     parser.add_argument("--replay_mode", type=str, default="osc", choices=["osc", "ik", "position"], 
                         help="回放数据模式， osc, ik使用末端位置轨迹进行回放， position使用位置控制器数值进行回放")
@@ -75,6 +75,8 @@ def main():
         from conf import openloong_conf as agent_conf
     elif agent_name == "tiangong2":
         from conf import tiangong2_conf as agent_conf
+    elif agent_name == "d12":
+        from conf import d12_conf as agent_conf
     else:
         raise ValueError(f"Invalid agent name: {agent_name}")
 
@@ -130,7 +132,7 @@ def main():
     else:
         raise ValueError(f"Invalid replay mode: {replay_mode}")
 
-    if agent_name == "openloong":
+    if agent_name in ["openloong", "d12"]:
         orca_logger.info("Creating left gripper controller")
         controllers.add_gripper_2f85_openloong_data_controller(data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body, data_device, left_gripper=True)
 

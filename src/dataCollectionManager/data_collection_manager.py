@@ -271,8 +271,8 @@ class DataCollectionManager:
                             orca_logger.info(f"Start recording data unit: {unit_path}")
                         else:
                             orca_logger.info("Start recording data unit")
-                        if self.scene_manager is not None and self.mode == self.DataCollectionMode.TELECONTROL:
-                            self.scene_manager.show_ui_message(1, "开始采集", "0x00ff00", showtime=2)
+                        #if self.scene_manager is not None and self.mode == self.DataCollectionMode.TELECONTROL:
+                        #    self.scene_manager.show_ui_message(1, "开始采集", "0x00ff00", showtime=2)
                         data_recording_started = True
                     if self.data_storage is not None:
                         self.data_storage.collection_data(obs, self.env)

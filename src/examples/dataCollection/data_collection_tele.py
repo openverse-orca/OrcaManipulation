@@ -43,7 +43,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--level", type=str, required=True, help="场景的名称")
-    parser.add_argument("--agent_name", type=str, required=True, choices=["openloong", "tiangong2"], help="机器人型号")
+    parser.add_argument("--agent_name", type=str, required=True, choices=["openloong", "tiangong2", "d12"], help="机器人型号")
     parser.add_argument("--task_config", type=str, required=True, help="任务配置文件")
 
     args = parser.parse_args()
@@ -68,6 +68,10 @@ def main():
         from conf import tiangong2_conf as agent_conf
         from dataStorage.tiangong_data_storage import Tiangong2DataStorage
         data_storage = Tiangong2DataStorage(dataset_path=os.path.join(base_dir, "dataset", agent_name, level), hdf5_path="record/proprio_stats.hdf5")
+    elif agent_name == "d12":
+        from conf import d12_conf as agent_conf
+        from dataStorage.d12_data_storage import D12DataStorage
+        data_storage = D12DataStorage(dataset_path=os.path.join(base_dir, "dataset", agent_name, level), hdf5_path="record/proprio_stats.hdf5")
     else:
         raise ValueError(f"Invalid agent name: {agent_name}")
 
