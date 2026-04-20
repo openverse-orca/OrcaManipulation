@@ -47,8 +47,21 @@ def main():
     parser.add_argument("--task_config", type=str, required=True, help="任务配置文件")
     parser.add_argument("--replay_mode", type=str, default="osc", choices=["osc", "ik", "position"], 
                         help="回放数据模式， osc, ik使用末端位置轨迹进行回放， position使用位置控制器数值进行回放")
+    parser.add_argument(
+        "--replay_loops",
+        type=int,
+        default=1,
+        help="完整遍历一遍当前数据目录下的全部回合算 1 轮；此处指定循环轮数（默认 1）",
+    )
+    parser.add_argument(
+        "--no_reset_pose_between_loops",
+        action="store_true",
+        help="默认每轮循环前重置手臂关节到 neutral；若指定则跳过该重置",
+    )
 
     args = parser.parse_args()
+    if args.replay_loops < 1:
+        parser.error("--replay_loops 须为 >= 1 的整数")
 
     level = args.level
     agent_name = args.agent_name
@@ -139,7 +152,10 @@ def main():
     data_collection_manager.set_task(PickPlaceTask(env))
     controllers.add_task_status_openloong_data_controller(data_collection_manager, env, data_device, agent_conf.base_body)
 
-    data_collection_manager.run()
+    data_collection_manager.run(
+        replay_loop_count=args.replay_loops,
+        replay_reset_pose_between_loops=not args.no_reset_pose_between_loops,
+    )
 
 if __name__ == "__main__":
     try:

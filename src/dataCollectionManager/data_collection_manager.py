@@ -13,6 +13,7 @@ from controllers.controller_task import TaskStatus, TaskStatusController
 from devices.abstract_device import AbstractDevice
 from scene.scene_manager import SceneManager
 from dataStorage.abstract_data_storage import AbstractDataStorage
+from devices.data_device import DataDevice
 orca_logger = OrcaLog.get_instance()
 
 class DataCollectionManager:
@@ -155,14 +156,41 @@ class DataCollectionManager:
                 self.ctrl[index] = value
         return self.ctrl
 
-    def run(self):
+    def run(self, replay_loop_count: int = 1, replay_reset_pose_between_loops: bool = True):
+        """
+        @param replay_loop_count: AUGMENTATION 回放模式下，完整遍历一遍数据集单元后是否再从头重复；默认 1 即跑完即止。
+        @param replay_reset_pose_between_loops: 开始新一轮遍历前是否将手臂关节重置为 env.default_joint_values（利于重复成功率）。
+        """
         self.env.disable_actuator(self.disable_actuator_group)
 
         try:
+            passes_completed = 0
+            target_loops = max(1, int(replay_loop_count))
+
             while True:
                 self.env.reset()  # self.env.mj_forward()
                 update_scene_ret = self.update_scene()
                 if not update_scene_ret:
+                    if (
+                        self.mode == self.DataCollectionMode.AUGMENTATION
+                        and isinstance(self.device, DataDevice)
+                        and len(self.device._all_unit_datasets_path) > 0
+                    ):
+                        passes_completed += 1
+                        if passes_completed >= target_loops:
+                            orca_logger.info(
+                                f"Replay finished ({passes_completed} full pass(es), target={target_loops})."
+                            )
+                            break
+                        orca_logger.info(
+                            f"Replay pass {passes_completed}/{target_loops} completed, restarting unit queue..."
+                        )
+                        self.device.restart_unit_queue()
+                        if replay_reset_pose_between_loops and getattr(self.env, "default_joint_values", None):
+                            self.env.set_default_joint_values(self.env.default_joint_values)
+                            self.env.mj_forward()
+                        continue
+
                     orca_logger.info("Can't update scene, End")
                     break
                 task_is_success = self.run_episode()
@@ -201,7 +229,6 @@ class DataCollectionManager:
 
                 
             elif self.mode == self.DataCollectionMode.AUGMENTATION:
-                from devices.data_device import DataDevice
                 if type(self.device) != DataDevice:
                     raise ValueError("Device must be a DataDevice for augmentation mode")
                 load_ret = self.device.load_data()

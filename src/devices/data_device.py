@@ -123,6 +123,12 @@ class DataDevice(AbstractDevice):
         @description: 重置待回放数据队列，用于循环回放
         '''
         self.unit_datasets_path = list(self._all_unit_datasets_path)
+
+    def restart_unit_queue(self):
+        '''
+        @description: 从磁盘重新枚举单元目录并重排队列（用于固定轮数的循环回放）
+        '''
+        self.load_unit_dataset()
  
     def load_data(self) ->bool:
         '''
