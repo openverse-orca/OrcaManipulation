@@ -19,7 +19,7 @@ type: "pick_and_place"
 # actor.random.nums: 随机生成的数量范围
 actor:
   names: ["fans1"]
-  spawnable: ["assets/e071469a36d3c8aa/default_project/warehouse_scanning/prop/prefabs/3c_c12c", ]
+  spawnable: ["assets/e071469a36d3c8aa/warehouse_embodiedcompetition_2026hangzhou/embodiedcompetition_2026 hangzhou/c12c/c12c", ]
   joints: ["3c_c12c_joint"]
   # 关节的自由度，值为1, 3, 6
   joints_dof: [6]
@@ -63,7 +63,7 @@ light:
 task:
   type: "pick_and_place"
   goal:
-    name: "blue_plastic_storage_bin_1"
-    site: "bluebox_01site"
+    name: "open_cardboard_box_2"
+    site: "cardboardbox_01site"
 
     

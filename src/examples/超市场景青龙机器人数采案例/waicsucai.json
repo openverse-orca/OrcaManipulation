@@ -154,15 +154,15 @@
             ]
         },
         {
-            "name": "blue_plastic_storage_bin_1",
-            "path": "/blue_plastic_storage_bin_1",
+            "name": "open_cardboard_box_2",
+            "path": "/open_cardboard_box_2",
             "transform": {
-                "position": "[15.184525489807129,0.2635127305984497,1.0640000104904175]",
-                "rotation": "[0.7071067811865476,0.0,0.0,0.7071067811865475]",
+                "position": "[15.254528999328613,0.18863408267498016,1.0639997720718384]",
+                "rotation": "[1.0,0.0,0.0,0.0]",
                 "scale": 1.0
             },
             "type": "AssetActor",
-            "asset_path": "assets/e071469a36d3c8aa/warehouse_embodiedcompetition_2026hangzhou/embodiedcompetition_2026 hangzhou/bluebox_01/bluebox_01",
+            "asset_path": "assets/e071469a36d3c8aa/warehouse_embodiedcompetition_2026hangzhou/embodiedcompetition_2026 hangzhou/cardboardbox_01/cardboardbox_01",
             "modified_properties": []
         }
     ]
