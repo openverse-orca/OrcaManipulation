@@ -7,8 +7,8 @@ actor:
   spawnable: [
     "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/bottle_blue",
     "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/bottle_red",
-    "assets/e071469a36d3c8aa/warehouse_scanning/warehouse_scanning/prop/prefabs/3c_littlebox_02", 
-    "assets/e071469a36d3c8aa/warehouse_scanning/warehouse_scanning/prop/prefabs/3c_c12c"]
+    "assets/e071469a36d3c8aa/default_project/warehouse_scanning/prop/prefabs/3c_littlebox_02", 
+    "assets/e071469a36d3c8aa/default_project/warehouse_scanning/prop/prefabs/3c_c12c"]
   joints: ["bottle_blue_joint", "bottle_red_joint", "3c_littlebox_02_joint", "3c_c12c_joint"]
   joints_dof: [6, 6, 6, 6]
   bodys: ["bottle_blue", "bottle_red", "3c_littlebox_02", "3c_c12c"]
