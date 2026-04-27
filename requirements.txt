@@ -1,4 +1,4 @@
-orca-gym>=25.12.3
+orca-gym>=26.4.2.1
 numba
 termcolor>=2.4.0
 pyyaml

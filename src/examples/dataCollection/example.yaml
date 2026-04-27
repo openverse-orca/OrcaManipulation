@@ -14,6 +14,8 @@ type: "pick_and_place"
 
 # actor.bound_rotation是actor旋转的范围
 # 随机的位置是OrcaEngine坐标系， 而不是Mujoco坐标系，这两个坐标系涉及转换
+# actor.random.qpos: 是否开启随机位置
+# actor.random.material: 是否开启随机材质
 # actor.random.position: 是否随机位置
 # actor.random.rotation: 是否随机旋转
 # actor.random.nums: 随机生成的数量范围
@@ -31,6 +33,7 @@ actor:
   # 如果范围相等，则表示关节是固定的
   random:
     qpos: true
+    material: true
     nums: [1, 3]
     # 6自由度关节的随机范围
     six_dof:
@@ -52,10 +55,10 @@ actor:
 # 参数和actor含义类似
 light:
   names: ["spotlight1"]
-  spawnable: ["prefabs/spotlight"]
+  spawnable: ["prefabs/light"]
   random:
-    position: false
-    rotation: false
+    position: true
+    rotation: true
     center: [0, 0, 0]
     bound_position: [[-1, 1], [-1, 1], [0, 2]]
     bound_rotation: [[0, 3.14159], [0, 3.14159], [0, 3.14159]]

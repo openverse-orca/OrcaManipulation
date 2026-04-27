@@ -36,12 +36,25 @@ class OpenLoongDataStorage(AbstractDataStorage):
         ee_site_names = [openloong_conf.l_arm["ee_site_name"], openloong_conf.r_arm["ee_site_name"]]
         ee_site_names = [env.site(ee_site_name) for ee_site_name in ee_site_names]
 
+        arm_motor_names = openloong_conf.l_arm["motors_names"] + openloong_conf.r_arm["motors_names"]
+        arm_motor_names = [env.actuator(name) for name in arm_motor_names]
+        arm_motor_id = [env.model.actuator_name2id(name) for name in arm_motor_names]
+
+        arm_position_names = openloong_conf.l_arm["positions_names"] + openloong_conf.r_arm["positions_names"]
+        arm_position_names = [env.joint(arm_position_name) for arm_position_name in arm_position_names]
+        arm_position_id = [env.model.actuator_name2id(arm_position_name) for arm_position_name in arm_position_names]
+
         qpos = env.query_joint_qpos(joint_names)
         gripper_qpos = env.query_joint_qpos(gripper_names)
         ee_site_pos_quat = env.query_site_pos_and_quat_B(ee_site_names, [env.body(openloong_conf.base_body)])
-        gripper_motor_values = [env.ctrl[gripper_motor_id] for gripper_motor_id in gripper_motor_id]
+        gripper_motor_values = [env.ctrl[id] for id in gripper_motor_id]
+        arm_motor_values = [env.ctrl[id] for id in arm_motor_id]
+        arm_position_values = [env.ctrl[id] for id in arm_position_id]
 
-        obs["/action/joint/position"] = np.array([qpos[joint_name] for joint_name in joint_names], dtype=np.float32).flatten()
+        obs["state/joint/position"] = np.array([qpos[joint_name] for joint_name in joint_names], dtype=np.float32).flatten()
+        
+        obs["/action/joint/position"] = np.array(arm_position_values, dtype=np.float32).flatten()
+        obs["/action/joint/motor"] = np.array(arm_motor_values, dtype=np.float32).flatten()
         obs["/action/effector/position"] = np.array([gripper_qpos[gripper_name] for gripper_name in gripper_names], dtype=np.float32).flatten()
         obs["/action/effector/motor"] = np.array([gripper_motor_values], dtype=np.float32).flatten()
         obs["/action/end/position"] = np.array([ee_site_pos_quat[ee_site_name]["xpos"] for ee_site_name in ee_site_names], dtype=np.float32)

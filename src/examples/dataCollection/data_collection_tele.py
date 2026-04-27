@@ -7,6 +7,8 @@ import traceback
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
+# sys.path.append(os.path.join("/home/orca/Projects/", "OrcaGym"))
+
 
 from scene.scene_manager import SceneManager
 from task.abstract_task import EmptyTask
@@ -122,7 +124,7 @@ def main():
     controllers.add_arm_osc_pico_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, pico_joystick_device, PicoJoystickKey.R_TRANSFORM)
     
     orca_logger.info("Creating pick place task")
-    data_collection_manager.set_task(EmptyTask(env))
+    data_collection_manager.set_task(PickPlaceTask(env))
     controllers.add_task_status_pico_controller(data_collection_manager, env, pico_joystick_device, agent_conf.base_body)
 
     data_collection_manager.save_video = True

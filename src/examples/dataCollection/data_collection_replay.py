@@ -11,6 +11,7 @@ if project_root not in sys.path:
 
 # sys.path.append(os.path.join("/home/orca/Projects/", "OrcaGym"))
 
+
 from devices.data_device import DataDevice
 from scene.scene_manager import SceneManager
 from task.pick_place_task import PickPlaceTask
@@ -44,12 +45,23 @@ def main():
     parser.add_argument("--level", type=str, required=True, help="场景的名称")
     parser.add_argument("--agent_name", type=str, required=True, choices=["openloong","tiangong2"], help="机器人型号")
     parser.add_argument("--task_config", type=str, required=True, help="任务配置文件")
+    parser.add_argument("--replay_mode", type=str, default="osc", choices=["osc", "ik", "position"], 
+                        help="回放数据模式， osc, ik使用末端位置轨迹进行回放， position使用位置控制器数值进行回放")
+    parser.add_argument(
+        "--data_root",
+        type=str,
+        default="aug_dataset",
+        choices=["dataset", "aug_dataset"],
+        help="回放数据根目录（位于本脚本同级目录下）：dataset=遥操作/脚本原始数据，aug_dataset=增强后的数据（默认）",
+    )
 
     args = parser.parse_args()
 
     level = args.level
     agent_name = args.agent_name
     task_config = args.task_config
+    replay_mode = args.replay_mode
+    data_root = args.data_root
 
     orca_logger.info(f"log file: {log_file}")
     orca_logger.info(f"log dir: {log_dir}")
@@ -61,12 +73,8 @@ def main():
 
     if agent_name == "openloong":
         from conf import openloong_conf as agent_conf
-        from dataStorage.openloong_data_storage import OpenLoongDataStorage
-        data_storage = OpenLoongDataStorage(dataset_path=os.path.join(base_dir, "aug_dataset", agent_name, level), hdf5_path="record/proprio_stats.hdf5",)
     elif agent_name == "tiangong2":
         from conf import tiangong2_conf as agent_conf
-        from dataStorage.tiangong_data_storage import Tiangong2DataStorage
-        data_storage = Tiangong2DataStorage(dataset_path=os.path.join(base_dir, "aug_dataset", agent_name, level), hdf5_path="record/proprio_stats.hdf5")
     else:
         raise ValueError(f"Invalid agent name: {agent_name}")
 
@@ -76,14 +84,18 @@ def main():
         default_joint_values[joint_name] = value
 
     orca_logger.info("Creating device")
-    data_device = DataDevice(os.path.join(base_dir, "dataset", agent_name, level), "record/proprio_stats.hdf5", interpolator=OpenLoongInterpolator(noise_value=0.03))
+    dataset_path = os.path.join(base_dir, data_root, agent_name, level)
+    orca_logger.info(f"Dataset path: {dataset_path}")
+    data_device = DataDevice(dataset_path, "record/proprio_stats.hdf5")
 
     orca_logger.info("Creating scene manager")
     with open(os.path.join(base_dir, task_config), "r", encoding="utf-8") as f:
         config = load(f, Loader=Loader)
     scene_manager = SceneManager(orcagym_addr, config=config)
 
-    data_storage.set_video_path("video")
+
+    def obs_callback(env) -> dict:
+        return {"replay": np.zeros(env.nu, dtype=np.float32)}
 
     orca_logger.info("Creating data collection manager")
     data_collection_manager = DataCollectionManager(
@@ -91,11 +103,11 @@ def main():
         env_name=env_name,
         entry_point=ENTRY_POINT,
         default_joint_values=default_joint_values,
-        obs_callback=data_storage.obs_callback,
+        obs_callback=obs_callback,
         env_index=env_index,
         device=data_device,
         scene_manager=scene_manager,
-        data_storage=data_storage,
+        data_storage=None,
         frame_skip=5,
     )
     env = data_collection_manager.env
@@ -104,14 +116,19 @@ def main():
     data_collection_manager.mode = DataCollectionManager.DataCollectionMode.AUGMENTATION
     data_collection_manager.save_video = True
 
-    orca_logger.info("Disabling position controller")
-    # data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
-
-    orca_logger.info("Creating left arm controller")
-    controllers.add_arm_ik_data_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, data_device, left_arm=True)
-
-    orca_logger.info("Creating right arm controller")
-    controllers.add_arm_ik_data_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, data_device, left_arm=False)
+    if replay_mode == "osc":
+        orca_logger.info("Disabling position controller")
+        data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
+        controllers.add_arm_osc_openloong_data_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, data_device, left_arm=True)
+        controllers.add_arm_osc_openloong_data_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, data_device, left_arm=False)
+    elif replay_mode == "ik":
+        controllers.add_arm_ik_data_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, data_device, left_arm=True)
+        controllers.add_arm_ik_data_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, data_device, left_arm=False)
+    elif replay_mode == "position":
+        controllers.add_arm_position_data_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, data_device, left_arm=True)
+        controllers.add_arm_position_data_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, data_device, left_arm=False)
+    else:
+        raise ValueError(f"Invalid replay mode: {replay_mode}")
 
     if agent_name == "openloong":
         orca_logger.info("Creating left gripper controller")

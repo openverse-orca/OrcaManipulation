@@ -6,7 +6,7 @@
 
 ## ✨ 特性
 
-- 🎮 **双模式支持**: TELECONTROL (VR遥控) + AUGMENTATION（HDF5 **数据回放** + 再采集/可选增广）
+- 🎮 **双模式支持**: TELECONTROL (VR遥控) + AUGMENTATION (数据增强)
 - 🎯 **模块化设计**: 清晰的分层架构，易于扩展和定制
 - 🔧 **开箱即用**: 提供常用控制器（OSC臂控制、夹爪控制）
 - 🎲 **场景随机化**: 支持物体位姿、光照的随机化配置
@@ -45,31 +45,63 @@ DataCollectionManager (核心调度器)
 pip install -r requirements.txt
 ```
 
-### 2. 运行示例
+### 2. 数据采集相关脚本（同一目录）
 
-#### 遥控采集模式
+在运行下列脚本前，请确保 **OrcaGym / 仿真服务** 已启动，且地址与代码中一致（默认 **`localhost:50051`**）。建议在示例目录下执行：
 
 ```bash
 cd src/examples/dataCollection
-python data_collection_tele.py
 ```
 
-使用 VR 手柄遥控机器人，采集真实演示数据。
+三个脚本共用同一套必填参数（`task_config` 为相对于本目录的 YAML，例如 `example.yaml`、`warehouse.yaml`）：
 
-#### 数据增强模式
+| 参数 | 说明 |
+|------|------|
+| `--level` | 场景 / 关卡名，用于区分数据子目录（与 `dataset`、`aug_dataset` 下的文件夹名一致） |
+| `--agent_name` | `openloong` 或 `tiangong2` |
+| `--task_config` | 场景与随机化等配置（YAML 文件名） |
+
+#### 遥控采集：`data_collection_tele.py`
+
+VR 手柄（Pico）遥操作，**OSC 双臂** + 夹爪 + 任务状态；模式为 **TELECONTROL**。数据写入：
+
+`dataset/<agent_name>/<level>/<episode_uuid>/record/proprio_stats.hdf5`（及 `video/` 等）。
 
 ```bash
-python data_collection_aug.py
+python data_collection_tele.py --level tele --agent_name openloong --task_config example.yaml
 ```
 
-读取已有数据并回放，应用插值和噪声生成增强数据。
+#### 数据增广：`data_collection_aug.py`
+
+从 **`dataset/<agent_name>/<level>/`** 下各回合目录读取 HDF5，经 **`OpenLoongInterpolator`（插值 + 噪声）** 后，在仿真中用 **IK 数据控制器** 跟踪轨迹并重采集，结果写入 **`aug_dataset/<agent_name>/<level>/`**（结构与原数据集类似）。用于在固定演示基础上扩充轨迹分布。
+
+```bash
+python data_collection_aug.py --level tele --agent_name openloong --task_config example.yaml
+```
+
+#### 回放验证：`data_collection_replay.py`
+
+仅回放、**不写入新的 HDF5**（`data_storage=None`），用于检查原始数据或增广后数据。通过 **`--data_root`** 选择读 `dataset` 还是 `aug_dataset`；通过 **`--replay_mode`** 选择控制方式：`osc`（默认）、`ik`、`position`。
+
+```bash
+# 回放遥操作原始数据
+python data_collection_replay.py --level tele --agent_name openloong --task_config example.yaml --data_root dataset --replay_mode osc
+
+# 回放增广后的数据（默认 data_root 即为 aug_dataset，可省略）
+python data_collection_replay.py --level tele --agent_name openloong --task_config example.yaml --replay_mode ik
+```
+
+**推荐顺序**：先 **`data_collection_tele`** 积累 `dataset` → 再 **`data_collection_aug`** 生成 `aug_dataset` → 需要时用 **`data_collection_replay`** 抽查两种来源的轨迹。
 
 ### 3. 查看数据
 
+单条回合路径示例（将 `openloong`、`tele`、`<uuid>` 换成你的 `agent_name`、`level` 与目录名）：
+
 ```python
 import h5py
-with h5py.File("dataset/{uuid}/record/data.hdf5", "r") as f:
-    print(f.keys())  # 查看所有数据集
+path = "dataset/openloong/tele/<uuid>/record/proprio_stats.hdf5"
+with h5py.File(path, "r") as f:
+    print(list(f.keys()))  # 查看 HDF5 顶层组 / 数据集
 ```
 
 ---
@@ -83,67 +115,39 @@ with h5py.File("dataset/{uuid}/record/data.hdf5", "r") as f:
 
 ## 🎯 使用流程
 
-### Mode 1: TELECONTROL - 遥控采集
+### 1) 遥控采集（`data_collection_tele.py`）— TELECONTROL
 
 ```
-VR手柄 → PicoJoystickDevice → Controllers → Robot → DataStorage
-                                                        ↓
-                                                   HDF5 + Video
+VR手柄 → PicoJoystickDevice → OSC臂控 + 夹爪 → Robot → OpenLoong/Tiangong DataStorage
+                                                              ↓
+                                                    dataset/<agent>/<level>/<uuid>/
 ```
 
-1. 戴上 VR 头显，启动数据采集脚本
-2. 操作 VR 手柄控制机器人
-3. 按下左手柄握持按钮开始记录
-4. 完成任务后再次按下结束记录
-5. 任务成功则数据自动保存，失败则丢弃
+1. 启动 OrcaGym 与仿真，执行 `data_collection_tele.py` 并传入 `--level`、`--agent_name`、`--task_config`
+2. 戴上 VR，按场景 UI 提示操作
+3. 左手柄握持键：**开始 / 结束** 一条轨迹记录（与 `TaskStatusController` 行为一致）
+4. 任务成功则本回合写入 `dataset/...`；失败则丢弃
 
-### Mode 2: AUGMENTATION - 数据增强
+### 2) 数据增广（`data_collection_aug.py`）— AUGMENTATION
 
 ```
-HDF5 → DataDevice → Interpolator → Controllers → Robot → DataStorage
-         ↓                                                    ↓
-    Task Info                                          Enhanced HDF5
+dataset/.../uuid/record/proprio_stats.hdf5
+    → DataDevice + OpenLoongInterpolator
+    → IK 数据臂控 + 夹爪数据控 → 仿真重放并再采集 → aug_dataset/<agent>/<level>/...
 ```
 
-1. 指定已有数据集路径（含 `record/*.hdf5`）
-2. 配置插值器（可选，在 `DataDevice` 上接入）
-3. 运行 `data_collection_aug.py`（AUGMENTATION 模式）
-4. 框架 **按时间步回放 HDF5 动作** 驱动仿真，可选插值后再次采集并保存
+1. 保证 `dataset/<agent_name>/<level>/` 下已有至少一个带 `record/proprio_stats.hdf5` 的回合目录
+2. 使用与采集时一致的 `--level`、`--agent_name`、`--task_config`（场景需能对上元数据中的物体布局）
+3. 运行 `data_collection_aug.py`；脚本内插值器与 IK 控制为固定实现，如需 OSC/position 增广需在代码层替换控制器（参见 `DEVELOPER_GUIDE.md`）
 
-### 小节：以 OpenLoong 在 OrcaLab 中为例
+### 3) 回放检查（`data_collection_replay.py`）
 
-您需要在https://simassets.orca3d.cn/中资产中心->机器人资产->订阅openloong资产和服务资产->ShopScene_Scaning
-
-订阅后下次启动OrcaLab后您可以手动加载 src/examples/超市场景青龙机器人数采案例/openloong_shop.json 来自动装配好布局。
-
-在示例目录 `src/examples/dataCollection` 下，通过 `--level`、`--agent_name` 与 `--task_config` 指定 OpenLoong 与场景配置，即可开展采集、**数据回放**与增广再采集：
-
-**简单用法**
-
-- 安装依赖（见上文「快速开始」），启动 OrcaLab 并加载与 `example.yaml` 一致的场景；**遥控采集**需连接 VR 手柄。
-- 在仓库中进入 `src/examples/dataCollection` 后执行下方命令；`--level example` 对应子目录名，原始数据会落在 `dataset/openloong/example/`，回放再采集结果在 `aug_dataset/openloong/example/`。
-- **数据回放**：由 [`DataDevice`](src/devices/data_device.py) 读取 HDF5，在仿真中逐步把记录的动作注入臂/夹爪控制器；调度逻辑见 `DataCollectionManager` 的 AUGMENTATION 分支（`load_data`、恢复 `scene_info`/`task_info` 后进入 `run_episode`）。
-- 跑**数据回放 / 增广脚本**前，请确保 `dataset/openloong/example/` 下已有若干条采集轨迹（每个 UUID 子目录内含 `record/proprio_stats.hdf5` 等）。
-
-**遥控采集**
-
-```bash
-cd src/examples/dataCollection
-python data_collection_tele.py --level example --agent_name openloong --task_config example.yaml
+```
+aug_dataset 或 dataset → DataDevice（无插值器）→ osc / ik / position 数据臂控 → 仅可视化验证
 ```
 
-**数据回放**
-
-示例中与 **数据增广（再采集）** 共用同一入口：运行 `data_collection_aug.py` 即进入 AUGMENTATION 模式——按轨迹单元依次 `load_data`，每仿真步 `device.update()` 推进 HDF5 游标并驱动控制器，轨迹跑完后可将新数据写入 `aug_dataset/`（`loop_playback=True` 时会从头循环单元队列）。
-
-**数据增广**
-
-与回放共用下列命令；在代码中为 `DataDevice(..., interpolator=...)` 接入插值器即可在回放前对时间序列做增广（参见 `devices/data_device.py`）。
-
-```bash
-cd src/examples/dataCollection
-python data_collection_aug.py --level example --agent_name openloong --task_config example.yaml
-```
+1. 使用 `--data_root dataset` 检查原始遥操作数据，或 `--data_root aug_dataset`（默认）检查增广结果
+2. `--replay_mode` 与增广脚本中的 IK 无绑定关系，仅影响「回放时」用哪种控制律跟踪 HDF5
 
 ---
 
@@ -184,9 +188,11 @@ OrcaManipulation/
 │   ├── conf/                    # 机器人配置
 │   └── examples/                # 示例代码
 │       └── dataCollection/
-│           ├── data_collection_tele.py   # 遥控采集示例
-│           ├── data_collection_aug.py    # 数据增强示例
-│           └── example.yaml              # 场景配置示例
+│           ├── data_collection_tele.py    # VR 遥操作采集（→ dataset）
+│           ├── data_collection_aug.py     # 数据增广（dataset → aug_dataset）
+│           ├── data_collection_replay.py  # 轨迹回放验证（可选 data_root / replay_mode）
+│           ├── example.yaml               # 场景配置示例
+│           └── warehouse.yaml             # 另一场景配置示例
 ├── QUICK_START.md               # 快速开始
 ├── DEVELOPER_GUIDE.md           # 开发者指南
 └── README.md                    # 本文件
@@ -211,20 +217,24 @@ OrcaManipulation/
 
 ### HDF5 结构
 
+遥操作与增广脚本约定的根目录为 **`dataset/<agent_name>/<level>/`** 与 **`aug_dataset/<agent_name>/<level>/`**，其下每个 **`{episode_uuid}`** 为一回合：
+
 ```
-dataset/
-  └── {episode_uuid}/
-      ├── record/
-      │   └── proprio_stats.hdf5
-      │       ├── /action/joint/position       # (N, D) 关节位置
-      │       ├── /action/end/position         # (N, 3) 末端位置
-      │       ├── /action/end/orientation      # (N, 4) 末端姿态(四元数)
-      │       ├── /action/effector/motor       # (N, M) 夹爪控制
-      │       ├── time_step                    # (N,) 时间戳
-      │       ├── task_info                    # JSON 任务元数据
-      │       └── scene_info                   # JSON 场景元数据
-      └── video/
-          └── {timestamp}.mp4
+dataset/   （或 aug_dataset/）
+  └── <agent_name>/
+      └── <level>/
+          └── {episode_uuid}/
+              ├── record/
+              │   └── proprio_stats.hdf5
+              │       ├── /action/joint/position       # (N, D) 关节位置
+              │       ├── /action/end/position         # 末端位置（维度随双臂 flatten 等可能变化）
+              │       ├── /action/end/orientation      # 末端姿态（四元数）
+              │       ├── /action/effector/motor       # 夹爪等
+              │       ├── time_step                    # (N,) 时间戳
+              │       ├── task_info                    # 任务元数据
+              │       └── scene_info                   # 场景元数据
+              └── video/
+                  └── ...
 ```
 
 ---
@@ -322,6 +332,10 @@ actor:
 - 检查 `is_success()` 逻辑是否正确
 - 降低成功判定阈值进行测试
 - 可视化目标区域和物体位置
+
+**Q: `data_collection_replay.py` 报 `aug_dataset/...` 目录不存在？**
+- 若回放的是遥操作原始数据，请加上 **`--data_root dataset`**，并保证 `dataset/<agent>/<level>/` 下已有回合子目录。
+- 若回放增广数据，请先运行 **`data_collection_aug.py`** 生成 `aug_dataset/...`。
 
 ---
 

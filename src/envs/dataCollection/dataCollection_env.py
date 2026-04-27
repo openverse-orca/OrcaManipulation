@@ -52,6 +52,7 @@ class DataCollectionEnv(OrcaGymLocalEnv):
 
         self.set_default_joint_values(self.default_joint_values)    
         self.mj_forward()
+        self._render_time_step = 0
         obs = self._get_obs().copy()
         return obs, {}
 

@@ -1,5 +1,6 @@
 import enum
 import os
+import signal
 from textwrap import shorten
 import time
 import numpy as np
@@ -53,6 +54,9 @@ class DataCollectionManager:
         self._save_video = False
         self._saving = False
         self._mode = self.DataCollectionMode.TELECONTROL
+        self._shutdown_requested = False
+        self._original_sigint = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, self._sigint_handler)
 
     @property
     def save_video(self) -> bool:
@@ -155,17 +159,26 @@ class DataCollectionManager:
                 self.ctrl[index] = value
         return self.ctrl
 
+    def _sigint_handler(self, signum, frame):
+        self._shutdown_requested = True
+        orca_logger.info("Shutdown requested, finishing current operation...")
+
     def run(self):
+        self._shutdown_requested = False
         self.env.disable_actuator(self.disable_actuator_group)
 
         try:
-            while True:
-                self.env.reset()  # self.env.mj_forward()
+            while not self._shutdown_requested:
+                self.env.reset()
+                # sleep0.1秒等待模拟器重置完成
+                time.sleep(0.1)
                 update_scene_ret = self.update_scene()
                 if not update_scene_ret:
                     orca_logger.info("Can't update scene, End")
                     break
                 task_is_success = self.run_episode()
+                if self._shutdown_requested:
+                    break
                 if self.data_storage is not None:
                     if task_is_success:
                         orca_logger.info("Task Success!")
@@ -175,13 +188,19 @@ class DataCollectionManager:
                     else:
                         self.data_storage.clear_data()
                         orca_logger.info("Task Failed!")
-        
-        except KeyboardInterrupt:
-            orca_logger.info("KeyboardInterrupt, End")
+
         except Exception as e:
             orca_logger.error(f"Run error: {e}")
             raise
         finally:
+            signal.signal(signal.SIGINT, self._original_sigint)
+            orca_logger.info("Cleanup start")
+            if self.data_storage is not None:
+                orca_logger.info("Clear data")
+                self.data_storage.clear_data()
+            self.env.reset()
+            # sleep0.1秒等待模拟器重置完成
+            time.sleep(0.1)
             self.env.close()
 
     def update_scene(self):
@@ -236,7 +255,7 @@ class DataCollectionManager:
         if self.task_status_controller is not None:
             self.task_status_controller.reset()
 
-        while True:
+        while not self._shutdown_requested:
             start_time = time.time()
             action = self.run_controllers()
             obs, reward, terminated, truncated, info = self.env.step(action)
