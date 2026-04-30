@@ -7,6 +7,10 @@
         "rotation": "[1,0,0,0]",
         "scale": 1.0
     },
+    "is_visible": true,
+    "is_parent_visible": true,
+    "is_locked": false,
+    "is_parent_locked": false,
     "type": "GroupActor",
     "children": [
         {
@@ -17,6 +21,10 @@
                 "rotation": "[1.0,0.0,0.0,0.0]",
                 "scale": 1.0
             },
+            "is_visible": true,
+            "is_parent_visible": true,
+            "is_locked": false,
+            "is_parent_locked": false,
             "type": "GroupActor",
             "children": [
                 {
@@ -27,21 +35,12 @@
                         "rotation": "[1.0,0.0,0.0,0.0]",
                         "scale": 1.0
                     },
+                    "is_visible": true,
+                    "is_parent_visible": true,
+                    "is_locked": false,
+                    "is_parent_locked": false,
                     "type": "GroupActor",
-                    "children": [
-                        {
-                            "name": "basket",
-                            "path": "/Group/Interactive_Objects/basket",
-                            "transform": {
-                                "position": "[-6.796365738,2.779978037,1.096674442]",
-                                "rotation": "[1.0,0.0,0.0,0.0]",
-                                "scale": 1.0
-                            },
-                            "type": "AssetActor",
-                            "asset_path": "assets/e071469a36d3c8aa/default_project/shop_scene/els/basket",
-                            "modified_properties": []
-                        }
-                    ]
+                    "children": []
                 }
             ]
         },
@@ -53,6 +52,10 @@
                 "rotation": "[0.7071067811865475,0.0,0.0,0.7071067811865475]",
                 "scale": 1.0
             },
+            "is_visible": true,
+            "is_parent_visible": true,
+            "is_locked": false,
+            "is_parent_locked": false,
             "type": "AssetActor",
             "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/openloong_gripper_2f85_fix_base_usda",
             "modified_properties": [
@@ -81,54 +84,70 @@
                     "value": true
                 },
                 {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_l_01/Link_arm_l_02/Link_arm_l_03/Link_arm_l_04/Link_arm_l_05/Link_arm_l_06/Link_arm_l_07/camera_wrist_l/cameras/camera_wrist_l:Camera",
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_r_01/Link_arm_r_02/Link_arm_r_03/Link_arm_r_04/Link_arm_r_05/Link_arm_r_06/Link_arm_r_07/camera_wrist_r/cameras/camera_wrist_r:Camera",
                     "name": "ColorCamera",
                     "type": "BOOL",
                     "value": true
                 },
                 {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_l_01/Link_arm_l_02/Link_arm_l_03/Link_arm_l_04/Link_arm_l_05/Link_arm_l_06/Link_arm_l_07/camera_wrist_l/cameras/camera_wrist_l:Camera",
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_r_01/Link_arm_r_02/Link_arm_r_03/Link_arm_r_04/Link_arm_r_05/Link_arm_r_06/Link_arm_r_07/camera_wrist_r/cameras/camera_wrist_r:Camera",
                     "name": "DepthCamera",
                     "type": "BOOL",
                     "value": true
                 },
                 {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_l_01/Link_arm_l_02/Link_arm_l_03/Link_arm_l_04/Link_arm_l_05/Link_arm_l_06/Link_arm_l_07/camera_wrist_l/cameras/camera_wrist_l:Camera",
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_r_01/Link_arm_r_02/Link_arm_r_03/Link_arm_r_04/Link_arm_r_05/Link_arm_r_06/Link_arm_r_07/camera_wrist_r/cameras/camera_wrist_r:Camera",
                     "name": "UseNvEnc",
                     "type": "BOOL",
                     "value": true
                 },
                 {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_l_01/Link_arm_l_02/Link_arm_l_03/Link_arm_l_04/Link_arm_l_05/Link_arm_l_06/Link_arm_l_07/camera_wrist_l/cameras/camera_wrist_l:Camera",
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_r_01/Link_arm_r_02/Link_arm_r_03/Link_arm_r_04/Link_arm_r_05/Link_arm_r_06/Link_arm_r_07/camera_wrist_r/cameras/camera_wrist_r:Camera",
                     "name": "IsRecording",
                     "type": "BOOL",
                     "value": true
                 },
                 {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_r_01/Link_arm_r_02/Link_arm_r_03/Link_arm_r_04/Link_arm_r_05/Link_arm_r_06/Link_arm_r_07/camera_wrist_r/cameras/camera_wrist_r:Camera",
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_l_01/Link_arm_l_02/Link_arm_l_03/Link_arm_l_04/Link_arm_l_05/Link_arm_l_06/Link_arm_l_07/camera_wrist_l/cameras/camera_wrist_l:Camera",
                     "name": "ColorCamera",
                     "type": "BOOL",
                     "value": true
                 },
                 {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_r_01/Link_arm_r_02/Link_arm_r_03/Link_arm_r_04/Link_arm_r_05/Link_arm_r_06/Link_arm_r_07/camera_wrist_r/cameras/camera_wrist_r:Camera",
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_l_01/Link_arm_l_02/Link_arm_l_03/Link_arm_l_04/Link_arm_l_05/Link_arm_l_06/Link_arm_l_07/camera_wrist_l/cameras/camera_wrist_l:Camera",
                     "name": "DepthCamera",
                     "type": "BOOL",
                     "value": true
                 },
                 {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_r_01/Link_arm_r_02/Link_arm_r_03/Link_arm_r_04/Link_arm_r_05/Link_arm_r_06/Link_arm_r_07/camera_wrist_r/cameras/camera_wrist_r:Camera",
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_l_01/Link_arm_l_02/Link_arm_l_03/Link_arm_l_04/Link_arm_l_05/Link_arm_l_06/Link_arm_l_07/camera_wrist_l/cameras/camera_wrist_l:Camera",
                     "name": "UseNvEnc",
                     "type": "BOOL",
                     "value": true
                 },
                 {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_r_01/Link_arm_r_02/Link_arm_r_03/Link_arm_r_04/Link_arm_r_05/Link_arm_r_06/Link_arm_r_07/camera_wrist_r/cameras/camera_wrist_r:Camera",
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_l_01/Link_arm_l_02/Link_arm_l_03/Link_arm_l_04/Link_arm_l_05/Link_arm_l_06/Link_arm_l_07/camera_wrist_l/cameras/camera_wrist_l:Camera",
                     "name": "IsRecording",
                     "type": "BOOL",
                     "value": true
                 }
             ]
+        },
+        {
+            "name": "basket",
+            "path": "/basket",
+            "transform": {
+                "position": "[-6.796365738,2.779978037,1.096674442]",
+                "rotation": "[1.0,0.0,0.0,0.0]",
+                "scale": 1.0
+            },
+            "is_visible": true,
+            "is_parent_visible": true,
+            "is_locked": false,
+            "is_parent_locked": false,
+            "type": "AssetActor",
+            "asset_path": "assets/e071469a36d3c8aa/default_project/shop_scene/els/basket",
+            "modified_properties": []
         }
     ]
 }
