@@ -33,7 +33,7 @@ actor:
   # 如果范围相等，则表示关节是固定的
   random:
     qpos: true
-    material: true
+    material: false
     nums: [1, 3]
     # 6自由度关节的随机范围
     six_dof:
@@ -57,8 +57,8 @@ light:
   names: ["spotlight1"]
   spawnable: ["prefabs/light"]
   random:
-    position: true
-    rotation: true
+    position: false
+    rotation: false
     center: [0, 0, 0]
     bound_position: [[-1, 1], [-1, 1], [0, 2]]
     bound_rotation: [[0, 3.14159], [0, 3.14159], [0, 3.14159]]
