@@ -1,6 +1,7 @@
 l_arm = {
     "joint_names": ["left_shoulder_pitch_joint", "left_shoulder_roll_joint", "left_shoulder_yaw_joint", "left_elbow_pitch_joint", "left_wrist_roll_joint", "left_wrist_pitch_joint", "left_wrist_yaw_joint"],
     "neutral_joint_values": [-0.67, 0.72, -0.87, -0.03, -0.83, 0.0, 0.0],
+   # "neutral_joint_values": [0, 0, 0, 0, 0, 0.0, 0.0],
 
     "motors_names": ["M_arm_l_01", "M_arm_l_02", "M_arm_l_03", "M_arm_l_04", "M_arm_l_05", "M_arm_l_06", "M_arm_l_07"],
     "motors_init_ctrl": [0, 0, 0, 0, 0, 0, 0],
@@ -16,6 +17,7 @@ l_arm = {
 r_arm = {
     "joint_names": ["right_shoulder_pitch_joint", "right_shoulder_roll_joint", "right_shoulder_yaw_joint", "right_elbow_pitch_joint", "right_wrist_roll_joint", "right_wrist_pitch_joint", "right_wrist_yaw_joint"],
     "neutral_joint_values": [-0.67, -0.72, 0.87, 0.03, 0.83, 0.0, 0.0],
+   # "neutral_joint_values": [0, 0, 0, 0, 0, 0.0, 0.0], 
     
     "motors_names": ["M_arm_r_01", "M_arm_r_02", "M_arm_r_03", "M_arm_r_04", "M_arm_r_05", "M_arm_r_06", "M_arm_r_07"],
     "motors_init_ctrl": [0, 0, 0, 0, 0, 0, 0],
@@ -32,6 +34,7 @@ waist = {
     "joint_name": "waist_yaw_joint",
     "neutral_joint_value": 0.0,
     "position_name": "P_waist",
+    "sensitivity": 0.2,
     # 录制/回放腰部统一使用 [-pi/2, pi/2] 的物理范围
     "position_range": (-1.57079632679, 1.57079632679),
 }

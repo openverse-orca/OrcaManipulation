@@ -142,6 +142,7 @@ def create_waist_controller(
     init_val = float(waist_config.get("neutral_joint_value", 0.0))
     init_ctrl = {ctrl_name[0]: init_val}
     angle_min, angle_max = waist_config.get("position_range", (-1.57079632679, 1.57079632679))
+    sensitivity = float(waist_config.get("sensitivity", 0.5))
     return ControllerWaist(
         env=env,
         ctrl_name=ctrl_name,
@@ -149,6 +150,7 @@ def create_waist_controller(
         base_body=base_body,
         min_angle=float(angle_min),
         max_angle=float(angle_max),
+        sensitivity=sensitivity,
     )
 
 
@@ -160,7 +162,9 @@ def add_waist_pico_controller(
     device: PicoJoystickDevice,
 ):
     waist_controller = create_waist_controller(env, waist_config, base_body)
+    device.bind_joystick_position_event(PicoJoystickKey.L_JOYSTICK_POSITION, waist_controller.update_joystick_xy)
     device.bind_joystick_position_event(PicoJoystickKey.R_JOYSTICK_POSITION, waist_controller.update_joystick_xy)
+    device.bind_reset_event(waist_controller.reset_angle)
     data_collection_manager.add_controller(waist_controller)
 
 

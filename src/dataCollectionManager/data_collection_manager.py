@@ -36,7 +36,9 @@ class DataCollectionManager:
                 data_storage: AbstractDataStorage = None,
                 always_save: bool = False,
                 conveyor_anim_speed_scale: float = 1.0,
+                augmentation_autostart_conveyor: bool = False,
                 **kwargs):
+        self._augmentation_autostart_conveyor = bool(augmentation_autostart_conveyor)
         self.device = device
         self.time_step = time_step
         self.frame_skip = frame_skip
@@ -227,6 +229,9 @@ class DataCollectionManager:
     
     def set_init_ctrl(self):
         for controller in self.controllers:
+            reset_controller = getattr(controller, "reset", None)
+            if callable(reset_controller):
+                reset_controller()
             controller.init_ctrl_index()
             init_ctrl = controller.get_init_ctrl()
             for index, value in init_ctrl.items():
@@ -288,6 +293,17 @@ class DataCollectionManager:
                 self.task.get_task(self.scene_manager, task_info=task_info)
 
             self.env.disable_actuator(self.disable_actuator_group)
+
+            if (
+                self._mode == self.DataCollectionMode.AUGMENTATION
+                and self._augmentation_autostart_conveyor
+            ):
+                try:
+                    if hasattr(self.env, "set_conveyor_running"):
+                        self.env.set_conveyor_running(True)
+                        self.set_conveyor_speed(self.get_conveyor_speed())
+                except Exception:
+                    pass
         return True
 
     def run_episode(self):
@@ -300,7 +316,9 @@ class DataCollectionManager:
 
         if self.task_status_controller is not None:
             self.task_status_controller.reset()
-        last_task_status = None
+        last_task_status = (
+            TaskStatus.NOT_STARTED if self.task_status_controller is not None else None
+        )
 
         while True:
             start_time = time.time()

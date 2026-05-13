@@ -22,6 +22,7 @@ class ControllerWaist(AbstractController):
         self.max_angle = float(max_angle)
         self.sensitivity = float(sensitivity)
         self.target_angle = float(next(iter(init_ctrl.values()), 0.0))
+        self.neutral_angle = self.target_angle
 
     @override
     def run_controller(self) -> dict[int, float]:
@@ -37,3 +38,9 @@ class ControllerWaist(AbstractController):
         if angle is None or len(angle) == 0:
             return
         self.target_angle = float(np.clip(float(angle[0]), self.min_angle, self.max_angle))
+
+    def reset_angle(self):
+        self.target_angle = float(np.clip(self.neutral_angle, self.min_angle, self.max_angle))
+
+    def reset(self):
+        self.reset_angle()

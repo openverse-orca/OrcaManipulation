@@ -13,7 +13,7 @@ class OpenLoongDataStorage(AbstractDataStorage):
     def __init__(self, dataset_path: str, hdf5_path: str = None):
         super().__init__(dataset_path=dataset_path, hdf5_path=hdf5_path)
         self.data["time_step"] = []
-        
+
     def collection_data(self, data: dict, env: OrcaGymLocalEnv, **kwargs):
         for key, value in data.items():
             if key not in self.data:
@@ -82,7 +82,7 @@ class OpenLoongDataStorage(AbstractDataStorage):
             scene_info_str = json.dumps(scene_info)
             f.create_dataset("task_info", data=task_info_str)
             f.create_dataset("scene_info", data=scene_info_str)
-        
+
         self.data = {"time_step": []}
         self.get_next_unit_path()
 

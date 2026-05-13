@@ -20,6 +20,7 @@ class PicoJoystickDevice(AbstractDevice):
         self._key_callbacks: dict[
             PicoJoystickKey, list[Callable[[list | None, dict | None], None]]
         ] = {}
+        self._reset_callbacks: list[Callable[[], None]] = []
 
     def bind_key_event(self, key: PicoJoystickKey, event: Callable[[list | None, dict | None], None]):
         # orca_gym PicoJoystick rejects duplicate binds per key, so we bind once and fan-out.
@@ -42,6 +43,18 @@ class PicoJoystickDevice(AbstractDevice):
     @override
     def update(self):
         self.pico_joystick.update(self.keys)
+        # Align with Pico reset flow: when arm pose is reset, notify listeners once.
+        try:
+            if hasattr(self.pico_joystick, "is_reset_pos") and self.pico_joystick.is_reset_pos():
+                for cb in list(self._reset_callbacks):
+                    try:
+                        cb()
+                    except Exception:
+                        continue
+                if hasattr(self.pico_joystick, "set_reset_pos"):
+                    self.pico_joystick.set_reset_pos(False)
+        except Exception:
+            pass
 
     def transform_event(self, key: PicoJoystickKey, transform: list | None, key_state: dict | None, event: Callable[[np.array, np.array], None]):
         if transform is None:
@@ -131,3 +144,6 @@ class PicoJoystickDevice(AbstractDevice):
         
     def bind_joystick_position_event(self, key: PicoJoystickKey, event: Callable[[float, float], None]):
         self.bind_key_event(key, lambda transform, key_state: self.joystick_position_event(key, transform, key_state, event))
+
+    def bind_reset_event(self, event: Callable[[], None]):
+        self._reset_callbacks.append(event)

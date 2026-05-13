@@ -38,6 +38,11 @@ class TaskStatusController(AbstractController):
         return self.current_status
 
     def update_task_status(self, next_status: bool):
+        if not self.is_controller:
+            if next_status:
+                self._advance_status()
+            return
+
         # Only toggle on rising edge (False -> True). First sample is used to initialize state only.
         next_status = bool(next_status)
         if not self._input_initialized:
@@ -55,6 +60,9 @@ class TaskStatusController(AbstractController):
             if current_time - self.current_time < 0.2:
                 return
             self.current_time = current_time
+        self._advance_status()
+
+    def _advance_status(self):
         if self.current_status == TaskStatus.NOT_STARTED:
             self.current_status = TaskStatus.RUNNING
             orca_logger.info("Task status: RUNNING")

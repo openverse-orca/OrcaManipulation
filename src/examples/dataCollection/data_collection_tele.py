@@ -125,6 +125,7 @@ def main():
         orca_logger.info("Creating waist controller")
         controllers.add_waist_pico_controller(data_collection_manager, env, openloong_conf.waist, openloong_conf.base_body, pico_joystick_device)
     
+  #  scene_manager.show_ui_message(1, "开始仿真程序，请按左右遥杆进行操作 ", "0xffff00",10)
     orca_logger.info("Creating pick place task")
     if config.get("type") in ["collect_only", "collection", "manual_record"]:
         orca_logger.info("Collect-only mode: using EmptyTask (no success check).")

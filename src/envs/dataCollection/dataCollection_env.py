@@ -1,4 +1,5 @@
 from typing import Callable
+
 from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
 from orca_gym.log.orca_log import OrcaLog
 import numpy as np

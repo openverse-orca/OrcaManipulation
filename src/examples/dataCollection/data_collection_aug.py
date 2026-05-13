@@ -10,6 +10,7 @@ if project_root not in sys.path:
 from devices.data_device import DataDevice
 from scene.scene_manager import SceneManager
 from task.pick_place_task import PickPlaceTask
+from task.abstract_task import EmptyTask
 from devices.abstract_device import PicoJoystickDevice
 from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
 from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
@@ -46,7 +47,8 @@ def main():
     orcagym_addr = "localhost:50051"
     env_name = "DataCollection"
     env_index = 0
-    agent_name = "openloong_gripper_2f85_fix_base_usda"
+    # 须与采集时使用的 agent_name 一致（参见 data_collection_tele.py）
+    agent_name = "d12_waist_motor_usda"
     default_joint_values = {}
 
     for joint_name, value in zip(openloong_conf.l_arm["joint_names"], openloong_conf.l_arm["neutral_joint_values"]):
@@ -57,16 +59,19 @@ def main():
         default_joint_values[openloong_conf.waist["joint_name"]] = openloong_conf.waist.get("neutral_joint_value", 0.0)
         
     orca_logger.info("Creating device")
-    data_device = DataDevice(os.path.join(base_dir, "dataset"), "record/proprio_stats.hdf5", interpolator=OpenLoongInterpolator(noise_value=0.03))
-
+    # data_device = DataDevice(os.path.join(base_dir, "dataset"), "record/proprio_stats.hdf5", interpolator=OpenLoongInterpolator(noise_value=0.03), loop_playback=True)
+    data_device = DataDevice(os.path.join(base_dir, "dataset"), "record/proprio_stats.hdf5", interpolator=None, loop_playback=True)
     orca_logger.info("Creating scene manager")
-    with open(os.path.join(base_dir, "example.yaml"), "r") as f:
+    # 须与 data_collection_tele.py 使用的 yaml 一致（此处避免 example.yaml 内 spawnable 在引擎侧不存在）
+    with open(os.path.join(base_dir, "conveyor_collect.yaml"), "r") as f:
         config = load(f, Loader=Loader)
     scene_manager = SceneManager(orcagym_addr, config=config)
+    conveyor_config = config.get("conveyor")
 
-    orca_logger.info("Creating data storage")
-    data_storage = OpenLoongDataStorage(dataset_path=os.path.join(base_dir, "aug_dataset"), hdf5_path="record/proprio_stats.hdf5")
-    data_storage.set_video_path("video")
+    # 临时关闭增强回放结果落盘，避免生成 aug_dataset。
+    # OpenLoongDataStorage.obs_callback 不依赖实例状态，这里只复用其观测格式。
+    data_storage = None
+    obs_callback = lambda env: OpenLoongDataStorage.obs_callback(None, env)
 
     orca_logger.info("Creating data collection manager")
     data_collection_manager = DataCollectionManager(
@@ -74,17 +79,19 @@ def main():
         env_name=env_name,
         entry_point=ENTRY_POINT,
         default_joint_values=default_joint_values,
-        obs_callback=data_storage.obs_callback,
+        obs_callback=obs_callback,
         env_index=env_index,
         device=data_device,
         scene_manager=scene_manager,
         data_storage=data_storage,
+        conveyor=conveyor_config,
+        augmentation_autostart_conveyor=True,
     )
     env = data_collection_manager.env
     env.reset()
 
     data_collection_manager.mode = DataCollectionManager.DataCollectionMode.AUGMENTATION
-    data_collection_manager.save_video = True
+    data_collection_manager.save_video = False
 
     orca_logger.info("Disabling position controller")
     data_collection_manager.set_disable_actuator_group([openloong_conf.positions_group])
@@ -105,11 +112,15 @@ def main():
         orca_logger.info("Creating waist data controller")
         controllers.add_waist_openloong_data_controller(data_collection_manager, env, openloong_conf.waist, openloong_conf.base_body, data_device)
     
-    orca_logger.info("Creating pick place task")
-    data_collection_manager.set_task(PickPlaceTask(env))
+    # 须与采集任务一致：collect_only 等模式下 EmptyTask 写入的 task_info 为空，PickPlaceTask 无法还原目标物体
+    orca_logger.info("Creating task")
+    if config.get("type") in ["collect_only", "collection", "manual_record"]:
+        data_collection_manager.set_task(EmptyTask(env))
+    else:
+        data_collection_manager.set_task(PickPlaceTask(env))
     controllers.add_task_status_openloong_data_controller(data_collection_manager, env, data_device, openloong_conf.base_body)
 
-    data_collection_manager.save_video = True
+    data_collection_manager.save_video = False
     
     data_collection_manager.run()
 
