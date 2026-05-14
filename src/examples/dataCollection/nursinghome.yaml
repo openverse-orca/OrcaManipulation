@@ -1,0 +1,39 @@
+level_name: "warehouse"
+
+type: "pick_and_place"
+
+actor:
+  names: ["me_prop_barcode_01", "3c_littlebox_02", "3c_littlebox_01", "3c_intelcore"]
+  spawnable: ["assets/e071469a36d3c8aa/default_project/warehouse_scanning/prop/prefabs/me_prop_barcode_01", 
+    "assets/e071469a36d3c8aa/default_project/warehouse_scanning/prop/prefabs/3c_littlebox_02", 
+    "assets/e071469a36d3c8aa/default_project/warehouse_scanning/prop/prefabs/3c_littlebox_01",
+    "assets/e071469a36d3c8aa/default_project/warehouse_scanning/prop/prefabs/3c_intelcore"]
+  joints: ["Me_Prop_Barcode_01_joint", "3c_littlebox_02_joint", "3c_littlebox_01_joint", "3C_intelcore_joint"]
+  joints_dof: [6, 6, 6, 6]
+  random:
+    qpos: true
+    nums: [1, 2]
+    six_dof:
+      center: [-8.39, 0.19, 0.80]
+      bound_position: [[0, 0], [0, 0], [0, 0]]
+      bound_rotation: [[0, 0], [0, 0], [0, 1]]
+
+
+light:
+  names: ["spotlight1"]
+  spawnable: ["prefabs/spotlight"]
+  random:
+    position: false
+    rotation: false
+    center: [0, 0, 0]
+    bound_position: [[-1, 1], [-1, 1], [0, 2]]
+    bound_rotation: [[0, 3.14159], [0, 3.14159], [0, 3.14159]]
+    nums: [1, 1]
+    cycle: 20  
+
+
+task:
+  type: "pick_and_place"
+  goal:
+    name: "bluebox"
+    site: "bluebox_01site"
