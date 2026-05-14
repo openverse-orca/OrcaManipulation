@@ -1,6 +1,7 @@
 import enum
 import os
 import signal
+import subprocess
 from textwrap import shorten
 import time
 import numpy as np
@@ -14,6 +15,7 @@ from controllers.controller_task import TaskStatus, TaskStatusController
 from devices.abstract_device import AbstractDevice
 from scene.scene_manager import SceneManager
 from dataStorage.abstract_data_storage import AbstractDataStorage
+from orca_gym.sensor.rgbd_camera import Monitor
 orca_logger = OrcaLog.get_instance()
 
 class DataCollectionManager:
@@ -50,7 +52,9 @@ class DataCollectionManager:
         self.data_storage: AbstractDataStorage = data_storage
         self.ctrl = np.zeros(self.env.nu, dtype=np.float32)
         self.disable_actuator_group = []
-        
+        self.monitor_ports: list[int] = []
+        self.monitor_processes: list[subprocess.Popen] = []
+
         self._save_video = False
         self._saving = False
         self._mode = self.DataCollectionMode.TELECONTROL
@@ -81,6 +85,23 @@ class DataCollectionManager:
     @mode.setter
     def mode(self, value: DataCollectionMode):
         self._mode = value
+
+    def add_monitor_port(self, port: int):
+        self.monitor_ports.append(port)
+
+    def start_monitors(self):
+        from orca_gym.scripts.camera_monitor import start_monitor
+        for monitor_port in self.monitor_ports:
+            p = start_monitor(monitor_port)
+            self.monitor_processes.append(p)
+
+    def stop_monitors(self):
+        from orca_gym.scripts.camera_monitor import terminate_monitor
+        for monitor_process in self.monitor_processes:
+            try:
+                terminate_monitor(monitor_process)  
+            except Exception as e:
+                orca_logger.error(f"Failed to stop monitor: {e}")
 
     def create_env(self, agent_name:str, 
                   env_name:str,
@@ -166,7 +187,7 @@ class DataCollectionManager:
     def run(self):
         self._shutdown_requested = False
         self.env.disable_actuator(self.disable_actuator_group)
-
+        self.start_monitors()
         try:
             while not self._shutdown_requested:
                 self.env.reset()
@@ -195,6 +216,7 @@ class DataCollectionManager:
         finally:
             signal.signal(signal.SIGINT, self._original_sigint)
             orca_logger.info("Cleanup start")
+            self.stop_monitors()
             if self.data_storage is not None:
                 orca_logger.info("Clear data")
                 self.data_storage.clear_data()
