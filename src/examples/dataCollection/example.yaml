@@ -55,7 +55,7 @@ actor:
 # 参数和actor含义类似
 light:
   names: ["spotlight1"]
-  spawnable: ["prefabs/light"]
+  spawnable: ["assets/e071469a36d3c8aa/default_project/prefabs/spotlight"]
   random:
     position: false
     rotation: false
