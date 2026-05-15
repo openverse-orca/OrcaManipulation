@@ -6,6 +6,7 @@ from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
 from orca_gym.adapters.robosuite.controllers import controller_config, controller_factory
 from orca_gym.environment import OrcaGymLocalEnv
 from controllers.controller_2f85 import Controller2F85
+from controllers.controller_2f85_reverse import Controller2F85Reverse
 from devices.abstract_device import AbstractDevice, PicoJoystickDevice
 from devices.data_device import DataDevice
 
@@ -210,3 +211,33 @@ def add_task_status_openloong_data_controller(data_collection_manager: DataColle
     task_status_controller = TaskStatusController(env, base_body, is_controller=False)
     device.bind_task_status_event(task_status_controller.update_task_status)
     data_collection_manager.set_task_status_controller(task_status_controller)
+
+def create_gripper_2f85_reverse_controller(env: OrcaGymLocalEnv,
+                                  gripper_config: dict,
+                                  base_body: str,
+                                  ctrl_name: list[str],
+                                  init_ctrl: dict[str, float],
+                                  controller_type: Controller2F85Reverse.ControllerType = Controller2F85Reverse.ControllerType.PICO):
+
+    return Controller2F85Reverse(env, ctrl_name, init_ctrl, gripper_config["actuator_ranges"], base_body, controller_type)
+
+def add_gripper_2f85_reverse_pico_controller(data_collection_manager: DataCollectionManager,
+                                env: OrcaGymLocalEnv,
+                                gripper_config: dict,
+                                base_body: str,
+                                device: PicoJoystickDevice,
+                                keys: list[PicoJoystickKey]):
+    ctrl_name = [env.actuator(actuator_name) for actuator_name in gripper_config["actuator_names"]]
+    init_ctrl = {name: init_val for name, init_val in zip(ctrl_name, gripper_config["init_ctrl"])}
+    gripper_2f85_reverse_controller = create_gripper_2f85_reverse_controller(env, gripper_config, base_body, ctrl_name, init_ctrl)
+
+    for key in keys:
+        if key in [PicoJoystickKey.X, PicoJoystickKey.A]:
+            device.bind_primary_button_event(key, gripper_2f85_reverse_controller.update_primary_button)
+        elif key in [PicoJoystickKey.Y, PicoJoystickKey.B]:
+            device.bind_secondary_button_event(key, gripper_2f85_reverse_controller.update_secondary_button)
+        elif key in [PicoJoystickKey.L_TRIGGER, PicoJoystickKey.R_TRIGGER]:
+            device.bind_trigger_event(key, gripper_2f85_reverse_controller.update_trigger_value)
+        else:
+            raise ValueError(f"Invalid key: {key}")
+    data_collection_manager.add_controller(gripper_2f85_reverse_controller)
