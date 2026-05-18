@@ -3,3 +3,5 @@ numba
 termcolor>=2.4.0
 pyyaml
 h5py
+av
+opencv-python
