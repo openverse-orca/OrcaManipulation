@@ -33,3 +33,16 @@ def choose_random_indices(nums: int, nums_range: list[int])-> list[int]:
 
 def get_random_material() -> np.array:
     return np.array([np.random.uniform(0, 255), np.random.uniform(0, 255), np.random.uniform(0, 255), np.random.uniform(0, 1)])
+ 
+
+def get_random_light_info(intensity_range: list, color_range: list = None) -> tuple:
+    intensity = float(np.random.uniform(intensity_range[0], intensity_range[1]))
+    if color_range is not None:
+        color = np.array([
+            float(np.random.uniform(color_range[0][0], color_range[0][1])),
+            float(np.random.uniform(color_range[1][0], color_range[1][1])),
+            float(np.random.uniform(color_range[2][0], color_range[2][1])),
+        ])
+    else:
+        color = np.array([1.0, 1.0, 1.0])
+    return intensity, color
