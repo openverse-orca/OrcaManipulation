@@ -54,6 +54,7 @@ class DataCollectionManager:
         self.disable_actuator_group = []
         self.monitor_ports: list[int] = []
         self.monitor_processes: list[subprocess.Popen] = []
+        self._fluid_coupling = None
 
         self._save_video = False
         self._saving = False
@@ -160,6 +161,10 @@ class DataCollectionManager:
     def set_data_storage(self, data_storage: AbstractDataStorage):
         self.data_storage = data_storage
 
+    def set_fluid_coupling(self, fluid_coupling) -> None:
+        """挂载 envs.fluid 耦合句柄；在 run_episode 每帧 env.step 前调用 step()。"""
+        self._fluid_coupling = fluid_coupling
+
     def add_controller(self, controller: AbstractController):
         self.controllers.append(controller)
 
@@ -216,6 +221,12 @@ class DataCollectionManager:
         finally:
             signal.signal(signal.SIGINT, self._original_sigint)
             orca_logger.info("Cleanup start")
+            if self._fluid_coupling is not None:
+                try:
+                    self._fluid_coupling.cleanup()
+                except Exception as e:
+                    orca_logger.warning(f"Fluid coupling cleanup: {e}")
+                self._fluid_coupling = None
             self.stop_monitors()
             if self.data_storage is not None:
                 orca_logger.info("Clear data")
@@ -280,7 +291,15 @@ class DataCollectionManager:
         while not self._shutdown_requested:
             start_time = time.time()
             action = self.run_controllers()
-            obs, reward, terminated, truncated, info = self.env.step(action)
+            should_step = True
+            if self._fluid_coupling is not None:
+                should_step = self._fluid_coupling.step()
+            if should_step:
+                obs, reward, terminated, truncated, info = self.env.step(action)
+            else:
+                obs = self.env._get_obs().copy() if hasattr(self.env, "_get_obs") else {}
+                terminated = truncated = False
+                info = {}
             self.env.render()
 
             if self.task_status_controller is not None:

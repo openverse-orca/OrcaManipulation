@@ -29,6 +29,7 @@ from yaml import load, Loader, safe_load
 
 from devices.abstract_device import AbstractDevice
 from scene.scene_manager import SceneManager
+from scene.scene_config_util import load_scene_config
 from task.abstract_task import EmptyTask
 from orca_gym.log.orca_log import get_orca_logger
 from dataCollectionManager.data_collection_manager import DataCollectionManager
@@ -401,7 +402,12 @@ def main():
         description="脚本 OSC 控制；位姿可用 --delta_b、--l_target_b/--r_target_b 或 --pose_file 传入（见文件头说明）。"
     )
     parser.add_argument("--level", type=str, required=True, help="场景名（与 dataset 目录一致，仅用于日志/路径占位）")
-    parser.add_argument("--task_config", type=str, required=True, help="场景 yaml，与 tele 相同")
+    parser.add_argument(
+        "--task_config",
+        type=str,
+        default=None,
+        help="场景 yaml（相对本目录），与 tele 相同；省略表示不加载场景随机化配置",
+    )
     parser.add_argument("--steps", type=int, default=None, help="轨迹长度；默认 400 或与 pose 文件中 steps")
     parser.add_argument(
         "--delta_b",
@@ -493,9 +499,9 @@ def main():
     for joint_name, value in zip(agent_conf.r_arm["joint_names"], agent_conf.r_arm["neutral_joint_values"]):
         default_joint_values[joint_name] = value
 
+    task_config = (args.task_config or "").strip() or None
     orca_logger.info("Creating scene manager")
-    with open(os.path.join(base_dir, args.task_config), "r", encoding="utf-8") as f:
-        config = load(f, Loader=Loader)
+    config = load_scene_config(base_dir, task_config)
     scene_manager = SceneManager(orcagym_addr, config=config)
 
     script_name = os.path.basename(sys.argv[0]) if sys.argv else os.path.basename(__file__)

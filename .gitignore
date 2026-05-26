@@ -203,6 +203,10 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Local robot learning datasets (large HDF5/video artifacts)
+src/examples/dataCollection/dataset/
+src/examples/dataCollection/aug_dataset/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/

@@ -13,13 +13,11 @@ if project_root not in sys.path:
 
 from devices.data_device import DataDevice
 from scene.scene_manager import SceneManager
-from task.pick_place_task import PickPlaceTask
-from task.abstract_task import EmptyTask
+from scene.scene_config_util import create_task, load_scene_config, should_use_empty_task
 from orca_gym.log.orca_log import get_orca_logger, OrcaLog
 import numpy as np
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
-from yaml import load, Loader
 from devices.Interpolator.abstract_interpolator import OpenLoongInterpolator
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
@@ -43,13 +41,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--level", type=str, required=True, help="场景的名称")
     parser.add_argument("--agent_name", type=str, required=True, choices=["openloong","tiangong2"], help="机器人型号")
-    parser.add_argument("--task_config", type=str, required=True, help="任务配置文件")
+    parser.add_argument(
+        "--task_config",
+        type=str,
+        default=None,
+        help="场景/任务 YAML（相对本目录）；省略表示不加载配置；须与采集时一致",
+    )
 
     args = parser.parse_args()
 
     level = args.level
     agent_name = args.agent_name
-    task_config = args.task_config
+    task_config = (args.task_config or "").strip() or None
 
     orca_logger.info(f"log file: {log_file}")
     orca_logger.info(f"log dir: {log_dir}")
@@ -79,8 +82,7 @@ def main():
     data_device = DataDevice(os.path.join(base_dir, "dataset", agent_name, level), "record/proprio_stats.hdf5", interpolator=OpenLoongInterpolator(noise_value=0.03))
 
     orca_logger.info("Creating scene manager")
-    with open(os.path.join(base_dir, task_config), "r", encoding="utf-8") as f:
-        config = load(f, Loader=Loader)
+    config = load_scene_config(base_dir, task_config)
     scene_manager = SceneManager(orcagym_addr, config=config)
 
     data_storage.set_video_path("video")
@@ -128,8 +130,12 @@ def main():
     else:
         raise ValueError(f"Invalid agent name: {agent_name}")
 
-    orca_logger.info("Creating pick place task")
-    data_collection_manager.set_task(PickPlaceTask(env))
+    # 须与采集任务一致：collect_only 等模式下 EmptyTask 写入的 task_info 为空，PickPlaceTask 无法还原目标物体
+    if should_use_empty_task(config, task_config):
+        orca_logger.info("Collect-only mode: using EmptyTask.")
+    else:
+        orca_logger.info("Creating pick place task")
+    data_collection_manager.set_task(create_task(env, config, task_config))
     controllers.add_task_status_openloong_data_controller(data_collection_manager, env, data_device, agent_conf.base_body)
 
     data_collection_manager.run()
