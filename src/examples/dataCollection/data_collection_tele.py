@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 import time
@@ -55,7 +56,18 @@ def _init_actor_lua_param_string(scene_manager: SceneManager):
         orca_logger.warning(f"Failed to initialize actor lua param string: {e}")
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="遥操作数据采集")
+    parser.add_argument(
+        "--no-save-output",
+        action="store_true",
+        help="禁止输出采集数据（不保存 hdf5 和视频）",
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
     orca_logger.info(f"log file: {log_file}")
     orca_logger.info(f"log dir: {log_dir}")
 
@@ -83,9 +95,15 @@ def main():
     collection_config = config.get("collection", {}) or {}
     always_save = bool(collection_config.get("always_save", False))
 
-    orca_logger.info("Creating data storage")
-    data_storage = OpenLoongDataStorage(dataset_path=os.path.join(base_dir, "dataset"), hdf5_path="record/proprio_stats.hdf5")
-    data_storage.set_video_path("video")
+    if args.no_save_output:
+        orca_logger.info("Output disabled: hdf5 and video will not be saved")
+        data_storage = None
+        obs_callback = lambda env: OpenLoongDataStorage.obs_callback(None, env)
+    else:
+        orca_logger.info("Creating data storage")
+        data_storage = OpenLoongDataStorage(dataset_path=os.path.join(base_dir, "dataset"), hdf5_path="record/proprio_stats.hdf5")
+        data_storage.set_video_path("video")
+        obs_callback = data_storage.obs_callback
 
     orca_logger.info("Creating data collection manager")
     data_collection_manager = DataCollectionManager(
@@ -93,7 +111,7 @@ def main():
         env_name=env_name,
         entry_point=ENTRY_POINT,
         default_joint_values=default_joint_values,
-        obs_callback=data_storage.obs_callback,
+        obs_callback=obs_callback,
         env_index=env_index,
         device=pico_joystick_device,
         scene_manager=scene_manager,
@@ -125,7 +143,7 @@ def main():
         orca_logger.info("Creating waist controller")
         controllers.add_waist_pico_controller(data_collection_manager, env, openloong_conf.waist, openloong_conf.base_body, pico_joystick_device)
     
-  #  scene_manager.show_ui_message(1, "开始仿真程序，请按左右遥杆进行操作 ", "0xffff00",10)
+    scene_manager.show_ui_message(1, "开始仿真程序，请按左右遥杆进行操作 ", "0xffff00",10)
     orca_logger.info("Creating pick place task")
     if config.get("type") in ["collect_only", "collection", "manual_record"]:
         orca_logger.info("Collect-only mode: using EmptyTask (no success check).")
@@ -134,8 +152,9 @@ def main():
         data_collection_manager.set_task(PickPlaceTask(env))
     controllers.add_task_status_pico_controller(data_collection_manager, env, pico_joystick_device, openloong_conf.base_body)
 
-    data_collection_manager.save_video = True
-    
+    if not args.no_save_output:
+        data_collection_manager.save_video = True
+
     data_collection_manager.run()
 
 if __name__ == "__main__":
