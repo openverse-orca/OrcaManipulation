@@ -71,6 +71,27 @@ VR 手柄（Pico）遥操作，**OSC 双臂** + 夹爪 + 任务状态；模式�
 python data_collection_tele.py --level tele --agent_name openloong --task_config example.yaml
 ```
 
+#### 相机监控端口配置
+
+在遥操作采集过程中，可以通过 `add_monitor_port()` 方法注册相机监控端口，用于实时显示相机画面：
+
+```python
+# 在 data_collection_tele.py 中添加
+data_collection_manager.add_monitor_port(7080)  # 左手臂彩色相机
+data_collection_manager.add_monitor_port(7081)  # 左手臂深度相机
+data_collection_manager.add_monitor_port(7090)  # 右手臂彩色相机
+data_collection_manager.add_monitor_port(7091)  # 右手臂深度相机
+```
+
+| 端口 | 相机类型 | 说明 |
+|------|---------|------|
+| 7080 | colorport | 左手臂彩色图像 |
+| 7081 | depthport | 左手臂深度图像 |
+| 7090 | colorport | 右手臂彩色图像 |
+| 7091 | depthport | 右手臂深度图像 |
+
+> **注意**：需要确保 OrcaLab 中已正确配置对应的相机端口映射，否则可能出现花屏或无法显示的情况。
+
 #### 数据增广：`data_collection_aug.py`
 
 从 **`dataset/<agent_name>/<level>/`** 下各回合目录读取 HDF5，经 **`OpenLoongInterpolator`（插值 + 噪声）** 后，在仿真中用 **IK 数据控制器** 跟踪轨迹并重采集，结果写入 **`aug_dataset/<agent_name>/<level>/`**（结构与原数据集类似）。用于在固定演示基础上扩充轨迹分布。

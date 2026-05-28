@@ -131,7 +131,10 @@ def main():
 
     data_collection_manager.save_video = True
     
-    data_collection_manager.add_monitor_port(7070)
+    data_collection_manager.add_monitor_port(7080)
+    data_collection_manager.add_monitor_port(7081)
+    data_collection_manager.add_monitor_port(7090)
+    data_collection_manager.add_monitor_port(7091)
 
     data_collection_manager.run()
 

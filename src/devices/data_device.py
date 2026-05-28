@@ -141,6 +141,11 @@ class DataDevice(AbstractDevice):
         unit_path = self.unit_datasets_path.pop()
         self.current_unit_path = unit_path
         hdf5_path = os.path.join(unit_path, self.hdf5_path)
+        if not os.path.isfile(hdf5_path):
+            orca_logger.warning(f"HDF5 file not found: {hdf5_path}, skipping unit")
+            if unit_path in self._all_unit_datasets_path:
+                self._all_unit_datasets_path.remove(unit_path)
+            return self.load_data()
         with h5py.File(hdf5_path, "r") as f:
             self.data = {}
             for key in f.keys():

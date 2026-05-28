@@ -54,17 +54,23 @@ actor:
 # light是场景中的灯光
 # 参数和actor含义类似
 light:
-  names: ["spotlight1"]
-  spawnable: ["assets/e071469a36d3c8aa/default_project/prefabs/spotlight"]
+  names: ["spotlight1", "spotlight2", "spotlight3", "spotlight4", "spotlight5", "spotlight6"]
+  spawnable: ["assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
+              "assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
+              "assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
+              "assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
+              "assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
+              "assets/e071469a36d3c8aa/default_project/prefabs/spotlight"]
   random:
-    position: false
-    rotation: false
-    center: [0, 0, 0]
-    bound_position: [[-1, 1], [-1, 1], [0, 2]]
-    bound_rotation: [[0, 3.14159], [0, 3.14159], [0, 3.14159]]
-    nums: [1, 1]
-    # 控制多少个任务后更新灯光
-    cycle: 20  
+    position: true
+    rotation: true
+    center: [-6.35, 2.56, 2.32]
+    bound_position: [[-0.1, 0.5], [-0.5, 0.5], [0, 0.5]]
+    bound_rotation: [[2.8, 3.5], [-0.3, 0.3], [2.8, 3.5]]
+    intensity: [50, 100]
+    color: [[0.5, 1.0], [0.5, 1.0], [0.5, 1.0]]
+    nums: [4, 6]
+    cycle: 1
 
 # task是任务的配置，参数根据任务类型不同而不同
 task:
