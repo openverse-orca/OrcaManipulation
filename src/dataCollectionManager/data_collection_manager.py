@@ -16,6 +16,7 @@ from devices.abstract_device import AbstractDevice
 from scene.scene_manager import SceneManager
 from dataStorage.abstract_data_storage import AbstractDataStorage
 from orca_gym.sensor.rgbd_camera import Monitor
+from sensor.touch_sensor_visualizer import TouchSensorVisualizer
 orca_logger = OrcaLog.get_instance()
 
 class DataCollectionManager:
@@ -54,6 +55,8 @@ class DataCollectionManager:
         self.disable_actuator_group = []
         self.monitor_ports: list[int] = []
         self.monitor_processes: list[subprocess.Popen] = []
+        self.touch_sensor_names: list[str] = []
+        self.touch_sensor: TouchSensorVisualizer = None
 
         self._save_video = False
         self._saving = False
@@ -89,6 +92,9 @@ class DataCollectionManager:
     def add_monitor_port(self, port: int):
         self.monitor_ports.append(port)
 
+    def add_touch_sensor(self, touch_sensor_list: list[str]):
+        self.touch_sensor_names = [self.env.sensor(name) for name in touch_sensor_list]
+        
     def start_monitors(self):
         from orca_gym.scripts.camera_monitor import start_monitor
         for monitor_port in self.monitor_ports:
@@ -188,6 +194,8 @@ class DataCollectionManager:
         self._shutdown_requested = False
         self.env.disable_actuator(self.disable_actuator_group)
         self.start_monitors()
+        if self.touch_sensor_names:
+            self.touch_sensor = TouchSensorVisualizer()
         try:
             while not self._shutdown_requested:
                 self.env.reset()
@@ -217,6 +225,8 @@ class DataCollectionManager:
             signal.signal(signal.SIGINT, self._original_sigint)
             orca_logger.info("Cleanup start")
             self.stop_monitors()
+            if self.touch_sensor is not None:
+                self.touch_sensor.close()
             if self.data_storage is not None:
                 orca_logger.info("Clear data")
                 self.data_storage.clear_data()
@@ -281,6 +291,10 @@ class DataCollectionManager:
             start_time = time.time()
             action = self.run_controllers()
             obs, reward, terminated, truncated, info = self.env.step(action)
+            if self.touch_sensor_names:
+                sensor_data = self.env.query_sensor_data(self.touch_sensor_names)
+                touch_sensor_data = {name: sensor_data[name][0] for name in self.touch_sensor_names}
+                self.touch_sensor.update_data(touch_sensor_data)
             self.env.render()
 
             if self.task_status_controller is not None:
