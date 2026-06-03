@@ -10,6 +10,7 @@ if project_root not in sys.path:
 
 from scene.scene_manager import SceneManager
 from task.pick_place_task import PickPlaceTask
+from task.abstract_task import EmptyTask  # 导入空任务类，用于无物体场景的纯控制测试
 from devices.abstract_device import PicoJoystickDevice
 from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
 from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
@@ -45,7 +46,7 @@ def main():
     orcagym_addr = "localhost:50051"
     env_name = "DataCollection"
     env_index = 0
-    agent_name = "mujoco_wrap"
+    agent_name = "Fixed_GR3v2_usda"  # 【关键修改】GR3机器人在模型中的命名前缀，env.actuator()/env.joint()会自动添加此前缀到配置名称上
     default_joint_values = {}
 
     for joint_name, value in zip(gr3_conf.l_arm["joint_names"], gr3_conf.l_arm["neutral_joint_values"]):
@@ -103,13 +104,14 @@ def main():
     orca_logger.info("Creating right arm controller")
     controllers.add_arm_osc_pico_controller(data_collection_manager, env, gr3_conf.r_arm, gr3_conf.base_body, pico_joystick_device, PicoJoystickKey.R_TRANSFORM)
     
-    orca_logger.info("Creating pick place task")
-    data_collection_manager.set_task(PickPlaceTask(env))
+    orca_logger.info("Creating empty task (no objects)")
+    data_collection_manager.set_task(EmptyTask(env))  # 【关键修改】使用空任务替代PickPlaceTask，因为当前场景无可用物体资产
     controllers.add_task_status_pico_controller(data_collection_manager, env, pico_joystick_device, gr3_conf.base_body)
 
     data_collection_manager.save_video = True
     
     data_collection_manager.run()
+
 
 if __name__ == "__main__":
     try:

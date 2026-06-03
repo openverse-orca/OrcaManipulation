@@ -1,0 +1,61 @@
+# 商店场景配置文件（studio_shop）
+# 【关键说明】当前actor配置已清空，原因：
+# 1. OrcaStudio中未找到 shop_scene/prefabs/goods/* 商品资产
+# 2. 使用 EmptyTask 替代 PickPlaceTask 进行纯机器人控制测试
+# 
+# 【恢复方法】当资产可用时：
+# 1. 取消下方注释的 actor 配置
+# 2. 将 gr3_collection_tele.py 中的 EmptyTask 改回 PickPlaceTask
+# 3. 确保 OrcaStudio 中已导入对应商品资产
+
+level_name: "studio_shop"
+
+type: "pick_and_place"
+
+# 【关键修改】actor配置已清空，避免"Spawnable name not found"错误
+# 原始商店商品资产路径在当前OrcaStudio中不存在
+actor:
+  names: []           # 空列表：不生成任何物体
+  spawnable: []        # 空列表：无资产路径
+  joints: []           # 空列表：无关节
+  joints_dof: []       # 空列表：无自由度
+  random:
+    qpos: false        # 关闭随机位置生成
+    nums: [0, 0]       # 物体数量范围为0
+
+light:
+  names: ["spotlight1"]
+  spawnable: ["prefabs/spotlight"]
+  random:
+    position: false
+    rotation: false
+    center: [0, 0, 0]
+    bound_position: [[-1, 1], [-1, 1], [0, 2]]
+    bound_rotation: [[0, 3.14159], [0, 3.14159], [0, 3.14159]]
+    nums: [1, 1]
+    cycle: 20  
+
+task:
+  type: "pick_and_place"
+  goal:
+    name: "basket"
+    site: "basket_site"
+
+# 注释：以下为原始商店商品配置（当前 OrcaStudio 中未找到对应资产）
+# actor:
+#   names: ["bottle_red", "jar_01", "bottle_blue", "salt", "can"]
+#   spawnable: ["assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/bottle_red", 
+#     "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/jar_01", 
+#     "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/bottle_blue", 
+#     "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/salt", 
+#     "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/can"]
+#   joints: ["bottle_red_joint", "jar_01_joint", "bottle_blue_joint", "salt_joint", "can_joint"]
+#   joints_dof: [6, 6, 6, 6, 6]
+#   random:
+#     qpos: true
+#     material: true
+#     nums: [1, 3]
+#     six_dof:
+#       center: [-6.22, 2.78, 1.10]
+#       bound_position: [[-0.2, 0.2], [-0.2, 0.2], [0, 0]]
+#       bound_rotation: [[0, 0], [0, 0], [0, 1]]

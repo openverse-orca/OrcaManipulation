@@ -114,6 +114,13 @@
        cd ~/OrcaManipulation/src/examples/dataCollection
        python data_collection_tele.py  --level shop_scaning --agent_name openloong  --task_config example.yaml
 
+3. GR3V2机器人仿真任务--启动方式: 
+
+       cd ~/OrcaManipulation/src/examples/dataCollection
+       adb reverse tcp:8001 tcp:8001
+
+       conda activate OrcaManipulation
+       python gr3_collection_tele.py
 ---
 
 ### 4.6 手柄操作说明（开始采集）

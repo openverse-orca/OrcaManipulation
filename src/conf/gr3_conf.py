@@ -1,3 +1,10 @@
+# GR3机器人配置文件
+# 【关键说明】本配置中的所有名称均为"基础形式"（不带前缀）
+# 运行时 env.actuator() / env.joint() 会自动添加 agent_name 前缀（Fixed_GR3v2_usda_）
+# 例如：配置 "left_shoulder_pitch_joint" → 实际查找 "Fixed_GR3v2_usda_left_shoulder_pitch_joint"
+# 如果直接使用带前缀的名称会导致双重前缀错误
+
+
 l_arm = {
     "joint_names": ["left_shoulder_pitch_joint", "left_shoulder_roll_joint", "left_shoulder_yaw_joint", "left_elbow_pitch_joint", "left_wrist_yaw_joint", "left_wrist_pitch_joint", "left_wrist_roll_joint"],
     "neutral_joint_values": [-0.95, 0.52, -1.17, -1.23, 0, 0, 0],
