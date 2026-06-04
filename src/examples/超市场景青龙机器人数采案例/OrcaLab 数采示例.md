@@ -114,6 +114,18 @@
        cd ~/OrcaManipulation/src/examples/dataCollection
        python data_collection_tele.py  --level shop_scaning --agent_name openloong  --task_config example.yaml
 
+3. fixed_d12--数采启动方式:
+
+       # 终端1号
+       conda activate orcalab
+       orcalab
+       打开布局-->src/examples/超市场景青龙机器人数采案例/fixed_d12_box.json
+      
+       # 终端2号
+       cd ~/OrcaManipulation/src/examples/dataCollection
+       conda activate OrcaManipulation
+       adb reverse tcp:8001 tcp:8001
+       python data_collection_tele.py  --level fixed_d12_box  --agent_name d12 --task_config d12_box.yaml
 ---
 
 ### 4.6 手柄操作说明（开始采集）

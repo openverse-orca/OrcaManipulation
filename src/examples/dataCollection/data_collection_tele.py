@@ -37,11 +37,49 @@ orca_logger = get_orca_logger(name="DataCollection",
                               force_reinit=True)
 
 
+def get_gripper_configs(agent_conf):
+    """
+    根据不同机器人的配置文件结构, 统一获取左右夹爪配置
+    返回 (left_gripper_config, right_gripper_config) 元组
+    """
+    if hasattr(agent_conf, 'gripper_2f85_l'):
+        return agent_conf.gripper_2f85_l, agent_conf.gripper_2f85_r
+    else:
+        return agent_conf.gripper_l, agent_conf.gripper_r
+
+
+def setup_arm_and_gripper_controllers(data_collection_manager, env, agent_conf, pico_joystick_device):
+    """
+    初始化并绑定所有手臂和夹爪控制器到Pico手柄
+    - 左/右摇杆: 控制左/右臂OSC末端位姿
+    - X/A + 扳机: 控制左/右夹爪开合
+    - Y/B: 辅助按钮
+    - 左握把: 任务状态切换
+    """
+    gripper_l, gripper_r = get_gripper_configs(agent_conf)
+
+    orca_logger.info("Creating left gripper controller")
+    controllers.add_gripper_2f85_pico_controller(data_collection_manager, env, gripper_l, agent_conf.base_body, pico_joystick_device, [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER])
+
+    orca_logger.info("Creating right gripper controller")
+    controllers.add_gripper_2f85_pico_controller(data_collection_manager, env, gripper_r, agent_conf.base_body, pico_joystick_device, [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER])
+
+    orca_logger.info("Creating left arm controller")
+    controllers.add_arm_osc_pico_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, pico_joystick_device, PicoJoystickKey.L_TRANSFORM)
+
+    orca_logger.info("Creating right arm controller")
+    controllers.add_arm_osc_pico_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, pico_joystick_device, PicoJoystickKey.R_TRANSFORM)
+
+    orca_logger.info("Creating task status controller")
+    data_collection_manager.set_task(EmptyTask(env))
+    controllers.add_task_status_pico_controller(data_collection_manager, env, pico_joystick_device, agent_conf.base_body)
+
+
 def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--level", type=str, required=True, help="场景的名称")
-    parser.add_argument("--agent_name", type=str, required=True, choices=["openloong", "tiangong2"], help="机器人型号")
+    parser.add_argument("--agent_name", type=str, required=True, choices=["openloong", "tiangong2", "d12"], help="机器人型号")
     parser.add_argument("--task_config", type=str, required=True, help="任务配置文件")
 
     args = parser.parse_args()
@@ -58,6 +96,9 @@ def main():
     env_index = 0
     default_joint_values = {}
 
+    # 默认使用agent_name作为模型命名空间, D12需覆盖为实际的前缀
+    model_namespace = agent_name
+
     if agent_name == "openloong":
         from conf import openloong_conf as agent_conf
         from dataStorage.openloong_data_storage import OpenLoongDataStorage
@@ -66,6 +107,12 @@ def main():
         from conf import tiangong2_conf as agent_conf
         from dataStorage.tiangong_data_storage import Tiangong2DataStorage
         data_storage = Tiangong2DataStorage(dataset_path=os.path.join(base_dir, "dataset", agent_name, level), hdf5_path="record/proprio_stats.hdf5")
+    elif agent_name == "d12":
+        from conf import d12_conf as agent_conf
+        from dataStorage.d12_data_storage import D12DataStorage
+        # D12模型的URDF命名空间前缀为fixed_d12_waist_usda_1, 与agent_name不一致, 需显式指定
+        model_namespace = "fixed_d12_waist_usda_1"
+        data_storage = D12DataStorage(dataset_path=os.path.join(base_dir, "dataset", agent_name, level), hdf5_path="record/proprio_stats.hdf5")
     else:
         raise ValueError(f"Invalid agent name: {agent_name}")
 
@@ -90,9 +137,10 @@ def main():
     orca_logger.info("Creating data storage")
     data_storage.set_video_path("video")
 
+    # 使用model_namespace作为环境agent名称, 确保env.actuator/joint/site能正确解析模型名称
     orca_logger.info("Creating data collection manager")
     data_collection_manager = DataCollectionManager(
-        agent_name=agent_name,
+        agent_name=model_namespace,
         env_name=env_name,
         entry_point=ENTRY_POINT,
         default_joint_values=default_joint_values,
@@ -109,21 +157,8 @@ def main():
     orca_logger.info("Disabling position controller")
     data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
 
-    orca_logger.info("Creating left gripper controller")
-    controllers.add_gripper_2f85_pico_controller(data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body, pico_joystick_device, [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER])
-    
-    orca_logger.info("Creating right gripper controller")
-    controllers.add_gripper_2f85_pico_controller(data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body, pico_joystick_device, [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER])
-    
-    orca_logger.info("Creating left arm controller")
-    controllers.add_arm_osc_pico_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, pico_joystick_device, PicoJoystickKey.L_TRANSFORM)
-    
-    orca_logger.info("Creating right arm controller")
-    controllers.add_arm_osc_pico_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, pico_joystick_device, PicoJoystickKey.R_TRANSFORM)
-    
-    orca_logger.info("Creating pick place task")
-    data_collection_manager.set_task(EmptyTask(env))
-    controllers.add_task_status_pico_controller(data_collection_manager, env, pico_joystick_device, agent_conf.base_body)
+    # 统一初始化手臂和夹爪控制器
+    setup_arm_and_gripper_controllers(data_collection_manager, env, agent_conf, pico_joystick_device)
 
     data_collection_manager.save_video = True
     

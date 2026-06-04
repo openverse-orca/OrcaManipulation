@@ -1,0 +1,50 @@
+# D12机器人纸盒抓取任务场景配置文件
+
+# 场景的名字
+level_name: "fixed_d12_box"
+
+# 任务类型, 目前支持[pick_and_place, scan_qr]
+type: "pick_and_place"
+
+# actor是要动态加载到场景中的物体
+# actor.name是物体在场景中的名字
+# actor.spawnable是物体资产缓存中的路径
+# actor.center是物体随机生成的中心点
+# actor.joints是物体在场景中的关节名字
+actor:
+  names: ["box"]
+  # 纸盒资产路径(从OrcaStudio场景导出的fixed_d12_box.json中获取)
+  spawnable: ["assets/e071469a36d3c8aa/warehouse_embodiedcompetition_2026hangzhou/embodiedcompetition_2026 hangzhou/cardboardbox_01/cardboardbox_01"]
+  # 关节名(系统会自动拼接为: {actor名}_{joint名}, 即 box_cardboardbox_01_joint)
+  joints: ["cardboardbox_01_joint"]
+  # 关节的自由度, 值为1, 3, 6
+  joints_dof: [6]
+  # 随机化配置(单actor场景无法启用qpos随机, 因为nums要求second>first且<=actors数量)
+  random:
+    qpos: false
+    nums: [1, 1]
+    # 6自由度关节的固定范围(纸盒放置在工作台面上)
+    six_dof:
+      center: [-0.15, 0.0, 0.82]
+      bound_position: [[0, 0], [0, 0], [0, 0]]
+      bound_rotation: [[0, 0], [0, 0], [0, 0]]
+
+# light是场景中的灯光配置
+light:
+  names: ["spotlight1"]
+  spawnable: ["prefabs/spotlight"]
+  random:
+    position: false
+    rotation: false
+    center: [0, 0, 0]
+    bound_position: [[-1, 1], [-1, 1], [0, 2]]
+    bound_rotation: [[0, 3.14159], [0, 3.14159], [0, 3.14159]]
+    nums: [1, 1]
+    cycle: 20
+
+# task是任务的配置
+task:
+  type: "pick_and_place"
+  goal:
+    name: "basket"
+    site: "basket_site"
