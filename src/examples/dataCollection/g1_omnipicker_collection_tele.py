@@ -1,6 +1,5 @@
 import os
 import sys
-import time
 import traceback
 
 
@@ -10,12 +9,9 @@ if project_root not in sys.path:
 
 from scene.scene_manager import SceneManager
 from task.abstract_task import EmptyTask
-from task.pick_place_task import PickPlaceTask
 from devices.abstract_device import PicoJoystickDevice
 from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
-from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
-from orca_gym.log.orca_log import get_orca_logger, OrcaLog
-import numpy as np
+from orca_gym.log.orca_log import get_orca_logger
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
 from conf import g1_omnipicker_conf
@@ -28,15 +24,17 @@ base_dir = os.path.dirname(os.path.realpath(__file__))
 log_dir = os.path.join(base_dir, "logs")
 log_file = "g1_collection.log"
 
-orca_logger = get_orca_logger(name="DataCollection", 
-                              log_file=log_file, 
-                              max_bytes=10*1024*1024, 
-                              backup_count=5, 
-                              console_level="INFO", 
-                              file_level="INFO",
-                              log_dir=log_dir,
-                              use_colors=True,
-                              force_reinit=True)
+orca_logger = get_orca_logger(
+    name="DataCollection",
+    log_file=log_file,
+    max_bytes=10 * 1024 * 1024,
+    backup_count=5,
+    console_level="INFO",
+    file_level="INFO",
+    log_dir=log_dir,
+    use_colors=True,
+    force_reinit=True,
+)
 
 
 def main():
@@ -49,11 +47,17 @@ def main():
     agent_name = "g1_omnipicker"
     default_joint_values = {}
 
-    for joint_name, value in zip(g1_omnipicker_conf.l_arm["joint_names"], g1_omnipicker_conf.l_arm["neutral_joint_values"]):
+    for joint_name, value in zip(
+        g1_omnipicker_conf.l_arm["joint_names"],
+        g1_omnipicker_conf.l_arm["neutral_joint_values"],
+    ):
         default_joint_values[joint_name] = value
-    for joint_name, value in zip(g1_omnipicker_conf.r_arm["joint_names"], g1_omnipicker_conf.r_arm["neutral_joint_values"]):
+    for joint_name, value in zip(
+        g1_omnipicker_conf.r_arm["joint_names"],
+        g1_omnipicker_conf.r_arm["neutral_joint_values"],
+    ):
         default_joint_values[joint_name] = value
-    
+
     orca_logger.info("Creating device")
     pico_joystick_device = PicoJoystickDevice(PicoJoystick())
 
@@ -61,17 +65,23 @@ def main():
     with open(os.path.join(base_dir, "example.yaml"), "r", encoding="utf-8") as f:
         config = load(f, Loader=Loader)
 
-    script_name = os.path.basename(sys.argv[0]) if sys.argv else os.path.basename(__file__)
+    script_name = (
+        os.path.basename(sys.argv[0]) if sys.argv else os.path.basename(__file__)
+    )
 
     scene_manager = SceneManager(orcagym_addr, config=config)
 
-    scene_manager.show_ui_message(1, "开始仿真程序，请按左右遥杆进行操作 ", "0xffff00", showtime=10)
+    scene_manager.show_ui_message(
+        1, "开始仿真程序，请按左右遥杆进行操作 ", "0xffff00", showtime=10
+    )
 
     scene_manager.get_scene_data(script_name, "beginscene")
 
-
     orca_logger.info("Creating data storage")
-    data_storage = G1OmniPickerDataStorage(dataset_path=os.path.join(base_dir, "dataset"), hdf5_path="record/proprio_stats.hdf5")
+    data_storage = G1OmniPickerDataStorage(
+        dataset_path=os.path.join(base_dir, "dataset"),
+        hdf5_path="record/proprio_stats.hdf5",
+    )
     data_storage.set_video_path("video")
 
     orca_logger.info("Creating data collection manager")
@@ -83,7 +93,7 @@ def main():
         obs_callback=data_storage.obs_callback,
         env_index=env_index,
         device=pico_joystick_device,
-        scene_manager=scene_manager,    
+        scene_manager=scene_manager,
         data_storage=data_storage,
         frame_skip=5,
     )
@@ -91,27 +101,69 @@ def main():
     env.reset()
 
     orca_logger.info("Disabling position controller")
-    data_collection_manager.set_disable_actuator_group([g1_omnipicker_conf.positions_group])
+    data_collection_manager.set_disable_actuator_group(
+        [g1_omnipicker_conf.positions_group]
+    )
 
     orca_logger.info("Creating left hand controller")
-    controllers.add_gripper_2f85_reverse_pico_controller(data_collection_manager, env, g1_omnipicker_conf.gripper_l, g1_omnipicker_conf.base_body, pico_joystick_device, [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER])
-    
+    controllers.add_gripper_2f85_reverse_pico_controller(
+        data_collection_manager,
+        env,
+        g1_omnipicker_conf.gripper_l,
+        g1_omnipicker_conf.base_body,
+        pico_joystick_device,
+        [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
+    )
+
     orca_logger.info("Creating right hand controller")
-    controllers.add_gripper_2f85_reverse_pico_controller(data_collection_manager, env, g1_omnipicker_conf.gripper_r, g1_omnipicker_conf.base_body, pico_joystick_device, [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER])
-    
+    controllers.add_gripper_2f85_reverse_pico_controller(
+        data_collection_manager,
+        env,
+        g1_omnipicker_conf.gripper_r,
+        g1_omnipicker_conf.base_body,
+        pico_joystick_device,
+        [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
+    )
+
     orca_logger.info("Creating left arm controller")
-    controllers.add_arm_osc_pico_controller(data_collection_manager, env, g1_omnipicker_conf.l_arm, g1_omnipicker_conf.base_body, pico_joystick_device, PicoJoystickKey.L_TRANSFORM)
-    
+    controllers.add_arm_osc_pico_controller(
+        data_collection_manager,
+        env,
+        g1_omnipicker_conf.l_arm,
+        g1_omnipicker_conf.base_body,
+        pico_joystick_device,
+        PicoJoystickKey.L_TRANSFORM,
+    )
+
     orca_logger.info("Creating right arm controller")
-    controllers.add_arm_osc_pico_controller(data_collection_manager, env, g1_omnipicker_conf.r_arm, g1_omnipicker_conf.base_body, pico_joystick_device, PicoJoystickKey.R_TRANSFORM)
-    
+    controllers.add_arm_osc_pico_controller(
+        data_collection_manager,
+        env,
+        g1_omnipicker_conf.r_arm,
+        g1_omnipicker_conf.base_body,
+        pico_joystick_device,
+        PicoJoystickKey.R_TRANSFORM,
+    )
+
+    orca_logger.info("Creating front drive controller")
+    controllers.add_differential_drive_pico_controller(
+        data_collection_manager,
+        env,
+        g1_omnipicker_conf.front_drive,
+        pico_joystick_device,
+        PicoJoystickKey.L_JOYSTICK_POSITION,
+    )
+
     orca_logger.info("Creating pick place task")
     data_collection_manager.set_task(EmptyTask(env))
-    controllers.add_task_status_pico_controller(data_collection_manager, env, pico_joystick_device, g1_omnipicker_conf.base_body)
+    controllers.add_task_status_pico_controller(
+        data_collection_manager, env, pico_joystick_device, g1_omnipicker_conf.base_body
+    )
 
     data_collection_manager.save_video = True
-    
+
     data_collection_manager.run()
+
 
 if __name__ == "__main__":
     try:

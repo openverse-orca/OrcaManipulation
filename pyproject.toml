@@ -12,5 +12,5 @@ dependencies = ["orca-gym"]
 [tool.setuptools.packages.find]
 include = ["envs*", "examples*"]
 
-
-
+[tool.ruff.lint]
+"per-file-ignores" = { "**/*.py" = ["E402"] }
