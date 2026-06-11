@@ -44,38 +44,38 @@ class Controller2F85Reverse(AbstractController):
     @override
     def run_controller(self) -> dict[int, float]:
         if self.controller_type == self.ControllerType.PICO:
-            # offset_rate_clip_adjust_rate = 0.5
-            # if self.secondary_button:
-            #     self.offset_rate_clip_adjust_rate -= offset_rate_clip_adjust_rate * self.env.dt
-            #     self.offset_rate_clip_adjust_rate = np.clip(self.offset_rate_clip_adjust_rate, -1, 0)
-            # elif self.primary_button:
-            #     self.offset_rate_clip_adjust_rate = 0
+            offset_rate_clip_adjust_rate = 0.5
+            if self.secondary_button:
+                self.offset_rate_clip_adjust_rate -= (
+                    offset_rate_clip_adjust_rate * self.env.dt
+                )
+                self.offset_rate_clip_adjust_rate = np.clip(
+                    self.offset_rate_clip_adjust_rate, -1, 0
+                )
+            elif self.primary_button:
+                self.offset_rate_clip_adjust_rate += (
+                    offset_rate_clip_adjust_rate * self.env.dt
+                )
+                self.offset_rate_clip_adjust_rate = np.clip(
+                    self.offset_rate_clip_adjust_rate, -1, 0
+                )
 
-            # k = np.e
-            # adjusted_value = (np.exp(k * self.trigger_value) - 1) / (np.exp(k) - 1)  # Maps input from [0, 1] to [0, 1]
-            # offset_rate = -adjusted_value
-            # offset_rate = np.clip(offset_rate, -1, self.offset_rate_clip_adjust_rate)
-            # import icecream
-            ctrl = {}
-            for i, r in enumerate(self.abs_ctrlrange):
-                border_a = self.actuator_range[i][0]
-                ctrl_value = border_a + self.trigger_value * r
-                # icecream.ic(self.trigger_value)
-                ctrl[self.ctrl_index[i]] = ctrl_value
-            
-            # icecream.ic(ctrl)
-            # ctrl = {
-            #     self.ctrl_index[i]: offset_rate
-            #     * self.abs_ctrlrange[i]
-            #     * self.joint_directions[i]
-            #     for i in range(len(self.ctrl_index))
-            # }
-            # for i in range(len(self.ctrl_index)):
-            #     ctrl[self.ctrl_index[i]] = np.clip(
-            #         ctrl[self.ctrl_index[i]],
-            #         self.actuator_range[i][0],
-            #         self.actuator_range[i][1],
-            #     )
+            k = np.e
+            adjusted_value = (np.exp(k * self.trigger_value) - 1) / (np.exp(k) - 1)
+            offset_rate = -adjusted_value
+            offset_rate = np.clip(offset_rate, -1, self.offset_rate_clip_adjust_rate)
+
+            ctrl = {
+                self.ctrl_index[i]: self.actuator_range[i][0]
+                - offset_rate * self.abs_ctrlrange[i]
+                for i in range(len(self.ctrl_index))
+            }
+            for i in range(len(self.ctrl_index)):
+                ctrl[self.ctrl_index[i]] = np.clip(
+                    ctrl[self.ctrl_index[i]],
+                    self.actuator_range[i][0],
+                    self.actuator_range[i][1],
+                )
 
         elif self.controller_type == self.ControllerType.DATA:
             ctrl = self.ctrl
