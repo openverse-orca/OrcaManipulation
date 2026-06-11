@@ -7,6 +7,7 @@ from orca_gym.log.orca_log import OrcaLog
 
 orca_logger = OrcaLog.get_instance()
 
+
 class Controller2F85Reverse(AbstractController):
     #! 参数说明
     #! env: 环境
@@ -15,17 +16,20 @@ class Controller2F85Reverse(AbstractController):
     #! actuator_range: 控制器的动作范围
     #! base_body: 基座体
     #! 2f85抓夹只有一个驱动器，他是一个联轴设备
-    
+
     class ControllerType(enum.Enum):
         PICO = 0
         DATA = 1
-    
-    def __init__(self, env: OrcaGymLocalEnv,
-                 ctrl_name: list[str],
-                 init_ctrl: dict[str, float],
-                 actuator_range: list,
-                 base_body: str,
-                 controller_type: ControllerType = ControllerType.PICO):
+
+    def __init__(
+        self,
+        env: OrcaGymLocalEnv,
+        ctrl_name: list[str],
+        init_ctrl: dict[str, float],
+        actuator_range: list,
+        base_body: str,
+        controller_type: ControllerType = ControllerType.PICO,
+    ):
         super().__init__(env, ctrl_name, init_ctrl, base_body)
         self.actuator_range = actuator_range
         self.trigger_value = 0
@@ -38,27 +42,44 @@ class Controller2F85Reverse(AbstractController):
         self.ctrl = None
 
     @override
-    def run_controller(self)-> dict[int, float]:
+    def run_controller(self) -> dict[int, float]:
         if self.controller_type == self.ControllerType.PICO:
-            offset_rate_clip_adjust_rate = 0.5
-            if self.secondary_button:
-                self.offset_rate_clip_adjust_rate -= offset_rate_clip_adjust_rate * self.env.dt
-                self.offset_rate_clip_adjust_rate = np.clip(self.offset_rate_clip_adjust_rate, -1, 0)
-            elif self.primary_button:
-                self.offset_rate_clip_adjust_rate = 0
+            # offset_rate_clip_adjust_rate = 0.5
+            # if self.secondary_button:
+            #     self.offset_rate_clip_adjust_rate -= offset_rate_clip_adjust_rate * self.env.dt
+            #     self.offset_rate_clip_adjust_rate = np.clip(self.offset_rate_clip_adjust_rate, -1, 0)
+            # elif self.primary_button:
+            #     self.offset_rate_clip_adjust_rate = 0
 
-            k = np.e
-            adjusted_value = (np.exp(k * self.trigger_value) - 1) / (np.exp(k) - 1)  # Maps input from [0, 1] to [0, 1]
-            offset_rate = -adjusted_value
-            offset_rate = np.clip(offset_rate, -1, self.offset_rate_clip_adjust_rate)
+            # k = np.e
+            # adjusted_value = (np.exp(k * self.trigger_value) - 1) / (np.exp(k) - 1)  # Maps input from [0, 1] to [0, 1]
+            # offset_rate = -adjusted_value
+            # offset_rate = np.clip(offset_rate, -1, self.offset_rate_clip_adjust_rate)
+            # import icecream
+            ctrl = {}
+            for i, r in enumerate(self.abs_ctrlrange):
+                border_a = self.actuator_range[i][0]
+                ctrl_value = border_a + self.trigger_value * r
+                # icecream.ic(self.trigger_value)
+                ctrl[self.ctrl_index[i]] = ctrl_value
+            
+            # icecream.ic(ctrl)
+            # ctrl = {
+            #     self.ctrl_index[i]: offset_rate
+            #     * self.abs_ctrlrange[i]
+            #     * self.joint_directions[i]
+            #     for i in range(len(self.ctrl_index))
+            # }
+            # for i in range(len(self.ctrl_index)):
+            #     ctrl[self.ctrl_index[i]] = np.clip(
+            #         ctrl[self.ctrl_index[i]],
+            #         self.actuator_range[i][0],
+            #         self.actuator_range[i][1],
+            #     )
 
-            ctrl = {self.ctrl_index[i]: offset_rate * self.abs_ctrlrange[i] * self.joint_directions[i] for i in range(len(self.ctrl_index))}
-            for i in range(len(self.ctrl_index)):
-                ctrl[self.ctrl_index[i]] = np.clip(ctrl[self.ctrl_index[i]], self.actuator_range[i][0], self.actuator_range[i][1])
-        
         elif self.controller_type == self.ControllerType.DATA:
             ctrl = self.ctrl
-        
+
         return ctrl
 
     def update_trigger_value(self, trigger_value: float):

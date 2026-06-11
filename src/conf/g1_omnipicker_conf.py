@@ -113,7 +113,7 @@ gripper_l = {
         "idx49_gripper_l_outer_joint2_pctrl",
     ],
     # "actuator_ranges": [(-0.785398, 0.7), (-0.7, 0.785398)],
-    "actuator_ranges": [(-2, 2), (-2, 2)],
+    "actuator_ranges": [(-1.0, 2), (-1.0, 2)],
     "init_ctrl": [0, 0],
 }
 
@@ -125,7 +125,7 @@ gripper_r = {
         "idx79_gripper_r_inner_joint2_pctrl",
         "idx89_gripper_r_outer_joint2_pctrl",
     ],
-    "actuator_ranges": [(-2, 2), (-2, 2)],
+    "actuator_ranges": [(-1.0, 2), (-1.0, 2)],
     "init_ctrl": [0, 0],
 }
 
