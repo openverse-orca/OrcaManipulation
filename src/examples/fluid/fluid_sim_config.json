@@ -1,6 +1,7 @@
 {
   "description": "Fluid-MuJoCo 耦合仿真配置文件 (MuJoCo程序)",
-  
+  "build_mode": "release",
+  "build_mode_comment": "release=关闭 debug/CSV 开销；debug=允许 verbose 与监测。CLI: --build-mode",
   "orcagym": {
     "address": "localhost:50051",
     "agent_name": "NoRobot",

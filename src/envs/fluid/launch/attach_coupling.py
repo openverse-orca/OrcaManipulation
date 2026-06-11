@@ -93,6 +93,7 @@ def start_fluid_coupling(
     _connect_sph_bridge_if_enabled(ctx)
 
     _fluid_atexit_state["owns_shared_services"] = True
+    _fluid_atexit_state["owns_env"] = False
 
     return FluidCouplingHandle(
         config=config,

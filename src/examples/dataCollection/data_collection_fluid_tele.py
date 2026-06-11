@@ -9,6 +9,8 @@ import os
 import sys
 import traceback
 
+import numpy as np
+
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
@@ -21,6 +23,7 @@ from orca_gym.log.orca_log import get_orca_logger
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
 from envs.fluid import default_fluid_config_path, load_fluid_config, start_fluid_coupling
+from examples.dataCollection.utils.bench_fluid_config import apply_build_mode
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
 
@@ -78,6 +81,37 @@ def main():
         action="store_true",
         help="流体仿真不使用 CPU 亲和性（默认 OrcaSPH 绑定 4～末核）",
     )
+    parser.add_argument(
+        "--max-episode-sec",
+        type=float,
+        default=None,
+        help="单回合最长仿真时间（秒），默认不限制",
+    )
+    parser.add_argument(
+        "--bench",
+        type=str,
+        default=None,
+        help="基准测试输出 JSON 路径（启用逐帧计时）",
+    )
+    parser.add_argument(
+        "--build-mode",
+        type=str,
+        default="release",
+        choices=["release", "debug"],
+        help="流体 build_mode（release 关闭 debug/CSV 开销，默认 release）",
+    )
+    parser.add_argument(
+        "--frame-skip",
+        type=int,
+        default=20,
+        help="MuJoCo frame_skip（宏步仿真时间 = time_step × frame_skip；与 OrcaLink 50Hz 对齐时用 20）",
+    )
+    parser.add_argument(
+        "--time-step",
+        type=float,
+        default=0.001,
+        help="MuJoCo 子步 dt（秒，默认 0.001）",
+    )
 
     args = parser.parse_args()
 
@@ -132,6 +166,11 @@ def main():
     data_storage.set_video_path("video")
 
     orca_logger.info("Creating data collection manager")
+    frame_skip = max(1, int(args.frame_skip))
+    time_step = float(args.time_step)
+    max_episode_steps = np.iinfo(np.int64).max
+    if args.max_episode_sec is not None:
+        max_episode_steps = int(args.max_episode_sec / (time_step * frame_skip)) + 1
     data_collection_manager = DataCollectionManager(
         agent_name=agent_name,
         env_name=env_name,
@@ -139,12 +178,15 @@ def main():
         default_joint_values=default_joint_values,
         obs_callback=data_storage.obs_callback,
         env_index=env_index,
+        max_episode_steps=max_episode_steps,
         device=pico_joystick_device,
         scene_manager=scene_manager,
         data_storage=data_storage,
-        frame_skip=5,
-        time_step=0.005,
+        frame_skip=frame_skip,
+        time_step=time_step,
     )
+    if args.bench:
+        data_collection_manager.enable_bench(args.bench)
     env = data_collection_manager.env
     env.reset()
 
@@ -157,6 +199,8 @@ def main():
         fluid_config.setdefault("orcalink", {})["auto_start"] = False
         fluid_config.setdefault("orcasph", {})["auto_start"] = False
         orca_logger.info("Fluid manual mode: orcalink/orcasph auto_start disabled")
+
+    apply_build_mode(fluid_config, args.build_mode)
 
     cpu_affinity = _resolve_cpu_affinity(args.use_all_cpu)
     orca_logger.info("Starting fluid coupling (OrcaLink + OrcaSPH)")
@@ -199,13 +243,16 @@ def main():
         data_collection_manager, env, pico_joystick_device, agent_conf.base_body,
     )
 
-    data_collection_manager.save_video = True
-    data_collection_manager.add_monitor_port(7080)
-    data_collection_manager.add_monitor_port(7081)
-    data_collection_manager.add_monitor_port(7090)
-    data_collection_manager.add_monitor_port(7091)
+    if args.bench:
+        data_collection_manager.save_video = False
+    else:
+        data_collection_manager.save_video = True
+        data_collection_manager.add_monitor_port(7080)
+        data_collection_manager.add_monitor_port(7081)
+        data_collection_manager.add_monitor_port(7090)
+        data_collection_manager.add_monitor_port(7091)
 
-    data_collection_manager.run()
+    data_collection_manager.run(max_episodes=1 if args.max_episode_sec else None)
 
 
 if __name__ == "__main__":

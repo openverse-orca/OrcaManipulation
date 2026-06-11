@@ -1,4 +1,5 @@
 import enum
+import json
 import os
 import signal
 import subprocess
@@ -55,6 +56,8 @@ class DataCollectionManager:
         self.monitor_ports: list[int] = []
         self.monitor_processes: list[subprocess.Popen] = []
         self._fluid_coupling = None
+        self._pre_fluid_step_callbacks: list[Callable[[OrcaGymLocalEnv], None]] = []
+        self._post_step_callbacks: list[Callable[[OrcaGymLocalEnv], None]] = []
 
         self._save_video = False
         self._saving = False
@@ -62,6 +65,15 @@ class DataCollectionManager:
         self._shutdown_requested = False
         self._original_sigint = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, self._sigint_handler)
+
+        self._bench_enabled = False
+        self._bench_output_path = None
+        self._bench_steps = []
+        self._max_episode_steps = max_episode_steps
+        self._skip_env_teardown = False
+        self._skip_fluid_cleanup = False
+        self._skip_ctrl = False
+        self._skip_render = False
 
     @property
     def save_video(self) -> bool:
@@ -165,8 +177,110 @@ class DataCollectionManager:
         """挂载 envs.fluid 耦合句柄；在 run_episode 每帧 env.step 前调用 step()。"""
         self._fluid_coupling = fluid_coupling
 
+    def add_pre_fluid_step_callback(self, cb: Callable[[OrcaGymLocalEnv], None]) -> None:
+        """注册在 run_controllers() 之前执行的回调（如水壶轨迹写入）。"""
+        self._pre_fluid_step_callbacks.append(cb)
+
+    def _run_pre_fluid_step_hooks(self) -> None:
+        for cb in self._pre_fluid_step_callbacks:
+            cb(self.env)
+
+    def add_post_step_callback(self, cb: Callable[[OrcaGymLocalEnv], None]) -> None:
+        """注册在 env.step() 之后执行的回调（如 Studio 视口同步）。"""
+        self._post_step_callbacks.append(cb)
+
+    def _run_post_step_hooks(self) -> None:
+        for cb in self._post_step_callbacks:
+            cb(self.env)
+
     def add_controller(self, controller: AbstractController):
         self.controllers.append(controller)
+
+    def enable_bench(self, output_path: str):
+        self._bench_enabled = True
+        self._bench_output_path = output_path
+        self._bench_steps = []
+
+    def set_skip_env_teardown(self, skip: bool) -> None:
+        """demo 模式下跳过 run() finally 中的 env.close()。"""
+        self._skip_env_teardown = skip
+
+    def set_skip_fluid_cleanup(self, skip: bool) -> None:
+        """KEEP_FLUID 模式下跳过 fluid_coupling.cleanup()。"""
+        self._skip_fluid_cleanup = skip
+
+    def set_skip_ctrl(self, skip: bool) -> None:
+        """纯 SPH 基线：跳过 pre-hook 与 run_controllers()，使用零 ctrl。"""
+        self._skip_ctrl = skip
+
+    def set_skip_render(self, skip: bool) -> None:
+        """纯 SPH 基线：跳过 env.render()，不向 Studio 推送视口渲染。"""
+        self._skip_render = skip
+
+    def _save_bench_data(self):
+        if not self._bench_enabled or not self._bench_steps:
+            return
+        steps = self._bench_steps
+        n = len(steps)
+        if n == 0:
+            return
+        avg_ctrl = sum(s["ctrl_ms"] for s in steps) / n
+        avg_fluid = sum(s["fluid_ms"] for s in steps) / n
+        avg_step = sum(s["step_ms"] for s in steps) / n
+        avg_render = sum(s["render_ms"] for s in steps) / n
+        avg_total = sum(s["total_ms"] for s in steps) / n
+        avg_sleep = sum(s["sleep_ms"] for s in steps) / n
+        total_phy = steps[-1].get("phy_time", 0) - steps[0].get("phy_time", 0)
+        total_sim = steps[-1].get("sim_time", 0) - steps[0].get("sim_time", 0)
+        has_fluid = any(s["fluid_ms"] > 0.01 for s in steps)
+        fluid_steps = [s for s in steps if s["fluid_ms"] > 0.01]
+        avg_fluid_active = sum(s["fluid_ms"] for s in fluid_steps) / len(fluid_steps) if fluid_steps else 0
+        fluid_block_pct = len(fluid_steps) / n * 100 if n > 0 else 0
+        ctrl_steps = [s for s in steps if s["ctrl_ms"] > 1.0]
+        avg_ctrl_active = sum(s["ctrl_ms"] for s in ctrl_steps) / len(ctrl_steps) if ctrl_steps else 0
+        ctrl_block_pct = len(ctrl_steps) / n * 100 if n > 0 else 0
+        effective_steps = [s for s in steps if s.get("should_step", True)]
+        effective_count = len(effective_steps)
+        pause_count = n - effective_count
+        pause_rate = pause_count / n * 100 if n > 0 else 0
+        report = {
+            "num_steps": n,
+            "loop_count": n,
+            "effective_step_count": effective_count,
+            "pause_count": pause_count,
+            "pause_rate_pct": round(pause_rate, 2),
+            "total_sim_time_s": round(total_sim, 4),
+            "total_phy_time_s": round(total_phy, 4),
+            "sim_over_real_ratio": round(total_sim / total_phy, 4) if total_phy > 0 else 0,
+            "avg_step_ms": round(avg_total, 2),
+            "avg_fps": round(1000.0 / avg_total, 2) if avg_total > 0 else 0,
+            "avg_ctrl_ms": round(avg_ctrl, 2),
+            "avg_fluid_ms": round(avg_fluid, 2),
+            "avg_step_compute_ms": round(avg_step, 2),
+            "avg_render_ms": round(avg_render, 2),
+            "avg_sleep_ms": round(avg_sleep, 2),
+            "pct_ctrl": round(avg_ctrl / avg_total * 100, 1) if avg_total > 0 else 0,
+            "pct_fluid": round(avg_fluid / avg_total * 100, 1) if avg_total > 0 else 0,
+            "pct_step": round(avg_step / avg_total * 100, 1) if avg_total > 0 else 0,
+            "pct_render": round(avg_render / avg_total * 100, 1) if avg_total > 0 else 0,
+            "pct_sleep": round(avg_sleep / avg_total * 100, 1) if avg_total > 0 else 0,
+            "has_fluid_coupling": has_fluid,
+            "fluid_active_avg_ms": round(avg_fluid_active, 2),
+            "fluid_block_pct": round(fluid_block_pct, 1),
+            "ctrl_active_avg_ms": round(avg_ctrl_active, 2),
+            "ctrl_block_pct": round(ctrl_block_pct, 1),
+        }
+        output = {"summary": report, "steps": steps}
+        os.makedirs(os.path.dirname(self._bench_output_path) or ".", exist_ok=True)
+        with open(self._bench_output_path, "w") as f:
+            json.dump(output, f, indent=2)
+        orca_logger.info(f"Bench data saved to {self._bench_output_path}")
+        orca_logger.info(
+            f"Bench summary: loops={report['loop_count']}, effective={report['effective_step_count']}, "
+            f"pause_rate={report['pause_rate_pct']}%, fps={report['avg_fps']}, "
+            f"ctrl={report['pct_ctrl']}%, fluid={report['pct_fluid']}%, "
+            f"step={report['pct_step']}%, render={report['pct_render']}%"
+        )
 
     def run_controllers(self) ->list[float]:
         if self.device is not None:
@@ -189,20 +303,24 @@ class DataCollectionManager:
         self._shutdown_requested = True
         orca_logger.info("Shutdown requested, finishing current operation...")
 
-    def run(self):
+    def run(self, max_episodes=None):
         self._shutdown_requested = False
         self.env.disable_actuator(self.disable_actuator_group)
         self.start_monitors()
+        episode_count = 0
         try:
             while not self._shutdown_requested:
                 self.env.reset()
-                # sleep0.1秒等待模拟器重置完成
                 time.sleep(0.1)
                 update_scene_ret = self.update_scene()
                 if not update_scene_ret:
                     orca_logger.info("Can't update scene, End")
                     break
                 task_is_success = self.run_episode()
+                episode_count += 1
+                if max_episodes is not None and episode_count >= max_episodes:
+                    orca_logger.info(f"Reached max_episodes={max_episodes}, exiting run loop")
+                    break
                 if self._shutdown_requested:
                     break
                 if self.data_storage is not None:
@@ -219,9 +337,17 @@ class DataCollectionManager:
             orca_logger.error(f"Run error: {e}")
             raise
         finally:
+            self._save_bench_data()
             signal.signal(signal.SIGINT, self._original_sigint)
             orca_logger.info("Cleanup start")
-            if self._fluid_coupling is not None:
+            if not self._skip_env_teardown:
+                try:
+                    self.env.reset()
+                    time.sleep(0.1)
+                    self.env.close()
+                except Exception as e:
+                    orca_logger.warning(f"Env teardown: {e}")
+            if self._fluid_coupling is not None and not self._skip_fluid_cleanup:
                 try:
                     self._fluid_coupling.cleanup()
                 except Exception as e:
@@ -231,10 +357,6 @@ class DataCollectionManager:
             if self.data_storage is not None:
                 orca_logger.info("Clear data")
                 self.data_storage.clear_data()
-            self.env.reset()
-            # sleep0.1秒等待模拟器重置完成
-            time.sleep(0.1)
-            self.env.close()
 
     def update_scene(self):
         if self.scene_manager is not None:
@@ -284,23 +406,50 @@ class DataCollectionManager:
 
         task_is_success = False
         data_recording_started = False
+        step_count = 0
 
         if self.task_status_controller is not None:
             self.task_status_controller.reset()
 
         while not self._shutdown_requested:
-            start_time = time.time()
-            action = self.run_controllers()
+            t0 = time.perf_counter()
+            if self._skip_ctrl:
+                action = self.ctrl
+            else:
+                self._run_pre_fluid_step_hooks()
+                action = self.run_controllers()
+            t1 = time.perf_counter()
             should_step = True
             if self._fluid_coupling is not None:
                 should_step = self._fluid_coupling.step()
+            t2 = time.perf_counter()
             if should_step:
                 obs, reward, terminated, truncated, info = self.env.step(action)
+                step_count += 1
+                self._run_post_step_hooks()
             else:
                 obs = self.env._get_obs().copy() if hasattr(self.env, "_get_obs") else {}
                 terminated = truncated = False
                 info = {}
-            self.env.render()
+            t3 = time.perf_counter()
+            if not self._skip_render:
+                self.env.render()
+            t4 = time.perf_counter()
+
+            if self._bench_enabled:
+                sim_t = float(self.env.data.time) if hasattr(self.env, 'data') and hasattr(self.env.data, 'time') else 0.0
+                self._bench_steps.append({
+                    "step": len(self._bench_steps),
+                    "sim_time": round(sim_t, 6),
+                    "phy_time": round(time.time(), 6),
+                    "ctrl_ms": round((t1 - t0) * 1000, 3),
+                    "fluid_ms": round((t2 - t1) * 1000, 3),
+                    "step_ms": round((t3 - t2) * 1000, 3),
+                    "render_ms": round((t4 - t3) * 1000, 3),
+                    "total_ms": round((t4 - t0) * 1000, 3),
+                    "sleep_ms": 0.0,
+                    "should_step": should_step,
+                })
 
             if self.task_status_controller is not None:
                 task_status = self.task_status_controller.run_controller()
@@ -337,7 +486,18 @@ class DataCollectionManager:
                     task_is_success = self.task.is_success()
                     return task_is_success
 
-            elapsed_time = time.time() - start_time
-            if elapsed_time < self.real_time_step:
-                time.sleep(self.real_time_step - elapsed_time)
+            if self._max_episode_steps is not None and self._max_episode_steps < np.iinfo(np.int64).max and step_count >= self._max_episode_steps:
+                orca_logger.info(f"Max episode steps reached ({step_count}), ending episode")
+                if self.save_video and self.saving and self.data_storage is not None:
+                    self.data_storage.stop_save_video(self.env)
+                    self.saving = False
+                task_is_success = self.task.is_success() if self.task is not None else False
+                return task_is_success
+
+            elapsed_time = time.perf_counter() - t0
+            sleep_dur = self.real_time_step - elapsed_time
+            if sleep_dur > 0:
+                time.sleep(sleep_dur)
+            if self._bench_enabled and self._bench_steps:
+                self._bench_steps[-1]["sleep_ms"] = round(max(0, sleep_dur) * 1000, 3)
 

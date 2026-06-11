@@ -158,6 +158,7 @@ _fluid_atexit_state: Dict[str, Any] = {
     "config_ref": None,
     # 仅在 gym.make 成功之后置 True；避免第二实例因端口占用等提前退出时仍向共享 ParticleRender 发 EndSimulation，干扰第一实例
     "owns_shared_services": False,
+    "owns_env": False,
     "stats_plot_proc": None,
 }
 
