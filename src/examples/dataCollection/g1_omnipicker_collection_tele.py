@@ -14,9 +14,12 @@ from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
 from orca_gym.log.orca_log import get_orca_logger
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
+from controllers.controllers import create_arm_osc_controller
 from conf import g1_omnipicker_conf
 from yaml import load, Loader
 from dataStorage.g1_omnipicker_data_storage import G1OmniPickerDataStorage
+from scipy.spatial.transform import Rotation as R
+import numpy as np
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
 
@@ -125,33 +128,74 @@ def main():
         [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
     )
 
+    L_ARM_ROTATION_OFFSET = np.array([np.pi / 2, 0, 0])
+    R_ARM_ROTATION_OFFSET = np.array([np.pi / 2, 0, 0])
+    L_ARM_POSITION_REMAP = [0, 2, 1]
+    R_ARM_POSITION_REMAP = [0, 2, 1]
+    L_ARM_POSITION_FLIP = np.array([1.0, 1.0, -1.0])
+    R_ARM_POSITION_FLIP = np.array([1.0, 1.0, -1.0])
+
+    def make_rotated_callback(update_goal, rotvec, pos_remap, pos_flip):
+        rot = R.from_rotvec(rotvec)
+
+        def callback(relative_position, relative_quat):
+            remapped_pos = relative_position[pos_remap] * pos_flip
+            rotated_pos = rot.apply(remapped_pos)
+            original_rot = R.from_quat(relative_quat[[1, 2, 3, 0]])
+            rotated_rot = rot * original_rot
+            q = rotated_rot.as_quat()
+            rotated_quat = np.array([q[3], q[0], q[1], q[2]])
+            update_goal(rotated_pos, rotated_quat)
+
+        return callback
+
+    def add_arm_osc_pico_controller_with_rotation(
+        dcm, env, arm_config, base_body, device, key, rotvec, pos_remap, pos_flip
+    ):
+        ctrl_name = [env.actuator(m) for m in arm_config["motors_names"]]
+        init_ctrl = {n: v for n, v in zip(ctrl_name, arm_config["motors_init_ctrl"])}
+        arm_ctrl = create_arm_osc_controller(
+            env, arm_config, base_body, ctrl_name, init_ctrl
+        )
+        device.bind_transform_event(
+            key,
+            make_rotated_callback(arm_ctrl.update_goal, rotvec, pos_remap, pos_flip),
+        )
+        dcm.add_controller(arm_ctrl)
+
     orca_logger.info("Creating left arm controller")
-    controllers.add_arm_osc_pico_controller(
+    add_arm_osc_pico_controller_with_rotation(
         data_collection_manager,
         env,
         g1_omnipicker_conf.l_arm,
         g1_omnipicker_conf.base_body,
         pico_joystick_device,
         PicoJoystickKey.L_TRANSFORM,
+        L_ARM_ROTATION_OFFSET,
+        L_ARM_POSITION_REMAP,
+        L_ARM_POSITION_FLIP,
     )
 
     orca_logger.info("Creating right arm controller")
-    controllers.add_arm_osc_pico_controller(
+    add_arm_osc_pico_controller_with_rotation(
         data_collection_manager,
         env,
         g1_omnipicker_conf.r_arm,
         g1_omnipicker_conf.base_body,
         pico_joystick_device,
         PicoJoystickKey.R_TRANSFORM,
+        R_ARM_ROTATION_OFFSET,
+        R_ARM_POSITION_REMAP,
+        R_ARM_POSITION_FLIP,
     )
 
     orca_logger.info("Creating front drive controller")
-    controllers.add_differential_drive_pico_controller(
+    controllers.add_steering_drive_pico_controller(
         data_collection_manager,
         env,
         g1_omnipicker_conf.front_drive,
         pico_joystick_device,
-        PicoJoystickKey.L_JOYSTICK_POSITION,
+        [PicoJoystickKey.L_JOYSTICK_POSITION, PicoJoystickKey.R_JOYSTICK_POSITION],
     )
 
     orca_logger.info("Creating pick place task")

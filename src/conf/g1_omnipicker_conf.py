@@ -9,7 +9,6 @@ l_arm = {
         "idx27_arm_l_joint7",
     ],
     "neutral_joint_values": [-1.42, 0.88, 1.54, -1.48, 0, 0, 0],
-    # "neutral_joint_values": [0.88, 1.54, -1.48, 0, 0, 0],
     "motors_names": [
         "idx21_arm_l_joint1_mctrl",
         "idx22_arm_l_joint2_mctrl",
@@ -139,8 +138,13 @@ front_drive = {
     "actuator_names": [
         "wheel_fl_joint_mctrl",
         "wheel_fr_joint_mctrl",
+        "wheel_fl_steer_joint_pctrl",
+        "wheel_fr_steer_joint_pctrl",
     ],
-    "actuator_ranges": [(-20, 20), (-20, 20)],
-    "init_ctrl": [0, 0],
-    "torque": 18,
+    "actuator_ranges": [(-30, 30), (-30, 30), (-0.6, 0.6), (-0.6, 0.6)],
+    "init_ctrl": [0, 0, 0, 0],
+    "max_speed": 30,
+    "max_steer_angle": 0.6,
+    "wheelbase": 0.42,
+    "track_width": 0.26,
 }

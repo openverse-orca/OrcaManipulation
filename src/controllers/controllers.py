@@ -10,7 +10,10 @@ from orca_gym.adapters.robosuite.controllers import (
 from orca_gym.environment import OrcaGymLocalEnv
 from controllers.controller_2f85 import Controller2F85
 from controllers.controller_2f85_reverse import Controller2F85Reverse
-from controllers.controller_differential_drive import ControllerDifferentialDrive
+from controllers.controller_wheel_drive import (
+    ControllerDifferentialDrive,
+    ControllerSteeringDrive,
+)
 from devices.abstract_device import AbstractDevice, PicoJoystickDevice
 from devices.data_device import DataDevice
 
@@ -448,6 +451,51 @@ def add_differential_drive_pico_controller(
         key, differential_drive_controller.update_joystick
     )
     data_collection_manager.add_controller(differential_drive_controller)
+
+
+def create_steering_drive_controller(
+    env: OrcaGymLocalEnv,
+    drive_config: dict,
+    ctrl_name: list[str],
+    init_ctrl: dict[str, float],
+    controller_type: ControllerSteeringDrive.ControllerType = ControllerSteeringDrive.ControllerType.PICO,
+):
+    return ControllerSteeringDrive(
+        env,
+        ctrl_name,
+        init_ctrl,
+        drive_config["actuator_ranges"],
+        drive_config["max_speed"],
+        max_steer_angle=drive_config.get("max_steer_angle", 0.6),
+        wheelbase=drive_config.get("wheelbase", 0.42),
+        track_width=drive_config.get("track_width", 0.26),
+        controller_type=controller_type,
+    )
+
+
+def add_steering_drive_pico_controller(
+    data_collection_manager: DataCollectionManager,
+    env: OrcaGymLocalEnv,
+    drive_config: dict,
+    device: PicoJoystickDevice,
+    keys: list[PicoJoystickKey],
+):
+    ctrl_name = [
+        env.actuator(actuator_name) for actuator_name in drive_config["actuator_names"]
+    ]
+    init_ctrl = {
+        name: init_val for name, init_val in zip(ctrl_name, drive_config["init_ctrl"])
+    }
+    steering_drive_controller = create_steering_drive_controller(
+        env, drive_config, ctrl_name, init_ctrl
+    )
+    device.bind_joystick_position_event(
+        PicoJoystickKey.L_JOYSTICK_POSITION, steering_drive_controller.update_steering
+    )
+    device.bind_joystick_position_event(
+        PicoJoystickKey.R_JOYSTICK_POSITION, steering_drive_controller.update_throttle
+    )
+    data_collection_manager.add_controller(steering_drive_controller)
 
 
 def add_differential_drive_data_controller(
