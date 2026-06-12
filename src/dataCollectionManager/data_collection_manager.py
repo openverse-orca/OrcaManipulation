@@ -35,12 +35,14 @@ class DataCollectionManager:
                 frame_skip: int = 20,
                 time_step: float = 0.001, 
                 orcagym_addr: str = "localhost:50051",
+                mjc_agent_prefix: str | None = None,
                 task: AbstractTask = None,
                 device: AbstractDevice = None,
                 task_status_controller: TaskStatusController = None,
                 scene_manager: SceneManager = None,
                 data_storage: AbstractDataStorage = None,
                 **kwargs):
+        self._mjc_agent_prefix = mjc_agent_prefix
         self.device = device
         self.time_step = time_step
         self.frame_skip = frame_skip
@@ -130,7 +132,7 @@ class DataCollectionManager:
 
         orcagym_addr_str = orcagym_addr.replace(":", "-")
         env_id = env_name + "-OrcaGym-" + orcagym_addr_str + f"-{env_index:03d}"
-        agent_names = [f"{agent_name}"]
+        agent_names = [f"{self._mjc_agent_prefix or agent_name}"]
         kwargs = {'frame_skip': frame_skip,   
                     'orcagym_addr': orcagym_addr, 
                     'agent_names': agent_names, 
@@ -176,6 +178,10 @@ class DataCollectionManager:
     def set_fluid_coupling(self, fluid_coupling) -> None:
         """挂载 envs.fluid 耦合句柄；在 run_episode 每帧 env.step 前调用 step()。"""
         self._fluid_coupling = fluid_coupling
+
+    def set_cloth_coupling(self, cloth_coupling) -> None:
+        """挂载 envs.cloth 耦合句柄；复用与流体相同的 step/cleanup 钩子。"""
+        self._fluid_coupling = cloth_coupling
 
     def add_pre_fluid_step_callback(self, cb: Callable[[OrcaGymLocalEnv], None]) -> None:
         """注册在 run_controllers() 之前执行的回调（如水壶轨迹写入）。"""
@@ -393,6 +399,10 @@ class DataCollectionManager:
                 self.task.get_task(self.scene_manager, task_info=task_info)
 
             self.env.disable_actuator(self.disable_actuator_group)
+            if self._fluid_coupling is not None and hasattr(
+                self._fluid_coupling, "on_physics_reinitialized"
+            ):
+                self._fluid_coupling.on_physics_reinitialized()
         return True
 
     def run_episode(self):

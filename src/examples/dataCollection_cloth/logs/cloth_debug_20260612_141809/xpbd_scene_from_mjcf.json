@@ -1,0 +1,697 @@
+{
+  "schema_version": 1,
+  "coord_system_sim": "yup",
+  "coord_system_mjcf": "zup",
+  "exported_utc": "2026-06-12T06:18:12Z",
+  "source_config": "/home/hjadmin/OrcaApr24/OrcaPlayground/examples/cloth_3d/cloth_sim_session_20260612_141809.json",
+  "source_mjcf": "/home/hjadmin/OrcaApr24/OrcaPlayground/examples/cloth_3d/assets/dual_gripper_cross/scene.xml",
+  "body_count": 7,
+  "bodies": [
+    {
+      "body_index": 0,
+      "logical_name": "base",
+      "mjc_body_name": "base",
+      "follow_mode": "kinematic",
+      "mass_kg": 0.0,
+      "mass_mjcf_kg": 864.0,
+      "box_half_extents_mjc": [
+        1.2,
+        0.6,
+        0.15
+      ],
+      "box_half_extents_yup": [
+        1.2,
+        0.15,
+        0.6
+      ],
+      "center_mjc": [
+        0.0,
+        -0.0,
+        0.15
+      ],
+      "center_yup": [
+        0.0,
+        0.15,
+        0.0
+      ],
+      "quat_wxyz_mjc": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "quat_wxyz_yup": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "anchors": [
+        {
+          "index": 0,
+          "site_name": "base_anchor_0",
+          "local_pos_mjc": [
+            0.779423,
+            0.779423,
+            0.779423
+          ],
+          "local_pos_yup": [
+            0.779423,
+            0.779423,
+            -0.779423
+          ]
+        },
+        {
+          "index": 1,
+          "site_name": "base_anchor_1",
+          "local_pos_mjc": [
+            0.779423,
+            -0.779423,
+            -0.779423
+          ],
+          "local_pos_yup": [
+            0.779423,
+            -0.779423,
+            0.779423
+          ]
+        },
+        {
+          "index": 2,
+          "site_name": "base_anchor_2",
+          "local_pos_mjc": [
+            -0.779423,
+            0.779423,
+            -0.779423
+          ],
+          "local_pos_yup": [
+            -0.779423,
+            -0.779423,
+            -0.779423
+          ]
+        },
+        {
+          "index": 3,
+          "site_name": "base_anchor_3",
+          "local_pos_mjc": [
+            -0.779423,
+            -0.779423,
+            0.779423
+          ],
+          "local_pos_yup": [
+            -0.779423,
+            0.779423,
+            0.779423
+          ]
+        }
+      ]
+    },
+    {
+      "body_index": 1,
+      "logical_name": "gripper_l_palm",
+      "mjc_body_name": "gripper_l_palm",
+      "follow_mode": "kinematic",
+      "mass_kg": 0.0,
+      "mass_mjcf_kg": 0.001,
+      "box_half_extents_mjc": [
+        0.03,
+        0.02,
+        0.02
+      ],
+      "box_half_extents_yup": [
+        0.03,
+        0.02,
+        0.02
+      ],
+      "center_mjc": [
+        -0.46,
+        -0.0,
+        0.71
+      ],
+      "center_yup": [
+        -0.46,
+        0.71,
+        0.0
+      ],
+      "quat_wxyz_mjc": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "quat_wxyz_yup": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "anchors": [
+        {
+          "index": 0,
+          "site_name": "gripper_l_palm_anchor_0",
+          "local_pos_mjc": [
+            0.023805,
+            0.023805,
+            0.023805
+          ],
+          "local_pos_yup": [
+            0.023805,
+            0.023805,
+            -0.023805
+          ]
+        },
+        {
+          "index": 1,
+          "site_name": "gripper_l_palm_anchor_1",
+          "local_pos_mjc": [
+            0.023805,
+            -0.023805,
+            -0.023805
+          ],
+          "local_pos_yup": [
+            0.023805,
+            -0.023805,
+            0.023805
+          ]
+        },
+        {
+          "index": 2,
+          "site_name": "gripper_l_palm_anchor_2",
+          "local_pos_mjc": [
+            -0.023805,
+            0.023805,
+            -0.023805
+          ],
+          "local_pos_yup": [
+            -0.023805,
+            -0.023805,
+            -0.023805
+          ]
+        },
+        {
+          "index": 3,
+          "site_name": "gripper_l_palm_anchor_3",
+          "local_pos_mjc": [
+            -0.023805,
+            -0.023805,
+            0.023805
+          ],
+          "local_pos_yup": [
+            -0.023805,
+            0.023805,
+            0.023805
+          ]
+        }
+      ]
+    },
+    {
+      "body_index": 2,
+      "logical_name": "gripper_l_finger1",
+      "mjc_body_name": "gripper_l_finger1",
+      "follow_mode": "kinematic",
+      "mass_kg": 0.0,
+      "mass_mjcf_kg": 0.05,
+      "box_half_extents_mjc": [
+        0.008,
+        0.004,
+        0.02
+      ],
+      "box_half_extents_yup": [
+        0.008,
+        0.02,
+        0.004
+      ],
+      "center_mjc": [
+        -0.46,
+        0.0,
+        0.69
+      ],
+      "center_yup": [
+        -0.46,
+        0.69,
+        -0.0
+      ],
+      "quat_wxyz_mjc": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "quat_wxyz_yup": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "anchors": [
+        {
+          "index": 0,
+          "site_name": "gripper_l_finger1_anchor_0",
+          "local_pos_mjc": [
+            0.012649,
+            0.012649,
+            0.012649
+          ],
+          "local_pos_yup": [
+            0.012649,
+            0.012649,
+            -0.012649
+          ]
+        },
+        {
+          "index": 1,
+          "site_name": "gripper_l_finger1_anchor_1",
+          "local_pos_mjc": [
+            0.012649,
+            -0.012649,
+            -0.012649
+          ],
+          "local_pos_yup": [
+            0.012649,
+            -0.012649,
+            0.012649
+          ]
+        },
+        {
+          "index": 2,
+          "site_name": "gripper_l_finger1_anchor_2",
+          "local_pos_mjc": [
+            -0.012649,
+            0.012649,
+            -0.012649
+          ],
+          "local_pos_yup": [
+            -0.012649,
+            -0.012649,
+            -0.012649
+          ]
+        },
+        {
+          "index": 3,
+          "site_name": "gripper_l_finger1_anchor_3",
+          "local_pos_mjc": [
+            -0.012649,
+            -0.012649,
+            0.012649
+          ],
+          "local_pos_yup": [
+            -0.012649,
+            0.012649,
+            0.012649
+          ]
+        }
+      ]
+    },
+    {
+      "body_index": 3,
+      "logical_name": "gripper_l_finger2",
+      "mjc_body_name": "gripper_l_finger2",
+      "follow_mode": "kinematic",
+      "mass_kg": 0.0,
+      "mass_mjcf_kg": 0.05,
+      "box_half_extents_mjc": [
+        0.008,
+        0.004,
+        0.02
+      ],
+      "box_half_extents_yup": [
+        0.008,
+        0.02,
+        0.004
+      ],
+      "center_mjc": [
+        -0.46,
+        0.0,
+        0.69
+      ],
+      "center_yup": [
+        -0.46,
+        0.69,
+        -0.0
+      ],
+      "quat_wxyz_mjc": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "quat_wxyz_yup": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "anchors": [
+        {
+          "index": 0,
+          "site_name": "gripper_l_finger2_anchor_0",
+          "local_pos_mjc": [
+            0.012649,
+            0.012649,
+            0.012649
+          ],
+          "local_pos_yup": [
+            0.012649,
+            0.012649,
+            -0.012649
+          ]
+        },
+        {
+          "index": 1,
+          "site_name": "gripper_l_finger2_anchor_1",
+          "local_pos_mjc": [
+            0.012649,
+            -0.012649,
+            -0.012649
+          ],
+          "local_pos_yup": [
+            0.012649,
+            -0.012649,
+            0.012649
+          ]
+        },
+        {
+          "index": 2,
+          "site_name": "gripper_l_finger2_anchor_2",
+          "local_pos_mjc": [
+            -0.012649,
+            0.012649,
+            -0.012649
+          ],
+          "local_pos_yup": [
+            -0.012649,
+            -0.012649,
+            -0.012649
+          ]
+        },
+        {
+          "index": 3,
+          "site_name": "gripper_l_finger2_anchor_3",
+          "local_pos_mjc": [
+            -0.012649,
+            -0.012649,
+            0.012649
+          ],
+          "local_pos_yup": [
+            -0.012649,
+            0.012649,
+            0.012649
+          ]
+        }
+      ]
+    },
+    {
+      "body_index": 4,
+      "logical_name": "gripper_r_palm",
+      "mjc_body_name": "gripper_r_palm",
+      "follow_mode": "kinematic",
+      "mass_kg": 0.0,
+      "mass_mjcf_kg": 0.001,
+      "box_half_extents_mjc": [
+        0.03,
+        0.02,
+        0.02
+      ],
+      "box_half_extents_yup": [
+        0.03,
+        0.02,
+        0.02
+      ],
+      "center_mjc": [
+        0.46,
+        -0.0,
+        0.71
+      ],
+      "center_yup": [
+        0.46,
+        0.71,
+        0.0
+      ],
+      "quat_wxyz_mjc": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "quat_wxyz_yup": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "anchors": [
+        {
+          "index": 0,
+          "site_name": "gripper_r_palm_anchor_0",
+          "local_pos_mjc": [
+            0.023805,
+            0.023805,
+            0.023805
+          ],
+          "local_pos_yup": [
+            0.023805,
+            0.023805,
+            -0.023805
+          ]
+        },
+        {
+          "index": 1,
+          "site_name": "gripper_r_palm_anchor_1",
+          "local_pos_mjc": [
+            0.023805,
+            -0.023805,
+            -0.023805
+          ],
+          "local_pos_yup": [
+            0.023805,
+            -0.023805,
+            0.023805
+          ]
+        },
+        {
+          "index": 2,
+          "site_name": "gripper_r_palm_anchor_2",
+          "local_pos_mjc": [
+            -0.023805,
+            0.023805,
+            -0.023805
+          ],
+          "local_pos_yup": [
+            -0.023805,
+            -0.023805,
+            -0.023805
+          ]
+        },
+        {
+          "index": 3,
+          "site_name": "gripper_r_palm_anchor_3",
+          "local_pos_mjc": [
+            -0.023805,
+            -0.023805,
+            0.023805
+          ],
+          "local_pos_yup": [
+            -0.023805,
+            0.023805,
+            0.023805
+          ]
+        }
+      ]
+    },
+    {
+      "body_index": 5,
+      "logical_name": "gripper_r_finger1",
+      "mjc_body_name": "gripper_r_finger1",
+      "follow_mode": "kinematic",
+      "mass_kg": 0.0,
+      "mass_mjcf_kg": 0.05,
+      "box_half_extents_mjc": [
+        0.008,
+        0.004,
+        0.02
+      ],
+      "box_half_extents_yup": [
+        0.008,
+        0.02,
+        0.004
+      ],
+      "center_mjc": [
+        0.46,
+        0.0,
+        0.69
+      ],
+      "center_yup": [
+        0.46,
+        0.69,
+        -0.0
+      ],
+      "quat_wxyz_mjc": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "quat_wxyz_yup": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "anchors": [
+        {
+          "index": 0,
+          "site_name": "gripper_r_finger1_anchor_0",
+          "local_pos_mjc": [
+            0.012649,
+            0.012649,
+            0.012649
+          ],
+          "local_pos_yup": [
+            0.012649,
+            0.012649,
+            -0.012649
+          ]
+        },
+        {
+          "index": 1,
+          "site_name": "gripper_r_finger1_anchor_1",
+          "local_pos_mjc": [
+            0.012649,
+            -0.012649,
+            -0.012649
+          ],
+          "local_pos_yup": [
+            0.012649,
+            -0.012649,
+            0.012649
+          ]
+        },
+        {
+          "index": 2,
+          "site_name": "gripper_r_finger1_anchor_2",
+          "local_pos_mjc": [
+            -0.012649,
+            0.012649,
+            -0.012649
+          ],
+          "local_pos_yup": [
+            -0.012649,
+            -0.012649,
+            -0.012649
+          ]
+        },
+        {
+          "index": 3,
+          "site_name": "gripper_r_finger1_anchor_3",
+          "local_pos_mjc": [
+            -0.012649,
+            -0.012649,
+            0.012649
+          ],
+          "local_pos_yup": [
+            -0.012649,
+            0.012649,
+            0.012649
+          ]
+        }
+      ]
+    },
+    {
+      "body_index": 6,
+      "logical_name": "gripper_r_finger2",
+      "mjc_body_name": "gripper_r_finger2",
+      "follow_mode": "kinematic",
+      "mass_kg": 0.0,
+      "mass_mjcf_kg": 0.05,
+      "box_half_extents_mjc": [
+        0.008,
+        0.004,
+        0.02
+      ],
+      "box_half_extents_yup": [
+        0.008,
+        0.02,
+        0.004
+      ],
+      "center_mjc": [
+        0.46,
+        0.0,
+        0.69
+      ],
+      "center_yup": [
+        0.46,
+        0.69,
+        -0.0
+      ],
+      "quat_wxyz_mjc": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "quat_wxyz_yup": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "anchors": [
+        {
+          "index": 0,
+          "site_name": "gripper_r_finger2_anchor_0",
+          "local_pos_mjc": [
+            0.012649,
+            0.012649,
+            0.012649
+          ],
+          "local_pos_yup": [
+            0.012649,
+            0.012649,
+            -0.012649
+          ]
+        },
+        {
+          "index": 1,
+          "site_name": "gripper_r_finger2_anchor_1",
+          "local_pos_mjc": [
+            0.012649,
+            -0.012649,
+            -0.012649
+          ],
+          "local_pos_yup": [
+            0.012649,
+            -0.012649,
+            0.012649
+          ]
+        },
+        {
+          "index": 2,
+          "site_name": "gripper_r_finger2_anchor_2",
+          "local_pos_mjc": [
+            -0.012649,
+            0.012649,
+            -0.012649
+          ],
+          "local_pos_yup": [
+            -0.012649,
+            -0.012649,
+            -0.012649
+          ]
+        },
+        {
+          "index": 3,
+          "site_name": "gripper_r_finger2_anchor_3",
+          "local_pos_mjc": [
+            -0.012649,
+            -0.012649,
+            0.012649
+          ],
+          "local_pos_yup": [
+            -0.012649,
+            0.012649,
+            0.012649
+          ]
+        }
+      ]
+    }
+  ]
+}

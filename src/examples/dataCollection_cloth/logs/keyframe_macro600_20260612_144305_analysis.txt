@@ -1,0 +1,61 @@
+========================================================================
+Cloth debug session analysis: /home/hjadmin/OrcaApr24/OrcaManipulation/src/examples/dataCollection_cloth/logs/cloth_debug_20260612_144306
+========================================================================
+
+[0] CSV inventory (all nodes)
+  MacroTiming.mjc_partial.csv: 600 rows
+  MacroTiming.xpbd_partial.csv: 600 rows
+  MacroTiming_pair.csv: 600 rows
+  VertexPos_Mjc_XPBD.csv: 33600 rows
+  VertexPos_Mjc_XPBD.mjc_partial.csv: 33600 rows
+  VertexPos_Mjc_XPBD.xpbd_partial.csv: 33600 rows
+  cloth_macro_speed.csv: 600 rows
+  mjc_macro_packet_A_units.csv: 16800 rows
+  mujoco_anchor_samples.csv: 0 rows
+  mujoco_orcalink_units.csv: 16800 rows
+  xpbd_body_track_snap.csv: 4167 rows
+  xpbd_body_track_substep.csv: 134370 rows
+  xpbd_body_track_substep_vs_packet.csv: 134321 rows
+
+[1] Macro frame coverage
+  mujoco_orcalink_units: rows=16800  unique_mf=600  mf_range=[0, 599]
+  VertexPos: rows=33600  macro_frames=600
+  body_track_snap: rows=4167
+  cloth_macro_speed: rows=600  macro_frames=600
+
+[2] XPBD log (xpbd_20260612_144306.log)
+  RECV last_mf=599 count=600
+  FORCE last_mf=599 count=600
+  body_track ACCEPTANCE: n=600 fail=0 pos_max=0.0000mm pos_mean=0.0000mm quat_max=0.0560deg
+  last ACCEPTANCE mf=599 pos_err=0.0m quat_err=0.0deg PASS
+  cloth vtk verts=828
+
+[3] Rigid sync — VertexPos (MuJoCo vs XPBD box corners, Y-up)
+  global max pos_err=0.001 mm  mean=0.000 mm
+    base                   max=  0.000mm  mean=  0.000mm  n=4800
+    gripper_l_finger1      max=  0.001mm  mean=  0.000mm  n=4800
+    gripper_l_finger2      max=  0.001mm  mean=  0.000mm  n=4800
+    gripper_l_palm         max=  0.001mm  mean=  0.000mm  n=4800
+    gripper_r_finger1      max=  0.001mm  mean=  0.000mm  n=4800
+    gripper_r_finger2      max=  0.001mm  mean=  0.000mm  n=4800
+    gripper_r_palm         max=  0.001mm  mean=  0.000mm  n=4800
+
+[4] Rigid sync — XPBD body_track snap (macro-end hard snap)
+  global com_jump_max=5.054 mm  com_to_target_before_max=5.054 mm
+    base                   com_jump max= 0.000mm  to_tgt max= 0.000mm  vtx_jump max= 0.000mm
+    gripper_l_finger1      com_jump max= 5.054mm  to_tgt max= 5.054mm  vtx_jump max= 6.814mm
+    gripper_l_finger2      com_jump max= 5.054mm  to_tgt max= 5.054mm  vtx_jump max= 6.814mm
+    gripper_l_palm         com_jump max= 1.663mm  to_tgt max= 1.663mm  vtx_jump max= 1.663mm
+    gripper_r_finger1      com_jump max= 5.054mm  to_tgt max= 5.054mm  vtx_jump max= 6.814mm
+    gripper_r_finger2      com_jump max= 5.054mm  to_tgt max= 5.054mm  vtx_jump max= 6.814mm
+    gripper_r_palm         com_jump max= 1.663mm  to_tgt max= 1.663mm  vtx_jump max= 1.663mm
+
+[5] Cloth deformation — cloth_macro_speed
+  max_speed=3.3171 m/s  mean_of_max=0.2316 m/s  mean_of_mean=0.0070 m/s
+
+[6] Plot saved: /home/hjadmin/OrcaApr24/OrcaManipulation/src/examples/dataCollection_cloth/logs/cloth_debug_20260612_144306/analysis_rigid_cloth.png
+
+WARN: body_track com_to_target max 5.05 mm > 2 mm
+
+PASS: >=90% of 600 macro frames with CSV data
+========================================================================
