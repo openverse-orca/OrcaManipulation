@@ -12,6 +12,7 @@ pip install orca-lab
 pip install -r requirements.txt
 pip install "orca-gym[all]"
 pip install numpy==2.2.6
+pip install lerobot
 
 # 推理才需要：安装 openpi 客户端
 pip install -e third_party/openpi/packages/openpi-client
