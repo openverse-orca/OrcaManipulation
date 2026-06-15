@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 import traceback
@@ -41,6 +42,12 @@ orca_logger = get_orca_logger(
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--level", type=str, default="default", help="场景的名称")
+    args = parser.parse_args()
+
+    level = args.level
+
     orca_logger.info(f"log file: {log_file}")
     orca_logger.info(f"log dir: {log_dir}")
 
@@ -82,7 +89,7 @@ def main():
 
     orca_logger.info("Creating data storage")
     data_storage = G1OmniPickerDataStorage(
-        dataset_path=os.path.join(base_dir, "dataset"),
+        dataset_path=os.path.join(base_dir, "dataset", agent_name, level),
         hdf5_path="record/proprio_stats.hdf5",
     )
     data_storage.set_video_path("video")

@@ -333,6 +333,44 @@ def add_gripper_hand_data_controller(
     data_collection_manager.add_controller(gripper_hand_controller)
 
 
+def add_gripper_2f85_reverse_data_controller(
+    data_collection_manager: DataCollectionManager,
+    env: OrcaGymLocalEnv,
+    gripper_config: dict,
+    base_body: str,
+    device: DataDevice,
+    left_gripper: bool,
+):
+    ctrl_name = [
+        env.actuator(actuator_name)
+        for actuator_name in gripper_config["actuator_names"]
+    ]
+    init_ctrl = {
+        name: init_val for name, init_val in zip(ctrl_name, gripper_config["init_ctrl"])
+    }
+    gripper_2f85_reverse_controller = create_gripper_2f85_reverse_controller(
+        env,
+        gripper_config,
+        base_body,
+        ctrl_name,
+        init_ctrl,
+        Controller2F85Reverse.ControllerType.DATA,
+    )
+    if left_gripper:
+        device.bind_dataset_event(
+            "/action/effector/motor",
+            (0, 2),
+            gripper_2f85_reverse_controller.update_ctrl,
+        )
+    else:
+        device.bind_dataset_event(
+            "/action/effector/motor",
+            (2, 4),
+            gripper_2f85_reverse_controller.update_ctrl,
+        )
+    data_collection_manager.add_controller(gripper_2f85_reverse_controller)
+
+
 def add_task_status_pico_controller(
     data_collection_manager: DataCollectionManager,
     env: OrcaGymLocalEnv,
@@ -522,3 +560,29 @@ def add_differential_drive_data_controller(
         "/action/drive/speed", index, differential_drive_controller.update_ctrl
     )
     data_collection_manager.add_controller(differential_drive_controller)
+
+
+def add_steering_drive_data_controller(
+    data_collection_manager: DataCollectionManager,
+    env: OrcaGymLocalEnv,
+    drive_config: dict,
+    device: DataDevice,
+    index: tuple[int, int],
+):
+    ctrl_name = [
+        env.actuator(actuator_name) for actuator_name in drive_config["actuator_names"]
+    ]
+    init_ctrl = {
+        name: init_val for name, init_val in zip(ctrl_name, drive_config["init_ctrl"])
+    }
+    steering_drive_controller = create_steering_drive_controller(
+        env,
+        drive_config,
+        ctrl_name,
+        init_ctrl,
+        ControllerSteeringDrive.ControllerType.DATA,
+    )
+    device.bind_dataset_event(
+        "/action/drive/ctrl", index, steering_drive_controller.update_ctrl
+    )
+    data_collection_manager.add_controller(steering_drive_controller)

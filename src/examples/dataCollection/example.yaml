@@ -19,28 +19,28 @@ type: "pick_and_place"
 # actor.random.position: 是否随机位置
 # actor.random.rotation: 是否随机旋转
 # actor.random.nums: 随机生成的数量范围
-actor:
-  names: ["bottle_red", "jar_01", "bottle_blue", "salt", "can"]
-  spawnable: ["assets/shop_scene/prefabs/goods/bottle_red", 
-    "assets/shop_scene/prefabs/goods/jar_01", 
-    "assets/shop_scene/prefabs/goods/bottle_blue", 
-    "assets/shop_scene/prefabs/goods/salt", 
-    "assets/shop_scene/prefabs/goods/can"]
-  joints: ["bottle_red_joint", "jar_01_joint", "bottle_blue_joint", "salt_joint", "can_joint"]
-  # 关节的自由度，值为1, 3, 6
-  joints_dof: [6, 6, 6, 6, 6]
-  # 6自由度关节的随机范围
-  # 如果范围相等，则表示关节是固定的
-  random:
-    qpos: true
-    material: false
-    nums: [1, 3]
-    # 6自由度关节的随机范围
-    six_dof:
-      center: [-6.22, 2.78, 1.10]
-    #  center: [-47.9, -169.327, 15.40]
-      bound_position: [[-0.2, 0.2], [-0.2, 0.2], [0, 0]]
-      bound_rotation: [[0, 0], [0, 0], [0, 1]]
+# actor:
+#   names: ["bottle_red", "jar_01", "bottle_blue", "salt", "can"]
+#   spawnable: ["assets/shop_scene/prefabs/goods/bottle_red", 
+#     "assets/shop_scene/prefabs/goods/jar_01", 
+#     "assets/shop_scene/prefabs/goods/bottle_blue", 
+#     "assets/shop_scene/prefabs/goods/salt", 
+#     "assets/shop_scene/prefabs/goods/can"]
+#   joints: ["bottle_red_joint", "jar_01_joint", "bottle_blue_joint", "salt_joint", "can_joint"]
+#   # 关节的自由度，值为1, 3, 6
+#   joints_dof: [6, 6, 6, 6, 6]
+#   # 6自由度关节的随机范围
+#   # 如果范围相等，则表示关节是固定的
+#   random:
+#     qpos: true
+#     material: false
+#     nums: [1, 3]
+#     # 6自由度关节的随机范围
+#     six_dof:
+#       center: [-6.22, 2.78, 1.10]
+#     #  center: [-47.9, -169.327, 15.40]
+#       bound_position: [[-0.2, 0.2], [-0.2, 0.2], [0, 0]]
+#       bound_rotation: [[0, 0], [0, 0], [0, 1]]
     # 3自由度只有球形关节，他的随机范围值不能小于0
     # three_dof:
     #   center: [0, 0, 0]
@@ -67,10 +67,10 @@ light:
     cycle: 20  
 
 # task是任务的配置，参数根据任务类型不同而不同
-task:
-  type: "pick_and_place"
-  goal:
-    name: "basket"
-    site: "basket_site"
+# task:
+#   type: "pick_and_place"
+#   goal:
+#     name: "basket"
+#     site: "basket_site"
 
     
