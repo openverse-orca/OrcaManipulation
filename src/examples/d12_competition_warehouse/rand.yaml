@@ -1,0 +1,47 @@
+# Randomization config for scene objects in competition_warehouse.
+# Usage:
+# python data_collection_mp.py --level competition_warehouse --task_config competition_warehouse.yaml --rand_file rand.yaml --pose_file pose_test.yaml
+#
+# Fields:
+# - seed: optional integer random seed, same seed gives reproducible randomization
+# - object / body: body name or unique substring
+# - joint: optional direct free-joint name, if you do not want lookup by body
+# - position_range: [[xmin, xmax], [ymin, ymax], [zmin, zmax]] in meters, relative delta
+# - position_delta: fixed xyz delta in meters, mutually exclusive with position_range
+# - position_frame: world | local, default world
+# - rotation_range_deg: [[rmin, rmax], [pmin, pmax], [ymin, ymax]] in degrees, sampled in xyz Euler order
+# - rotation_delta_euler_deg: fixed xyz Euler delta in degrees
+# - rotation_delta_quat_xyzw: fixed delta quaternion [qx, qy, qz, qw]
+
+seed: 0
+
+objects:
+  - object: Cardboardbox_01_cardboardbox_01
+    position_range:
+      - [-0.15, 0.0]
+      - [0.0, 0.0]
+      - [0.0, 0.0]
+    rotation_range_deg:
+      - [0.0, 0.0]
+      - [0.0, 0.0]
+      - [-5.0, 5.0]
+
+  - object: Barcode_01_barcode_01
+    position_range:
+      - [-0.15, 0.1]
+      - [-0.1, 0.15]
+      - [0.0, 0.0]
+    rotation_range_deg:
+      - [0.0, 0.0]
+      - [0.0, 0.0]
+      - [-15.0, 15.0]
+
+  - object: C12C_3c_c12c
+    position_range:
+      - [-0.15, 0.1]
+      - [-0.15, 0.1]
+      - [0.0, 0.0]
+    rotation_range_deg:
+      - [0.0, 0.0]
+      - [0.0, 0.0]
+      - [-15.0, 15.0]

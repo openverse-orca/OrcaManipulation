@@ -159,7 +159,9 @@ class AbstractDataStorage(metaclass=abc.ABCMeta):
             f.create_dataset("task_info", data=task_info_str)
             f.create_dataset("scene_info", data=scene_info_str)
 
-        self.dict = {}
+        # 关键修复：原代码笔误 self.dict = {}（实际缓冲区是 self.data），
+        # 导致成功落盘后缓冲区从不清空 → 连续成功的 episode 会累加进同一个文件。
+        self.data = {}
         self.get_next_unit_path()
 
     def _save_data(self, **kwargs):

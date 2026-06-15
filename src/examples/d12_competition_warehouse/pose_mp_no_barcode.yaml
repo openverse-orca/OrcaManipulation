@@ -1,0 +1,63 @@
+# 简化任务：左臂抓取 C12C 并放入纸箱，不含扫码枪、不关箱子
+# 配合 competition_warehouse_no_barcode.json 布局使用（场景中无 Barcode_01）
+#
+# 运行：
+# python data_collection_mp.py \
+#     --level competition_warehouse \
+#     --task_config competition_warehouse.yaml \
+#     --pose_file pose_mp_no_barcode.yaml \
+#     --episodes 1
+
+gripper_open: 0.0
+gripper_close: 220.0
+
+segments:
+  # 1. 左臂移到 C12C 上方，右臂移到安全停放位
+  - steps: 300
+    l_object_frame: C12C_3c_c12c
+    l_target_o: [-0.2, 0.0, 0.4]
+    l_quat_o: [0.0, 0.0, 0.0, 1.0]
+    r_target_b: [0.45, -0.4, 0.5]
+    r_quat_b: [0.0, 0.0, 0.0, 1.0]
+    gripper_l: open
+    gripper_r: open
+
+  # 2. 左臂接近 C12C 预抓位，右臂保持停放
+  - steps: 200
+    l_object_frame: C12C_3c_c12c
+    l_target_o: [-0.05, 0.0, 0.05]
+    l_quat_o: [0.0, 0.0, 0.0, 1.0]
+    r_hold: true
+    gripper_l: open
+    gripper_r: open
+
+  # 3. 左臂抓取 C12C，右臂保持
+  - steps: 100
+    l_hold: true
+    r_hold: true
+    gripper_l: close
+    gripper_r: open
+
+  # 4. 左臂抬起 C12C，右臂保持
+  - steps: 200
+    l_target_b: [0.45, 0.25, 0.55]
+    r_hold: true
+    gripper_l: close
+    gripper_r: open
+
+  # 5. 左臂移到纸箱上方，右臂保持
+  - steps: 300
+    l_object_frame: Cardboardbox_01_cardboardbox_01
+    l_target_o: [-0.15, 0.0, 0.5]
+    l_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    l_quat_o: [0, 0, -0.258819, 0.9659258]
+    r_hold: true
+    gripper_l: close
+    gripper_r: open
+
+  # 6. 左臂松开，将 C12C 放入箱中
+  - steps: 200
+    l_hold: true
+    r_hold: true
+    gripper_l: open
+    gripper_r: open

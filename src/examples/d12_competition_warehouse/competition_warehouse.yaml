@@ -1,0 +1,35 @@
+# 2026 杭州具身智能大赛 — 比赛场景配置（适配 d12 遥操作）
+# 物体已通过 OrcaLab MCP 固定在场景中，不动态生成
+
+level_name: "competition_warehouse"
+type: "pick_and_place"
+
+# 空 actor 列表：物体已经由 OrcaLab 布局管理
+actor:
+  names: []
+  spawnable: []
+  joints: []
+  joints_dof: []
+  random:
+    qpos: false
+    nums: [0, 0]
+
+light:
+  names: ["spotlight1"]
+  spawnable: ["prefabs/spotlight"]
+  random:
+    position: false
+    rotation: false
+    center: [0, 0, 0]
+    bound_position: [[-1, 1], [-1, 1], [0, 2]]
+    bound_rotation: [[0, 3.14159], [0, 3.14159], [0, 3.14159]]
+    nums: [1, 1]
+    cycle: 20
+
+
+# 任务：放入纸箱
+task:
+  type: "pick_and_place"
+  goal:
+    name: "cardboardbox"
+    site: "Group_Interactive_Objcets_Cardboardbox_01_cardboardbox_01site"

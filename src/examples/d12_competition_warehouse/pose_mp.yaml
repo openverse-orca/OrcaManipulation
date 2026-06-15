@@ -1,0 +1,173 @@
+# Minimal validation file for object-frame pose resolution.
+# Run:
+# python data_collection_mp.py --level competition_warehouse --task_config competition_warehouse.yaml --pose_file pose_test.yaml --resolve_pose_only
+#
+# Expected idea:
+# - Cardboardbox_01_cardboardbox_01 and Barcode_01_barcode_01 should use an extra local-frame offset
+# - that offset treats the already-rotated object frame as the initial frame: Z = -90 deg
+# - data_collection_mp.py resolves that offset frame into robot base frame at runtime
+
+gripper_open: 0.0
+gripper_close: 220.0
+
+segments:
+  # 1. left & right arm move above objects
+  - steps: 300
+    l_object_frame: C12C_3c_c12c
+    l_target_o: [-0.2, 0.0, 0.4]
+    l_quat_o: [0.0, 0.0, 0.0, 1.0]
+    r_object_frame: Barcode_01_barcode_01
+    r_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    r_target_o: [-0.1, 0.0, 0.3]
+    r_quat_o: [0.0, 0.0, 0.0, 1.0]
+    gripper_l: open
+    gripper_r: open
+
+  # 2. left & right arm approach objects, pre-grasp
+  - steps: 200
+    l_object_frame: C12C_3c_c12c
+    l_target_o: [-0.05, 0.0, 0.05]
+    l_quat_o: [0.0, 0.0, 0.0, 1.0]
+    r_object_frame: Barcode_01_barcode_01
+    r_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    r_target_o: [0.03, 0.01, 0.02]
+    r_quat_o: [0, 0.258819, 0, 0.9659258]        # y-axis 30 degree
+    gripper_l: open
+    gripper_r: open
+
+  # 3. grasp objects
+  - steps: 100
+    l_hold: true
+    r_hold: true
+    gripper_l: close
+    gripper_r: close
+
+  # 4. lift objects
+  - steps: 200
+    l_target_b: [0.45, 0.39, 0.55]
+    r_target_b: [0.5, -0.39, 0.55]
+    r_quat_b: [0, 0.5, 0, 0.8660254]        # y-axis 60 degree
+    gripper_l: close
+    gripper_r: close
+
+  # 5. scanning
+  - steps: 200
+    l_target_b: [0.5, 0.15, 0.55]
+    l_quat_b: [0, 0, -0.3826834, 0.9238795] # z-axis -45 degree
+    r_target_b: [0.47, -0.08, 0.53]
+    r_quat_b: [0, 0, 0.3826834, 0.9238795]  # z-axis 45 degree
+    gripper_l: close
+    gripper_r: close
+
+  - steps: 200
+    l_hold: true
+    r_hold: true
+    gripper_l: close
+    gripper_r: close
+
+
+  # 6. left arm move to the box, right arm move away
+  - steps: 300
+    l_object_frame: Cardboardbox_01_cardboardbox_01
+    l_target_o: [-0.15, 0.0, 0.5]
+    l_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    l_quat_o: [0, 0, -0.258819, 0.9659258]        # z-axis -30 degree
+    r_target_b: [0.45, -0.4, 0.5]
+    r_quat_b: [0.0, 0.0, 0.0, 1.0]
+    gripper_l: close
+    gripper_r: close
+
+  # 7. left arm release, right arm move down
+  - steps: 200
+    l_hold: true
+    r_target_b: [0.45, -0.4, 0.25]
+    r_quat_b: [0, 0.5, 0, 0.8660254]        # y-axis 60 degree
+    gripper_l: open
+    gripper_r: close
+
+  # 8. right arm release
+  - steps: 100
+    l_hold: true
+    r_hold: true
+    gripper_l: open
+    gripper_r: open
+
+  # 9. left & right arm move below the edges of the box
+  - steps: 300
+    l_object_frame: Cardboardbox_01_cardboardbox_01
+    l_target_o: [0.0, 0.35, 0.15]
+    l_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    l_quat_o: [0.0, 0.0, 0.0, 1.0]
+    r_object_frame: Cardboardbox_01_cardboardbox_01
+    r_target_o: [0.0, -0.35, 0.15]
+    r_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    r_quat_o: [0.0, 0.0, 0.0, 1.0]
+    gripper_l: open
+    gripper_r: open
+
+  # # 10. close the box
+  - steps: 200
+    l_object_frame: Cardboardbox_01_cardboardbox_01
+    l_target_o: [0.0, 0.17, 0.15]
+    l_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    l_quat_o: [0, 0, -0.3826834, 0.9238795] # z-axis -45 degree
+    r_object_frame: Cardboardbox_01_cardboardbox_01
+    r_target_o: [0.0, -0.17, 0.15]
+    r_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    r_quat_o:  [0, 0, 0.3826834, 0.9238795]  # z-axis 45 degree
+    gripper_l: open
+    gripper_r: open
+
+  - steps: 150
+    l_object_frame: Cardboardbox_01_cardboardbox_01
+    l_target_o: [0.0, 0.17, 0.25]
+    l_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    l_quat_o: [0, 0, -0.3826834, 0.9238795] # z-axis -45 degree
+    r_object_frame: Cardboardbox_01_cardboardbox_01
+    r_target_o: [0.0, -0.17, 0.25]
+    r_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    r_quat_o:  [0, 0, 0.3826834, 0.9238795]  # z-axis 45 degree
+    gripper_l: open
+    gripper_r: open
+
+  - steps: 150
+    l_object_frame: Cardboardbox_01_cardboardbox_01
+    l_target_o: [0.0, 0.17, 0.35]
+    l_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    l_quat_o: [0, 0, -0.3826834, 0.9238795] # z-axis -45 degree
+    r_object_frame: Cardboardbox_01_cardboardbox_01
+    r_target_o: [0.0, -0.17, 0.35]
+    r_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    r_quat_o:  [0, 0, 0.3826834, 0.9238795]  # z-axis 45 degree
+    gripper_l: open
+    gripper_r: open
+
+  - steps: 150
+    l_object_frame: Cardboardbox_01_cardboardbox_01
+    l_target_o: [0.0, 0.07, 0.35]
+    l_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    l_quat_o: [0, 0, -0.3826834, 0.9238795] # z-axis -45 degree
+    r_object_frame: Cardboardbox_01_cardboardbox_01
+    r_target_o: [0.0, -0.07, 0.35]
+    r_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    r_quat_o:  [0, 0, 0.3826834, 0.9238795]  # z-axis 45 degree
+    gripper_l: open
+    gripper_r: open
+
+  - steps: 150
+    l_object_frame: Cardboardbox_01_cardboardbox_01
+    l_target_o: [0.0, 0.07, 0.22]
+    l_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    l_quat_o: [0, 0, -0.3826834, 0.9238795] # z-axis -45 degree
+    r_object_frame: Cardboardbox_01_cardboardbox_01
+    r_target_o: [0.0, -0.07, 0.22]
+    r_frame_offset_euler_deg: [0.0, 0.0, 90.0]
+    r_quat_o:  [0, 0, 0.3826834, 0.9238795]  # z-axis 45 degree
+    gripper_l: open
+    gripper_r: open
+
+  - steps: 100
+    l_hold: true
+    r_hold: true
+    gripper_l: hold
+    gripper_r: hold

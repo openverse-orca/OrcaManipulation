@@ -1,0 +1,36 @@
+# 随机化配置：适配 competition_warehouse_no_barcode 场景（无扫码枪）
+# 配合 pose_mp_no_barcode.yaml 使用
+#
+# 运行示例：
+# python data_collection_mp.py \
+#     --level competition_warehouse \
+#     --task_config competition_warehouse.yaml \
+#     --pose_file pose_mp_no_barcode.yaml \
+#     --rand_file rand_no_barcode.yaml \
+#     --record_data \
+#     --episodes 50
+#
+# Fields:
+# - seed: 随机种子，相同种子产生相同结果（每条 episode 会自动递增种子）
+# - object: 物体名称或唯一子串
+# - position_range: [[xmin,xmax],[ymin,ymax],[zmin,zmax]] 相对默认位置的偏移范围（米）
+# - rotation_range_deg: [[rmin,rmax],[pmin,pmax],[ymin,ymax]] 绕 xyz 轴的旋转随机范围（度）
+
+seed: 0
+
+objects:
+  # C12C 默认世界坐标：[15.262, -0.300, 1.075]
+  # 范围搜索结论（debug_grasp 批量实测，修正基准下）：
+  #   - yaw 受左腕关节运动范围限制，正向稳到 ~+25°；>±30° 开始时成时败。
+  #   - 正向 yaw 会缩小可达位置包络，故 x 上限收到 15.36 以避开 (+yaw×高x×高y) 失败角。
+  # 注意：y 上限本应 ≤-0.34（>-0.34 时夹爪前部会提前撞上 C12C 导致抓取失败），
+  #       此处按需求放宽到 -0.24，y∈(-0.34,-0.24] 区间预计抓取成功率明显偏低。
+  - object: C12C_3c_c12c
+    position_range:
+      - [-0.043, 0.097]  # x delta：世界 x ∈ [15.22, 15.36]
+      - [-0.15,  0.06]   # y delta：世界 y ∈ [-0.450, -0.240]
+      - [0.0,    0.0]    # z：不动（桌面高度固定）
+    rotation_range_deg:
+      - [0.0, 0.0]       # roll：不动
+      - [0.0, 0.0]       # pitch：不动
+      - [-25.0, 25.0]    # yaw：绕竖轴随机旋转 ±25°（受腕关节范围限制的稳定上限）

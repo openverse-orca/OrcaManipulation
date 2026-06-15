@@ -1,0 +1,212 @@
+{
+    "version": "1.0",
+    "name": "root",
+    "path": "/",
+    "transform": {
+        "position": "[0,0,0]",
+        "rotation": "[1,0,0,0]",
+        "scale": 1.0
+    },
+    "type": "GroupActor",
+    "children": [
+        {
+            "name": "Group",
+            "path": "/Group",
+            "transform": {
+                "position": "[0.0,0.0,0.0]",
+                "rotation": "[1.0,0.0,0.0,0.0]",
+                "scale": 1.0
+            },
+            "type": "GroupActor",
+            "children": [
+                {
+                    "name": "Static_Objcets",
+                    "path": "/Group/Static_Objcets",
+                    "transform": {
+                        "position": "[0.0,0.0,0.0]",
+                        "rotation": "[1.0,0.0,0.0,0.0]",
+                        "scale": 1.0
+                    },
+                    "type": "GroupActor",
+                    "children": [
+                        {
+                            "name": "Table_green_03_001",
+                            "path": "/Group/Static_Objcets/Table_green_03_001",
+                            "transform": {
+                                "position": "[0.0,0.0,0.0]",
+                                "rotation": "[1.0,0.0,0.0,0.0]",
+                                "scale": 1.0
+                            },
+                            "type": "GroupActor",
+                            "children": [
+                                {
+                                    "name": "Table_green_03",
+                                    "path": "/Group/Static_Objcets/Table_green_03_001/Table_green_03",
+                                    "transform": {
+                                        "position": "[15.04892159,0.2597470582,2.384185791e-07]",
+                                        "rotation": "[1.0,0.0,0.0,0.0]",
+                                        "scale": 1.399999976158142
+                                    },
+                                    "type": "AssetActor",
+                                    "asset_path": "assets/e071469a36d3c8aa/warehouse_embodiedcompetition_2026hangzhou/embodiedcompetition_2026 hangzhou/table_green_03/table_green_03",
+                                    "modified_properties": []
+                                }
+                            ]
+                        },
+                        {
+                            "name": "Table_green_03_002",
+                            "path": "/Group/Static_Objcets/Table_green_03_002",
+                            "transform": {
+                                "position": "[0.0,0.0,0.0]",
+                                "rotation": "[1.0,0.0,0.0,0.0]",
+                                "scale": 1.0
+                            },
+                            "is_visible": true,
+                            "is_parent_visible": true,
+                            "is_locked": false,
+                            "is_parent_locked": false,
+                            "type": "GroupActor",
+                            "children": []
+                        },
+                        {
+                            "name": "Table_green_03_003",
+                            "path": "/Group/Static_Objcets/Table_green_03_003",
+                            "transform": {
+                                "position": "[0.0,0.0,0.0]",
+                                "rotation": "[1.0,0.0,0.0,0.0]",
+                                "scale": 1.0
+                            },
+                            "is_visible": true,
+                            "is_parent_visible": true,
+                            "is_locked": false,
+                            "is_parent_locked": false,
+                            "type": "GroupActor",
+                            "children": []
+                        }
+                    ]
+                },
+                {
+                    "name": "Interactive_Objects",
+                    "path": "/Group/Interactive_Objects",
+                    "transform": {
+                        "position": "[0.0,0.0,0.0]",
+                        "rotation": "[1.0,0.0,0.0,0.0]",
+                        "scale": 1.0
+                    },
+                    "type": "GroupActor",
+                    "children": [
+                        {
+                            "name": "Cardboardbox_01",
+                            "path": "/Group/Interactive_Objects/Cardboardbox_01",
+                            "transform": {
+                                "position": "[15.287005424499512,0.08589411526918411,1.077841877937317]",
+                                "rotation": "[0.7071067811865476,0.0,0.0,0.7071067811865475]",
+                                "scale": 0.8
+                            },
+                            "type": "AssetActor",
+                            "asset_path": "assets/e071469a36d3c8aa/warehouse_embodiedcompetition_2026hangzhou/embodiedcompetition_2026 hangzhou/cardboardbox_01/cardboardbox_01",
+                            "modified_properties": []
+                        },
+                        {
+                            "name": "C12C",
+                            "path": "/Group/Interactive_Objects/C12C",
+                            "transform": {
+                                "position": "[15.262639999389648,-0.3,1.0751147270202637]",
+                                "rotation": "[6.123031769111886e-17,0.0,0.0,1.0]",
+                                "scale": 1.0
+                            },
+                            "type": "AssetActor",
+                            "asset_path": "assets/e071469a36d3c8aa/warehouse_embodiedcompetition_2026hangzhou/embodiedcompetition_2026 hangzhou/c12c/c12c",
+                            "modified_properties": []
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "humanoid_industrial_robot_1",
+            "path": "/humanoid_industrial_robot_1",
+            "transform": {
+                "position": "[15.778681755065918,0.08740568161010742,0.0]",
+                "rotation": "[6.123031769111886e-17,0.0,0.0,1.0]",
+                "scale": 1.0
+            },
+            "type": "AssetActor",
+            "asset_path": "assets/e071469a36d3c8aa/robot_project/prefabs/d12_waist_usda",
+            "modified_properties": [
+                {
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/waist_yaw_link/head_yaw_link/head_pitch_link/neck_center_body/camera_head/cameras/camera_head:Camera",
+                    "name": "ColorCamera",
+                    "type": "BOOL",
+                    "value": true
+                },
+                {
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/waist_yaw_link/head_yaw_link/head_pitch_link/neck_center_body/camera_head/cameras/camera_head:Camera",
+                    "name": "DepthCamera",
+                    "type": "BOOL",
+                    "value": true
+                },
+                {
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/waist_yaw_link/head_yaw_link/head_pitch_link/neck_center_body/camera_head/cameras/camera_head:Camera",
+                    "name": "UseNvEnc",
+                    "type": "BOOL",
+                    "value": true
+                },
+                {
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/waist_yaw_link/head_yaw_link/head_pitch_link/neck_center_body/camera_head/cameras/camera_head:Camera",
+                    "name": "IsRecording",
+                    "type": "BOOL",
+                    "value": true
+                },
+                {
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/waist_yaw_link/left_shoulder_pitch_link/left_shoulder_roll_link/left_shoulder_yaw_link/left_elbow_pitch_link/left_wrist_roll_link/left_wrist_pitch_link/left_wrist_yaw_link/camera_wrist_l/cameras/camera_wrist_l:Camera",
+                    "name": "ColorCamera",
+                    "type": "BOOL",
+                    "value": true
+                },
+                {
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/waist_yaw_link/left_shoulder_pitch_link/left_shoulder_roll_link/left_shoulder_yaw_link/left_elbow_pitch_link/left_wrist_roll_link/left_wrist_pitch_link/left_wrist_yaw_link/camera_wrist_l/cameras/camera_wrist_l:Camera",
+                    "name": "DepthCamera",
+                    "type": "BOOL",
+                    "value": true
+                },
+                {
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/waist_yaw_link/left_shoulder_pitch_link/left_shoulder_roll_link/left_shoulder_yaw_link/left_elbow_pitch_link/left_wrist_roll_link/left_wrist_pitch_link/left_wrist_yaw_link/camera_wrist_l/cameras/camera_wrist_l:Camera",
+                    "name": "UseNvEnc",
+                    "type": "BOOL",
+                    "value": true
+                },
+                {
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/waist_yaw_link/left_shoulder_pitch_link/left_shoulder_roll_link/left_shoulder_yaw_link/left_elbow_pitch_link/left_wrist_roll_link/left_wrist_pitch_link/left_wrist_yaw_link/camera_wrist_l/cameras/camera_wrist_l:Camera",
+                    "name": "IsRecording",
+                    "type": "BOOL",
+                    "value": true
+                },
+                {
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/waist_yaw_link/right_shoulder_pitch_link/right_shoulder_roll_link/right_shoulder_yaw_link/right_elbow_pitch_link/right_wrist_roll_link/right_wrist_pitch_link/right_wrist_yaw_link/camera_wrist_r/cameras/camera_wrist_r:Camera",
+                    "name": "ColorCamera",
+                    "type": "BOOL",
+                    "value": true
+                },
+                {
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/waist_yaw_link/right_shoulder_pitch_link/right_shoulder_roll_link/right_shoulder_yaw_link/right_elbow_pitch_link/right_wrist_roll_link/right_wrist_pitch_link/right_wrist_yaw_link/camera_wrist_r/cameras/camera_wrist_r:Camera",
+                    "name": "DepthCamera",
+                    "type": "BOOL",
+                    "value": true
+                },
+                {
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/waist_yaw_link/right_shoulder_pitch_link/right_shoulder_roll_link/right_shoulder_yaw_link/right_elbow_pitch_link/right_wrist_roll_link/right_wrist_pitch_link/right_wrist_yaw_link/camera_wrist_r/cameras/camera_wrist_r:Camera",
+                    "name": "UseNvEnc",
+                    "type": "BOOL",
+                    "value": true
+                },
+                {
+                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/waist_yaw_link/right_shoulder_pitch_link/right_shoulder_roll_link/right_shoulder_yaw_link/right_elbow_pitch_link/right_wrist_roll_link/right_wrist_pitch_link/right_wrist_yaw_link/camera_wrist_r/cameras/camera_wrist_r:Camera",
+                    "name": "IsRecording",
+                    "type": "BOOL",
+                    "value": true
+                }
+            ]
+        }
+    ]
+}

@@ -1,7 +1,6 @@
 import enum
 import os
 import signal
-import subprocess
 from textwrap import shorten
 import time
 import numpy as np
@@ -15,8 +14,6 @@ from controllers.controller_task import TaskStatus, TaskStatusController
 from devices.abstract_device import AbstractDevice
 from scene.scene_manager import SceneManager
 from dataStorage.abstract_data_storage import AbstractDataStorage
-from orca_gym.sensor.rgbd_camera import Monitor
-from sensor.touch_sensor_visualizer import TouchSensorVisualizer
 orca_logger = OrcaLog.get_instance()
 
 class DataCollectionManager:
@@ -53,11 +50,7 @@ class DataCollectionManager:
         self.data_storage: AbstractDataStorage = data_storage
         self.ctrl = np.zeros(self.env.nu, dtype=np.float32)
         self.disable_actuator_group = []
-        self.monitor_ports: list[int] = []
-        self.monitor_processes: list[subprocess.Popen] = []
-        self.touch_sensor_names: list[str] = []
-        self.touch_sensor: TouchSensorVisualizer = None
-
+        
         self._save_video = False
         self._saving = False
         self._mode = self.DataCollectionMode.TELECONTROL
@@ -88,26 +81,6 @@ class DataCollectionManager:
     @mode.setter
     def mode(self, value: DataCollectionMode):
         self._mode = value
-
-    def add_monitor_port(self, port: int):
-        self.monitor_ports.append(port)
-
-    def add_touch_sensor(self, touch_sensor_list: list[str]):
-        self.touch_sensor_names = [self.env.sensor(name) for name in touch_sensor_list]
-        
-    def start_monitors(self):
-        from orca_gym.scripts.camera_monitor import start_monitor
-        for monitor_port in self.monitor_ports:
-            p = start_monitor(monitor_port)
-            self.monitor_processes.append(p)
-
-    def stop_monitors(self):
-        from orca_gym.scripts.camera_monitor import terminate_monitor
-        for monitor_process in self.monitor_processes:
-            try:
-                terminate_monitor(monitor_process)  
-            except Exception as e:
-                orca_logger.error(f"Failed to stop monitor: {e}")
 
     def create_env(self, agent_name:str, 
                   env_name:str,
@@ -169,6 +142,16 @@ class DataCollectionManager:
     def add_controller(self, controller: AbstractController):
         self.controllers.append(controller)
 
+    def get_device_record_data(self) -> dict:
+        if self.device is None or not hasattr(self.device, "get_record_data"):
+            return {}
+        record_data = self.device.get_record_data()
+        if record_data is None:
+            return {}
+        if not isinstance(record_data, dict):
+            raise ValueError("Device record data must be a dict")
+        return record_data
+
     def run_controllers(self) ->list[float]:
         if self.device is not None:
             self.device.update()
@@ -193,9 +176,7 @@ class DataCollectionManager:
     def run(self):
         self._shutdown_requested = False
         self.env.disable_actuator(self.disable_actuator_group)
-        self.start_monitors()
-        if self.touch_sensor_names:
-            self.touch_sensor = TouchSensorVisualizer()
+
         try:
             while not self._shutdown_requested:
                 self.env.reset()
@@ -213,7 +194,12 @@ class DataCollectionManager:
                         orca_logger.info("Task Success!")
                         task_info = self.task.get_task_info()
                         scene_info = self.scene_manager.get_scene_info()
-                        self.data_storage.save_data(task_info=task_info, scene_info=scene_info, task_description=self.task.get_task_description())
+                        self.data_storage.save_data(
+                            task_info=task_info,
+                            scene_info=scene_info,
+                            task_description=self.task.get_task_description(),
+                            extra_hdf5_data=self.get_device_record_data(),
+                        )
                     else:
                         self.data_storage.clear_data()
                         orca_logger.info("Task Failed!")
@@ -224,9 +210,6 @@ class DataCollectionManager:
         finally:
             signal.signal(signal.SIGINT, self._original_sigint)
             orca_logger.info("Cleanup start")
-            self.stop_monitors()
-            if self.touch_sensor is not None:
-                self.touch_sensor.close()
             if self.data_storage is not None:
                 orca_logger.info("Clear data")
                 self.data_storage.clear_data()
@@ -291,10 +274,6 @@ class DataCollectionManager:
             start_time = time.time()
             action = self.run_controllers()
             obs, reward, terminated, truncated, info = self.env.step(action)
-            if self.touch_sensor_names:
-                sensor_data = self.env.query_sensor_data(self.touch_sensor_names)
-                touch_sensor_data = {name: sensor_data[name][0] for name in self.touch_sensor_names}
-                self.touch_sensor.update_data(touch_sensor_data)
             self.env.render()
 
             if self.task_status_controller is not None:

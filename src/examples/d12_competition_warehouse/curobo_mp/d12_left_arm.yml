@@ -1,0 +1,143 @@
+# curobo robot configuration for the d12_waist LEFT arm (7-DOF) + 2F85 gripper.
+#
+# Names here are UNPREFIXED (no "humanoid_industrial_robot_1_"). The planner
+# (curobo_planner.py) adds the runtime prefix to every link/joint name and injects
+# the collision spheres from collision_spheres.yml before calling curobo.
+#
+# Kinematics are parsed directly from the compiled MuJoCo mjModel via
+# MjcfKinematicsParser (see curobo_robot.mjcf_parser_injected); there is no URDF.
+# Hence urdf_path / usd_path are intentionally absent.
+#
+# base_link = base_link (the fixed robot root). The controlled chain is the
+# waist_yaw joint + the 7 left-arm joints (8 DOF). The waist MUST stay an active DOF
+# here: locking it via lock_joints drops it from the chain AND from the start config
+# we read live, so curobo would ignore the real (non-zero) live waist and its FK
+# would diverge from the live robot (seen as a ~440mm FK-CHECK mismatch). We instead
+# keep waist active but the grasp search prefers near-zero-waist IK solutions, and we
+# drop the over-conservative shelf panel from the grasp world so curobo no longer has
+# to swing the torso ~70deg to dodge it (it now grasps with the waist only ~7deg).
+# ee_link = ee_center_body (ee_center_site sits at this body's origin, identity
+# offset; the gripper TCP is ~[-0.139,0,-0.030] in this frame).
+
+robot_cfg:
+  kinematics:
+    use_usd_kinematics: False
+    base_link: "base_link"
+    ee_link: "ee_center_body"
+
+    collision_link_names:
+      [
+        "waist_yaw_link",
+        "left_shoulder_pitch_link",
+        "left_shoulder_roll_link",
+        "left_shoulder_yaw_link",
+        "left_elbow_pitch_link",
+        "left_wrist_roll_link",
+        "left_wrist_pitch_link",
+        "left_wrist_yaw_link",
+        "zbll_base_link",
+        "l_left_driver",
+        "l_left_coupler",
+        "l_left_follower",
+        "l_left_pad",
+        "l_right_driver",
+        "l_right_coupler",
+        "l_right_follower",
+        "l_right_pad",
+        "attached_object",
+      ]
+
+    # Collision spheres are injected at runtime from collision_spheres.yml.
+    collision_sphere_buffer: 0.005
+    extra_collision_spheres: {"attached_object": 6}
+    use_global_cumul: True
+
+    # The 2F85 gripper joints are not part of the arm chain; lock them (open=0)
+    # so they become fixed and do not add DOFs while still providing collision.
+    lock_joints:
+      {
+        "l_left_driver_joint": 0.0,
+        "l_left_follower": 0.0,
+        "l_left_spring_link_joint": 0.0,
+        "l_right_driver_joint": 0.0,
+        "l_right_follower_joint": 0.0,
+        "l_right_spring_link_joint": 0.0,
+      }
+
+    # A virtual link rigidly attached to the ee, used to attach the grasped object
+    # to the robot during the lift/place phase.
+    extra_links:
+      {
+        "attached_object":
+          {
+            "parent_link_name": "ee_center_body",
+            "link_name": "attached_object",
+            "fixed_transform": [0, 0, 0, 1, 0, 0, 0],
+            "joint_type": "FIXED",
+            "joint_name": "attach_joint",
+          },
+      }
+
+    self_collision_ignore:
+      {
+        "waist_yaw_link": ["left_shoulder_pitch_link", "left_shoulder_roll_link"],
+        "left_shoulder_pitch_link": ["left_shoulder_roll_link", "left_shoulder_yaw_link"],
+        "left_shoulder_roll_link": ["left_shoulder_yaw_link", "left_elbow_pitch_link"],
+        "left_shoulder_yaw_link": ["left_elbow_pitch_link", "left_wrist_roll_link"],
+        "left_elbow_pitch_link": ["left_wrist_roll_link", "left_wrist_pitch_link"],
+        "left_wrist_roll_link": ["left_wrist_pitch_link", "left_wrist_yaw_link"],
+        "left_wrist_pitch_link":
+          ["left_wrist_yaw_link", "zbll_base_link", "l_left_driver", "l_right_driver"],
+        "left_wrist_yaw_link":
+          [
+            "zbll_base_link", "l_left_driver", "l_left_coupler", "l_left_follower", "l_left_pad",
+            "l_right_driver", "l_right_coupler", "l_right_follower", "l_right_pad", "attached_object",
+          ],
+        "zbll_base_link":
+          [
+            "l_left_driver", "l_left_coupler", "l_left_follower", "l_left_pad",
+            "l_right_driver", "l_right_coupler", "l_right_follower", "l_right_pad", "attached_object",
+          ],
+        "l_left_driver": ["l_left_coupler", "l_left_follower", "l_left_pad", "attached_object"],
+        "l_left_coupler": ["l_left_follower", "l_left_pad", "attached_object"],
+        "l_left_follower": ["l_left_pad", "attached_object"],
+        "l_left_pad": ["attached_object"],
+        "l_right_driver": ["l_right_coupler", "l_right_follower", "l_right_pad", "attached_object"],
+        "l_right_coupler": ["l_right_follower", "l_right_pad", "attached_object"],
+        "l_right_follower": ["l_right_pad", "attached_object"],
+        "l_right_pad": ["attached_object"],
+      }
+
+    self_collision_buffer:
+      {
+        "waist_yaw_link": 0.0,
+        "left_shoulder_pitch_link": 0.02,
+        "left_shoulder_roll_link": 0.0,
+        "left_shoulder_yaw_link": 0.0,
+        "left_elbow_pitch_link": 0.0,
+        "left_wrist_roll_link": 0.0,
+        "left_wrist_pitch_link": 0.0,
+        "left_wrist_yaw_link": 0.0,
+        "zbll_base_link": 0.0,
+        "l_left_pad": 0.0,
+        "l_right_pad": 0.0,
+        "attached_object": 0.0,
+      }
+
+    cspace:
+      joint_names:
+        [
+          "waist_yaw_joint",
+          "left_shoulder_pitch_joint",
+          "left_shoulder_roll_joint",
+          "left_shoulder_yaw_joint",
+          "left_elbow_pitch_joint",
+          "left_wrist_roll_joint",
+          "left_wrist_pitch_joint",
+          "left_wrist_yaw_joint",
+        ]
+      retract_config: [0.0, -0.67, 0.95, -0.87, -0.03, -0.83, 0.0, 0.0]
+      null_space_weight: [1, 1, 1, 1, 1, 1, 1, 1]
+      cspace_distance_weight: [1, 1, 1, 1, 1, 1, 1, 1]
+      max_acceleration: 10.0
+      max_jerk: 500.0

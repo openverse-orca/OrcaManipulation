@@ -9,7 +9,7 @@ import numpy as np
 from orca_gym.environment import OrcaGymLocalEnv
 from orca_gym.scene.orca_gym_scene import Actor, MaterialInfo, LightInfo, OrcaGymScene
 from orca_gym.log import OrcaLog
-from scene.random_util import choose_random_indices, get_random_qpos, get_random_transform, get_random_material, get_random_light_info
+from scene.random_util import choose_random_indices, get_random_qpos, get_random_transform, get_random_material
 
 orca_log = OrcaLog.get_instance()
 
@@ -22,7 +22,6 @@ class SceneManager:
         self._random_count = 0
         self._first_spawn_actor = True
         self._light_random_cycle = self._config.get("light", {}).get("random", {}).get("cycle", 20)
-        self._pending_light_infos = {}
 
         self.env = env
         self.scene_info = {}
@@ -145,7 +144,6 @@ class SceneManager:
             self.spawn_actors()
             self.spawn_lights()
             self.publish_scene()
-            self.apply_light_info()
             self.set_actor_material()
             self._first_spawn_actor = False
         if self._first_spawn_actor:
@@ -193,9 +191,7 @@ class SceneManager:
         light_random = light_config.get("random", {})
         is_random_position = light_random.get("position", False)
         is_random_rotation = light_random.get("rotation", False)
-        has_intensity = light_random.get("intensity", None) is not None
-        has_color = light_random.get("color", None) is not None
-        if not (is_random_position or is_random_rotation or has_intensity or has_color):
+        if not (is_random_position or is_random_rotation):
             return False
         if self._random_count % self._light_random_cycle == 0:
             return True
@@ -209,45 +205,24 @@ class SceneManager:
         light_random = light_config.get("random", {})
         is_random_position = light_random.get("position", False)
         is_random_rotation = light_random.get("rotation", False)
-        intensity_range = light_random.get("intensity", None)
-        color_range = light_random.get("color", None)
 
-        if not (is_random_position or is_random_rotation or intensity_range is not None or color_range is not None):
+        if not (is_random_position or is_random_rotation):
             return
 
         light_random_nums = light_random.get("nums")
+        light_random_center = light_random.get("center")
         light_random_bound_position = light_random.get("bound_position", [[0, 0], [0, 0], [0, 0]])
         bound_rotation = light_random.get("bound_rotation", [[0, 0], [0, 0], [0, 0]])
-        if is_random_position or is_random_rotation:
-            light_random_center = light_random.get("center")
-            bound_position = [[light_random_center[0] + light_random_bound_position[0][0], light_random_center[0] + light_random_bound_position[0][1]], 
-                              [light_random_center[1] + light_random_bound_position[1][0], light_random_center[1] + light_random_bound_position[1][1]], 
-                              [light_random_center[2] + light_random_bound_position[2][0], light_random_center[2] + light_random_bound_position[2][1]]]
+        bound_position = [[light_random_center[0] + light_random_bound_position[0][0], light_random_center[0] + light_random_bound_position[0][1]], 
+                          [light_random_center[1] + light_random_bound_position[1][0], light_random_center[1] + light_random_bound_position[1][1]], 
+                          [light_random_center[2] + light_random_bound_position[2][0], light_random_center[2] + light_random_bound_position[2][1]]]
        
-        self._pending_light_infos = {}
         light_index = choose_random_indices(len(light_names), light_random_nums)
         for i in light_index:
             light_name = light_names[i]
-            light_spawnable_path = light_spawnable[i]
-            if is_random_position or is_random_rotation:
-                transform = get_random_transform(bound_position, bound_rotation)
-                self.add_light(light_name, light_spawnable_path, transform[:3], transform[3:])
-            else:
-                self.add_light(light_name, light_spawnable_path, [100000, 100000, 1], [0, 0, 0, 1])
-
-            if intensity_range is not None or color_range is not None:
-                intensity, color = get_random_light_info(
-                    intensity_range if intensity_range is not None else [1.0, 1.0],
-                    color_range
-                )
-                self._pending_light_infos[light_name] = LightInfo(color, intensity)
-                orca_log.info(f"pending light info: {light_name}, intensity={intensity}, color={color}")
-
-    def apply_light_info(self):
-        for light_name, light_info in self._pending_light_infos.items():
-            orca_log.info(f"apply light info: {light_name}, intensity={light_info.intensity}, color={light_info.color}")
-            self._scene.set_light_info(light_name, light_info)
-        self._pending_light_infos = {}
+            light_spawnable = light_spawnable[i]
+            transform = get_random_transform(bound_position, bound_rotation)
+            self.add_light(light_name, light_spawnable, transform[:3], transform[3:])
 
     def publish_scene_without_init_env(self):
         self._scene.publish_scene()    
@@ -443,8 +418,8 @@ class SceneManager:
                                 ''')
                 raise ValueError("light.random.bound_rotation is not set")
 
-            if is_random_position and light_random_center is None:
-                orca_log.error("light.random.center is not set when position is true")
+            if light_random_center is None:
+                orca_log.error("light.random.center is not set")
                 orca_log.error('''example:
                                 light:
                                   random:
@@ -452,7 +427,7 @@ class SceneManager:
                                     center: [0, 0, 0]
                                     bound_position: [[-1, 1], [-1, 1], [0, 2]]
                                 ''')
-                raise ValueError("light.random.center is not set when position is true")
+                raise ValueError("light.random.center is not set")
 
             if not (light_random_nums[0] > 0 
                 and light_random_nums[1] >= light_random_nums[0]
@@ -468,34 +443,6 @@ class SceneManager:
                                     cycle: 20
                                 ''')
                 raise ValueError("light.random.cycle is invalid, the cycle must be greater than 0")
-
-            light_random_intensity = light_random.get("intensity", None)
-            if light_random_intensity is not None:
-                if (not isinstance(light_random_intensity, (list, tuple)) 
-                    or len(light_random_intensity) != 2
-                    or light_random_intensity[0] > light_random_intensity[1]
-                    or light_random_intensity[0] < 0):
-                    orca_log.error("light.random.intensity is invalid, must be [min, max] with 0 <= min <= max")
-                    orca_log.error('''example:
-                                    light:
-                                      random:
-                                        intensity: [100.0, 500.0]
-                                    ''')
-                    raise ValueError("light.random.intensity is invalid, must be [min, max] with 0 <= min <= max")
-
-            light_random_color = light_random.get("color", None)
-            if light_random_color is not None:
-                if (not isinstance(light_random_color, (list, tuple))
-                    or len(light_random_color) != 3
-                    or any(not isinstance(c, (list, tuple)) or len(c) != 2 for c in light_random_color)):
-                    orca_log.error("light.random.color is invalid, must be [[r_min, r_max], [g_min, g_max], [b_min, b_max]] with values in [0, 1]")
-                    orca_log.error('''example:
-                                    light:
-                                      random:
-                                        color: [[0.8, 1.0], [0.8, 1.0], [0.6, 1.0]]
-                                    ''')
-                    raise ValueError("light.random.color is invalid, must be [[r_min, r_max], [g_min, g_max], [b_min, b_max]]")
-
         else:
             orca_log.error("light.random is not set")
             orca_log.error('''example:
