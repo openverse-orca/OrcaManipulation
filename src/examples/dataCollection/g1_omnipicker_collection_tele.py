@@ -136,7 +136,7 @@ def main():
     )
 
     L_ARM_ROTATION_OFFSET = np.array([np.pi / 2, 0, 0])
-    R_ARM_ROTATION_OFFSET = np.array([np.pi / 2, 0, 0])
+    R_ARM_ROTATION_OFFSET = np.array([-3 * np.pi / 2, 0, 0])
     L_ARM_POSITION_REMAP = [0, 2, 1]
     R_ARM_POSITION_REMAP = [0, 2, 1]
     L_ARM_POSITION_FLIP = np.array([1.0, 1.0, -1.0])

@@ -14,43 +14,59 @@ from controllers.controller_task import TaskStatus, TaskStatusController
 from devices.abstract_device import AbstractDevice
 from scene.scene_manager import SceneManager
 from dataStorage.abstract_data_storage import AbstractDataStorage
+
 orca_logger = OrcaLog.get_instance()
 
+
 class DataCollectionManager:
-    
     class DataCollectionMode(enum.Enum):
         TELECONTROL = 0
         AUGMENTATION = 1
-        
-    def __init__(self, agent_name: str,
-                env_name: str,
-                entry_point: str,
-                default_joint_values: dict[str, float],
-                obs_callback: Callable[[OrcaGymLocalEnv], dict],
-                env_index: int = 0,
-                max_episode_steps: int = np.iinfo(np.int64).max,
-                frame_skip: int = 20,
-                time_step: float = 0.001, 
-                orcagym_addr: str = "localhost:50051",
-                task: AbstractTask = None,
-                device: AbstractDevice = None,
-                task_status_controller: TaskStatusController = None,
-                scene_manager: SceneManager = None,
-                data_storage: AbstractDataStorage = None,
-                **kwargs):
+
+    def __init__(
+        self,
+        agent_name: str,
+        env_name: str,
+        entry_point: str,
+        default_joint_values: dict[str, float],
+        obs_callback: Callable[[OrcaGymLocalEnv], dict],
+        env_index: int = 0,
+        max_episode_steps: int = np.iinfo(np.int64).max,
+        frame_skip: int = 20,
+        time_step: float = 0.001,
+        orcagym_addr: str = "localhost:50051",
+        task: AbstractTask = None,
+        device: AbstractDevice = None,
+        task_status_controller: TaskStatusController = None,
+        scene_manager: SceneManager = None,
+        data_storage: AbstractDataStorage = None,
+        **kwargs,
+    ):
         self.device = device
         self.time_step = time_step
         self.frame_skip = frame_skip
         self.real_time_step = time_step * frame_skip
         self.scene_manager: SceneManager = scene_manager
-        self.env : OrcaGymLocalEnv = self.create_env(agent_name, env_name, entry_point, default_joint_values, obs_callback, env_index, max_episode_steps, frame_skip, time_step, orcagym_addr, **kwargs)
+        self.env: OrcaGymLocalEnv = self.create_env(
+            agent_name,
+            env_name,
+            entry_point,
+            default_joint_values,
+            obs_callback,
+            env_index,
+            max_episode_steps,
+            frame_skip,
+            time_step,
+            orcagym_addr,
+            **kwargs,
+        )
         self.controllers: list[AbstractController] = []
         self.task: AbstractTask = task
         self.task_status_controller: TaskStatusController = task_status_controller
         self.data_storage: AbstractDataStorage = data_storage
         self.ctrl = np.zeros(self.env.nu, dtype=np.float32)
         self.disable_actuator_group = []
-        
+
         self._save_video = False
         self._saving = False
         self._mode = self.DataCollectionMode.TELECONTROL
@@ -61,7 +77,7 @@ class DataCollectionManager:
     @property
     def save_video(self) -> bool:
         return self._save_video
-    
+
     @save_video.setter
     def save_video(self, value: bool):
         self._save_video = value
@@ -69,7 +85,7 @@ class DataCollectionManager:
     @property
     def saving(self) -> bool:
         return self._saving
-    
+
     @saving.setter
     def saving(self, value: bool):
         self._saving = value
@@ -77,39 +93,44 @@ class DataCollectionManager:
     @property
     def mode(self) -> DataCollectionMode:
         return self._mode
-    
+
     @mode.setter
     def mode(self, value: DataCollectionMode):
         self._mode = value
 
-    def create_env(self, agent_name:str, 
-                  env_name:str,
-                  entry_point:str,
-                  default_joint_values:dict[str, float],
-                  obs_callback:Callable[[OrcaGymLocalEnv], dict],
-                  env_index:int,
-                  max_episode_steps:int,
-                  frame_skip:int,
-                  time_step:float,
-                  orcagym_addr:str,
-                  **kwargs):
+    def create_env(
+        self,
+        agent_name: str,
+        env_name: str,
+        entry_point: str,
+        default_joint_values: dict[str, float],
+        obs_callback: Callable[[OrcaGymLocalEnv], dict],
+        env_index: int,
+        max_episode_steps: int,
+        frame_skip: int,
+        time_step: float,
+        orcagym_addr: str,
+        **kwargs,
+    ):
 
         orcagym_addr_str = orcagym_addr.replace(":", "-")
         env_id = env_name + "-OrcaGym-" + orcagym_addr_str + f"-{env_index:03d}"
         agent_names = [f"{agent_name}"]
-        kwargs = {'frame_skip': frame_skip,   
-                    'orcagym_addr': orcagym_addr, 
-                    'agent_names': agent_names, 
-                    'time_step': time_step,
-                    'default_joint_values': default_joint_values,
-                    'obs_callback': obs_callback}     
+        kwargs = {
+            "frame_skip": frame_skip,
+            "orcagym_addr": orcagym_addr,
+            "agent_names": agent_names,
+            "time_step": time_step,
+            "default_joint_values": default_joint_values,
+            "obs_callback": obs_callback,
+        }
         orca_logger.info(f"Creating env {env_name} with kwargs {kwargs}")
 
         gym.register(
             id=env_id,
             entry_point=entry_point,
             kwargs=kwargs,
-            max_episode_steps= max_episode_steps,
+            max_episode_steps=max_episode_steps,
             reward_threshold=0.0,
         )
         env = gym.make(env_id, **kwargs)
@@ -142,7 +163,7 @@ class DataCollectionManager:
     def add_controller(self, controller: AbstractController):
         self.controllers.append(controller)
 
-    def run_controllers(self) ->list[float]:
+    def run_controllers(self) -> list[float]:
         if self.device is not None:
             self.device.update()
         for controller in self.controllers:
@@ -150,7 +171,7 @@ class DataCollectionManager:
             for index, value in ctrl.items():
                 self.ctrl[index] = value
         return self.ctrl
-    
+
     def set_init_ctrl(self):
         for controller in self.controllers:
             controller.init_ctrl_index()
@@ -184,7 +205,11 @@ class DataCollectionManager:
                         orca_logger.info("Task Success!")
                         task_info = self.task.get_task_info()
                         scene_info = self.scene_manager.get_scene_info()
-                        self.data_storage.save_data(task_info=task_info, scene_info=scene_info, task_description=self.task.get_task_description())
+                        self.data_storage.save_data(
+                            task_info=task_info,
+                            scene_info=scene_info,
+                            task_description=self.task.get_task_description(),
+                        )
                     else:
                         self.data_storage.clear_data()
                         orca_logger.info("Task Failed!")
@@ -207,18 +232,25 @@ class DataCollectionManager:
         if self.scene_manager is not None:
             self.scene_manager.spawn_scene()
 
-            if self.mode == self.DataCollectionMode.TELECONTROL:     
+            if self.mode == self.DataCollectionMode.TELECONTROL:
                 if self.task is not None:
                     self.scene_manager.update_actor_qpos()
                     self.task.get_task(self.scene_manager)
-                    orca_logger.info(f"Task description: {self.task.get_task_description()}")
-                    # self.scene_manager.show_ui_message(1, self.task.get_task_description(),showtime=5)
+                    orca_logger.info(
+                        f"Task description: {self.task.get_task_description()}"
+                    )
+                    self.scene_manager.show_ui_message(
+                        1, "按 GripButton 开始采集", "0xffff00", showtime=10
+                    )
+                    
 
-                
             elif self.mode == self.DataCollectionMode.AUGMENTATION:
                 from devices.data_device import DataDevice
+
                 if type(self.device) != DataDevice:
-                    raise ValueError("Device must be a DataDevice for augmentation mode")
+                    raise ValueError(
+                        "Device must be a DataDevice for augmentation mode"
+                    )
                 load_ret = self.device.load_data()
                 if not load_ret:
                     orca_logger.info("Augmentation End")
@@ -230,11 +262,18 @@ class DataCollectionManager:
                     if current_dir_name == "":
                         current_dir_name = os.path.basename(os.path.dirname(unit_path))
                     orca_logger.info(f"Replay data unit: {unit_path}")
-                    replay_msg = shorten(f"回放目录: {current_dir_name}", width=80, placeholder="...")
-                   # self.scene_manager.show_ui_message(1, replay_msg, "0x00bfff", showtime=0)
+                    replay_msg = shorten(
+                        f"回放目录: {current_dir_name}", width=80, placeholder="..."
+                    )
+                # self.scene_manager.show_ui_message(1, replay_msg, "0x00bfff", showtime=0)
+                self.scene_manager.show_ui_message(
+                    1, "回放中...", "0x00bfff", showtime=0
+                )
                 task_info = self.device.get_task_info()
                 scene_info = self.device.get_scene_info()
-                self.scene_manager.update_actor_qpos(restore=True, scene_info=scene_info)
+                self.scene_manager.update_actor_qpos(
+                    restore=True, scene_info=scene_info
+                )
                 self.task.get_task(self.scene_manager, task_info=task_info)
 
             self.env.disable_actuator(self.disable_actuator_group)
@@ -271,16 +310,29 @@ class DataCollectionManager:
                             orca_logger.info(f"Start recording data unit: {unit_path}")
                         else:
                             orca_logger.info("Start recording data unit")
-                        if self.scene_manager is not None and self.mode == self.DataCollectionMode.TELECONTROL:
-                            self.scene_manager.show_ui_message(1, "开始采集", "0x00ff00", showtime=2)
+                        if (
+                            self.scene_manager is not None
+                            and self.mode == self.DataCollectionMode.TELECONTROL
+                        ):
+                            self.scene_manager.show_ui_message(
+                                1, "开始采集", "0x00ff00", showtime=2
+                            )
                         data_recording_started = True
                     if self.data_storage is not None:
                         self.data_storage.collection_data(obs, self.env)
-                    if self.save_video and not self.saving and self.data_storage is not None:
+                    if (
+                        self.save_video
+                        and not self.saving
+                        and self.data_storage is not None
+                    ):
                         self.data_storage.begin_save_video(self.env)
-                        self.saving = True                   
+                        self.saving = True
                 if task_status == TaskStatus.END or terminated or truncated:
-                    if self.save_video and self.saving and self.data_storage is not None:
+                    if (
+                        self.save_video
+                        and self.saving
+                        and self.data_storage is not None
+                    ):
                         self.data_storage.stop_save_video(self.env)
                         self.saving = False
                     if data_recording_started:
@@ -290,8 +342,13 @@ class DataCollectionManager:
                             orca_logger.info(f"Stop recording data unit: {unit_path}")
                         else:
                             orca_logger.info("Stop recording data unit")
-                        if self.scene_manager is not None and self.mode == self.DataCollectionMode.TELECONTROL:
-                            self.scene_manager.show_ui_message(1, "结束采集", "0xff8800", showtime=2)
+                        if (
+                            self.scene_manager is not None
+                            and self.mode == self.DataCollectionMode.TELECONTROL
+                        ):
+                            self.scene_manager.show_ui_message(
+                                1, "结束采集", "0xff8800", showtime=2
+                            )
                     orca_logger.info("Task end")
                     task_is_success = self.task.is_success()
                     return task_is_success
@@ -299,4 +356,3 @@ class DataCollectionManager:
             elapsed_time = time.time() - start_time
             if elapsed_time < self.real_time_step:
                 time.sleep(self.real_time_step - elapsed_time)
-
