@@ -371,7 +371,8 @@ def _add_episode_frames(dataset, frames, task: str) -> int:
         }
         for cam in CAMERAS:
             frame[f"observation.images.{cam}"] = images_i[cam]
-        dataset.add_frame(frame, task)
+        frame["task"] = task
+        dataset.add_frame(frame)
     return num - 1
 
 
@@ -572,7 +573,8 @@ def main():
                             bg_encoder.ensure_ep0_done()
 
                         n_frames = _add_episode_frames(dataset, frames, args.task)
-                        ep_idx = dataset.save_episode_data_only()
+                        ep_idx = dataset.num_episodes
+                        dataset.save_episode()
                         bg_encoder.submit(ep_idx)
 
                         if args.record_scene and scene_c12c_pose is not None:

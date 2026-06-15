@@ -21,7 +21,10 @@
 bash install.sh        # 详见快速开始第 0 步
 
 # 1. 启动仿真（终端 1，保持运行）
+首先订阅资产：Warehouse_EmbodiedCompetition_2026Hangzhou，d12_waist 之后重启。
 orcalab                # 选 competition_warehouse 场景 + 布局，点「启动仿真」
+选择布局： src/examples/d12_competition_warehouse/competition_warehouse_no_barcode.json
+
 
 # 2. 采集数据（终端 2）
 python collect_lerobot.py --pose_file pose_mp_no_barcode.yaml \

@@ -40,7 +40,7 @@ from scene.scene_manager import SceneManager
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
 DEFAULT_DATASET_DIR = "~/openpi-orca/lerobot_out/hangzhou2026/competition_warehouse_v2_50_quat"
-DATA_PATH_TMPL = "data/chunk-{chunk:03d}/episode_{index:06d}.parquet"
+DATA_PATH_TMPL = "data/chunk-{chunk:03d}/file-{index:03d}.parquet"
 CHUNKS_SIZE = 1000
 
 
