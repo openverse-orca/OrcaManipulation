@@ -49,12 +49,27 @@ def main():
         default=None,
         help="场景/任务 YAML（相对本目录）；省略或空字符串表示不加载配置，仅遥操采集（EmptyTask）",
     )
+    parser.add_argument(
+        "--mujoco-gui",
+        action="store_true",
+        help="启用 MuJoCo 原生查看器窗口（mujoco.viewer.launch_passive，与 OrcaStudio 视口可并存）",
+    )
+    parser.add_argument(
+        "--mjc-agent-prefix",
+        type=str,
+        default=None,
+        help="MuJoCo agent_names 前缀（robot_name_space 时与预制体名一致，如 openloong_gripper_2f85_fix_base_usda）",
+    )
 
     args = parser.parse_args()
 
     level = args.level
     agent_name = args.agent_name
     task_config = (args.task_config or "").strip() or None
+    mjc_prefix = (args.mjc_agent_prefix or "").strip() or None
+    if mjc_prefix is None and level == "test20260508" and agent_name == "openloong":
+        mjc_prefix = "openloong_gripper_2f85_fix_base_usda"
+        orca_logger.info(f"Auto mjc-agent-prefix for test20260508: {mjc_prefix}")
 
     orca_logger.info(f"log file: {log_file}")
     orca_logger.info(f"log dir: {log_dir}")
@@ -108,6 +123,7 @@ def main():
         data_storage=data_storage,
         frame_skip=5,
         time_step=0.005,
+        mjc_agent_prefix=mjc_prefix,
     )
     env = data_collection_manager.env
     env.reset()
@@ -140,6 +156,10 @@ def main():
     data_collection_manager.add_monitor_port(7081)
     data_collection_manager.add_monitor_port(7090)
     data_collection_manager.add_monitor_port(7091)
+
+    if args.mujoco_gui:
+        orca_logger.info("MuJoCo passive viewer enabled (--mujoco-gui)")
+        data_collection_manager.enable_mujoco_gui(True)
 
     data_collection_manager.run()
 

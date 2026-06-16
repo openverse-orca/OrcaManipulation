@@ -35,12 +35,14 @@ class DataCollectionManager:
                 frame_skip: int = 20,
                 time_step: float = 0.001, 
                 orcagym_addr: str = "localhost:50051",
+                mjc_agent_prefix: str | None = None,
                 task: AbstractTask = None,
                 device: AbstractDevice = None,
                 task_status_controller: TaskStatusController = None,
                 scene_manager: SceneManager = None,
                 data_storage: AbstractDataStorage = None,
                 **kwargs):
+        self._mjc_agent_prefix = mjc_agent_prefix
         self.device = device
         self.time_step = time_step
         self.frame_skip = frame_skip
@@ -74,6 +76,8 @@ class DataCollectionManager:
         self._skip_fluid_cleanup = False
         self._skip_ctrl = False
         self._skip_render = False
+        self._mujoco_gui_enabled = False
+        self._mujoco_viewer = None
 
     @property
     def save_video(self) -> bool:
@@ -130,7 +134,7 @@ class DataCollectionManager:
 
         orcagym_addr_str = orcagym_addr.replace(":", "-")
         env_id = env_name + "-OrcaGym-" + orcagym_addr_str + f"-{env_index:03d}"
-        agent_names = [f"{agent_name}"]
+        agent_names = [f"{self._mjc_agent_prefix or agent_name}"]
         kwargs = {'frame_skip': frame_skip,   
                     'orcagym_addr': orcagym_addr, 
                     'agent_names': agent_names, 
@@ -177,6 +181,10 @@ class DataCollectionManager:
         """挂载 envs.fluid 耦合句柄；在 run_episode 每帧 env.step 前调用 step()。"""
         self._fluid_coupling = fluid_coupling
 
+    def set_cloth_coupling(self, cloth_coupling) -> None:
+        """挂载 envs.cloth 耦合句柄；复用与流体相同的 step/cleanup 钩子。"""
+        self._fluid_coupling = cloth_coupling
+
     def add_pre_fluid_step_callback(self, cb: Callable[[OrcaGymLocalEnv], None]) -> None:
         """注册在 run_controllers() 之前执行的回调（如水壶轨迹写入）。"""
         self._pre_fluid_step_callbacks.append(cb)
@@ -216,6 +224,35 @@ class DataCollectionManager:
     def set_skip_render(self, skip: bool) -> None:
         """纯 SPH 基线：跳过 env.render()，不向 Studio 推送视口渲染。"""
         self._skip_render = skip
+
+    def enable_mujoco_gui(self, enabled: bool = True) -> None:
+        """启用 MuJoCo 原生被动查看器（launch_passive），与 Studio env.render() 可并存。"""
+        self._mujoco_gui_enabled = enabled
+
+    def _ensure_mujoco_viewer(self) -> None:
+        if not self._mujoco_gui_enabled or self._mujoco_viewer is not None:
+            return
+        from envs.mujoco_passive_viewer import launch_mujoco_passive_viewer
+
+        self._mujoco_viewer = launch_mujoco_passive_viewer(self.env)
+
+    def _sync_mujoco_viewer(self) -> None:
+        if self._mujoco_viewer is None:
+            return
+        from envs.mujoco_passive_viewer import sync_mujoco_passive_viewer
+
+        if not sync_mujoco_passive_viewer(self._mujoco_viewer):
+            self._mujoco_viewer = None
+            self._shutdown_requested = True
+            orca_logger.info("MuJoCo viewer closed by user, requesting shutdown")
+
+    def _close_mujoco_viewer(self) -> None:
+        if self._mujoco_viewer is None:
+            return
+        from envs.mujoco_passive_viewer import close_mujoco_passive_viewer
+
+        close_mujoco_passive_viewer(self._mujoco_viewer)
+        self._mujoco_viewer = None
 
     def _save_bench_data(self):
         if not self._bench_enabled or not self._bench_steps:
@@ -340,6 +377,7 @@ class DataCollectionManager:
             self._save_bench_data()
             signal.signal(signal.SIGINT, self._original_sigint)
             orca_logger.info("Cleanup start")
+            self._close_mujoco_viewer()
             if not self._skip_env_teardown:
                 try:
                     self.env.reset()
@@ -393,6 +431,10 @@ class DataCollectionManager:
                 self.task.get_task(self.scene_manager, task_info=task_info)
 
             self.env.disable_actuator(self.disable_actuator_group)
+            if self._fluid_coupling is not None and hasattr(
+                self._fluid_coupling, "on_physics_reinitialized"
+            ):
+                self._fluid_coupling.on_physics_reinitialized()
         return True
 
     def run_episode(self):
@@ -400,6 +442,7 @@ class DataCollectionManager:
         self.set_init_ctrl()
         self.env.set_ctrl(self.ctrl)
         self.env.mj_forward()
+        self._ensure_mujoco_viewer()
 
         for controller in self.controllers:
             controller.reset()
@@ -434,6 +477,7 @@ class DataCollectionManager:
             t3 = time.perf_counter()
             if not self._skip_render:
                 self.env.render()
+            self._sync_mujoco_viewer()
             t4 = time.perf_counter()
 
             if self._bench_enabled:
