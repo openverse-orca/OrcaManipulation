@@ -1,0 +1,2 @@
+wall_utc,node,side,seq,expect_seq,ok,detail
+0,XPBD_RECV_POSITION,xpbd,46,0,0,seq_mismatch_or_gap

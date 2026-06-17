@@ -1,0 +1,6 @@
+role=XPBD subscriber client_name=xpbd_pbd
+endpoint=localhost:50361 session_id=102 channel_id=20
+session control_mode=sync expected_clients=2 sync_window_size=2
+gRPC channel READY at localhost:50361
+Session ready clients=2/2
+CONNECT_OK client_name=xpbd_pbd at localhost:50361

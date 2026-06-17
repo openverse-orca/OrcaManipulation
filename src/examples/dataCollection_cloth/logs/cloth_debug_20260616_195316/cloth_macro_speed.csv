@@ -1,0 +1,2 @@
+macro_frame,sim_time,gripper_state,grip_count,cloth_max_speed_mps,cloth_mean_speed_mps,cloth_com_x,cloth_com_y,cloth_com_z
+0,0.000000,Open,0,0.201465,0.201421,-5.11840391,1.22635162,7.49525499

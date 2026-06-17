@@ -1,0 +1,120 @@
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[MjcPbdOrcaLinkBridge] RECV macro_frame=0 units=56
+[macro_trace] mf=0 t=0.0000 poll_recv
+[macro_trace] mf=0 t=0.0000 after_body_track
+[macro_trace] mf=0 t=0.0000 cloth_phys_ENTER
+[macro_trace] mf=0 t_end=0.0200 cloth.ENTER
+[macro_trace] mf=0 t_end=0.0200 cloth.after_grip_fsm
+[macro_trace] mf=0 t_end=0.0200 cloth.after_save_rigid
+[macro_trace] mf=0 t_end=0.0200 cloth.before_phys_world_step
+[macro_trace] mf=0 t_end=0.0200 cloth.after_phys_world_step
+[macro_trace] mf=0 t_end=0.0200 cloth.after_restore_rigid
+[macro_trace] mf=0 t_end=0.0200 cloth.DONE
+[macro_trace] mf=0 t=0.0000 cloth_phys_DONE
+[macro_trace] mf=0 t=0.0000 grpc_ENTER
+[macro_trace] grpc UpdateMesh #1 t=0.000 ok=1
+[macro_trace] mf=0 t=0.0000 grpc_DONE
+[macro_trace] mf=0 t=0.0000 publish_FORCE_ENTER
+[body_track ACCEPTANCE] macro=0 COM pos_err=0.0000 m quat_err=0.056 deg PASS (thr 0.050 m / 5.0 deg)
+[MjcPbdOrcaLinkBridge] PUBLISH FORCE macro_frame=0 units=15
+[macro_trace] mf=0 t=0.0000 macro_DONE
+[OpenGL] Buffer detailed info: Buffer object 2 (bound to GL_ARRAY_BUFFER_ARB, usage hint is GL_STATIC_DRAW) will use VIDEO memory as the source for buffer object operations.
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[MjcPbdOrcaLinkBridge] RECV macro_frame=1 units=56
+[macro_trace] mf=0 t=0.0000 poll_recv
+[macro_trace] mf=0 t=0.0000 after_body_track
+[macro_trace] mf=0 t=0.0000 cloth_phys_ENTER
+[macro_trace] mf=0 t_end=0.0200 cloth.ENTER
+[macro_trace] mf=0 t_end=0.0200 cloth.after_grip_fsm
+[macro_trace] mf=0 t_end=0.0200 cloth.after_save_rigid
+[macro_trace] mf=0 t_end=0.0200 cloth.before_phys_world_step

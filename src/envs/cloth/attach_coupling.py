@@ -18,13 +18,18 @@ from .body_map_orcagym import adapt_config_for_orcagym, validate_orcagym_body_ma
 from .gripper_mocap_sync import sync_gripper_mocap_from_bodies
 from .orcalink_pose_remap import OrcaLinkPoseRemapper
 from .cloth_session import register_cloth_handle_for_atexit, set_cloth_owns_shared_services
-from .mujoco_access import get_mujoco_model_data
+from .mujoco_access import get_mujoco_model_data, get_mujoco_xml_path
 from .orcalink_server import start_orcalink_if_configured
 from .paths import CLOTH_3D_DIR, ORCALINK_CLIENT_PYTHON, default_cloth_config_path
 from .debug_session import (
+    build_xpbd_session_config,
+    export_xpbd_scene_for_session,
     is_cloth_debug_enabled,
+    is_cloth_init_compare_enabled,
     prepare_cloth_debug_session,
     resolve_session_debug_dir,
+    run_cloth_init_compare_if_configured,
+    write_xpbd_runtime_session_config,
 )
 from .xpbd_process import start_xpbd_if_configured
 
@@ -180,13 +185,16 @@ def _connect_cloth_bridge(
     env: OrcaGymLocalEnv,
     config: dict[str, Any],
     ctx: ClothCouplingContext,
+    *,
+    adapted: dict[str, Any] | None = None,
 ) -> bool:
     _ensure_cloth_3d_import_path()
     from modules.body_map import load_body_map_ordered  # noqa: WPS433
     from modules.cloth_orcalink_bridge import ClothOrcaLinkBridge  # noqa: WPS433
 
     model, data = get_mujoco_model_data(env)
-    adapted = adapt_config_for_orcagym(model, config)
+    if adapted is None:
+        adapted = adapt_config_for_orcagym(model, config, data=data)
     publish_entries = load_body_map_ordered(model, adapted)
     errs = validate_orcagym_body_map(model, publish_entries)
     if errs:
@@ -241,6 +249,7 @@ def start_cloth_coupling(
     _ensure_cloth_3d_import_path()
     cfg = copy.deepcopy(config)
     path = Path(config_path or default_cloth_config_path()).resolve()
+    base_cfg = load_cloth_config(path)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = Path(log_dir).resolve() if log_dir else None
@@ -260,10 +269,49 @@ def start_cloth_coupling(
     if is_cloth_debug_enabled(cfg):
         dbg_dir = resolve_session_debug_dir(cfg, session_timestamp=ts, log_dir=log_path)
         logger.info("Debug CSV/monitor dir: %s", dbg_dir)
+    elif is_cloth_init_compare_enabled(cfg):
+        cmp_dir = resolve_session_debug_dir(cfg, session_timestamp=ts, log_dir=log_path)
+        cmp_dir.mkdir(parents=True, exist_ok=True)
+        cfg.setdefault("debug", {})["debug_log_dir"] = str(cmp_dir)
+        logger.info("Cloth init compare dir: %s", cmp_dir)
+
+    model, data = get_mujoco_model_data(env)
+    base_env = env.unwrapped if hasattr(env, "unwrapped") else env
+    base_env.mj_forward()
+    adapted = adapt_config_for_orcagym(model, cfg, data=data)
+    xpbd_session_cfg = build_xpbd_session_config(base_cfg, adapted)
+    mjcf_path = get_mujoco_xml_path(env)
+    xpbd_session_cfg.setdefault("mujoco", {})["model_path"] = str(mjcf_path)
+    session_path = write_xpbd_runtime_session_config(
+        xpbd_session_cfg,
+        session_timestamp=ts,
+        source_config_path=path,
+        source_mjcf_path=mjcf_path,
+    )
+    ctx.config = adapted
+    ctx.config_path = session_path
+
+    discover_only = bool((xpbd_session_cfg.get("xpbd") or {}).get("cloth_discover_only", True))
+    if not discover_only:
+        try:
+            scene_path = export_xpbd_scene_for_session(session_path)
+            logger.info("XPBD scene exported: %s", scene_path)
+        except Exception as exc:
+            ctx.process_manager.cleanup_all()
+            raise RuntimeError(f"export_xpbd_scene_from_mjcf 失败: {exc}") from exc
 
     logger.info("=" * 60)
     logger.info("布料 MjcPBD 耦合挂载（OrcaGym → OrcaLink → XPBD → Studio）")
     logger.info("config: %s", path)
+    logger.info("XPBD MJC_PBD_CONFIG: %s", session_path)
+    cloth_blk = xpbd_session_cfg.get("cloth") or {}
+    if cloth_blk.get("discovered"):
+        logger.info(
+            "cloth discovered: mesh=%s center_yup=%s quat_wxyz_yup=%s",
+            cloth_blk.get("mesh"),
+            cloth_blk.get("center_yup"),
+            cloth_blk.get("quat_wxyz_yup"),
+        )
     logger.info("=" * 60)
 
     start_orcalink_if_configured(
@@ -273,18 +321,39 @@ def start_cloth_coupling(
         session_timestamp=ts,
     )
     start_xpbd_if_configured(
-        cfg,
-        config_path=path,
+        adapted,
+        config_path=session_path,
         process_manager=ctx.process_manager,
         log_dir=log_path,
         session_timestamp=ts,
     )
 
-    if not _connect_cloth_bridge(env, cfg, ctx):
+    if is_cloth_init_compare_enabled(cfg):
+        compare_dir = Path(str(cfg.get("debug", {}).get("debug_log_dir", "")))
+        if not compare_dir.is_dir():
+            compare_dir = resolve_session_debug_dir(cfg, session_timestamp=ts, log_dir=log_path)
+        result = run_cloth_init_compare_if_configured(
+            cfg,
+            model=model,
+            data=data,
+            session_cfg=xpbd_session_cfg,
+            out_dir=compare_dir,
+            session_path=session_path,
+            config_path=path,
+        )
+        if result is not None:
+            logger.info(
+                "ClothInit compare: %s (PASS=%s, max_studio_xpbd=%.3f mm)",
+                result.csv_path,
+                result.passed,
+                result.max_studio_vs_xpbd_mm,
+            )
+
+    if not _connect_cloth_bridge(env, cfg, ctx, adapted=adapted):
         ctx.process_manager.cleanup_all()
         raise RuntimeError("布料 OrcaLink 桥接初始化失败")
 
-    handle = ClothCouplingHandle(config=cfg, ctx=ctx, enabled=True)
+    handle = ClothCouplingHandle(config=adapted, ctx=ctx, enabled=True)
     register_cloth_handle_for_atexit(handle)
     set_cloth_owns_shared_services(True)
     return handle

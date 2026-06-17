@@ -1,0 +1,4 @@
+wall_utc,node,side,seq,expect_seq,ok,detail
+0,XPBD_RECV_POSITION,xpbd,0,0,1,ch20
+0,XPBD_PUBLISH_FORCE,xpbd,0,0,1,ch21
+0,XPBD_RECV_POSITION,xpbd,1,1,1,ch20

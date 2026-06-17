@@ -1,0 +1,120 @@
+[macro_trace] mf=0 phys.substep ENTER i=20/32
+[macro_trace] mf=0 phys.substep i=20 start
+[macro_trace] mf=0 phys.substep i=20 after_step1_integrate
+[macro_trace] mf=0 phys.substep i=20 after_step2_constraints
+[macro_trace] mf=0 phys.substep i=20 after_step3_velocity
+[macro_trace] mf=0 phys.substep i=20 before_step4_impulse
+[macro_trace] mf=0 phys.substep i=20 done
+[macro_trace] mf=0 phys.substep DONE i=20/32
+[macro_trace] mf=0 phys.substep ENTER i=21/32
+[macro_trace] mf=0 phys.substep i=21 start
+[macro_trace] mf=0 phys.substep i=21 after_step1_integrate
+[macro_trace] mf=0 phys.substep i=21 after_step2_constraints
+[macro_trace] mf=0 phys.substep i=21 after_step3_velocity
+[macro_trace] mf=0 phys.substep i=21 before_step4_impulse
+[macro_trace] mf=0 phys.substep i=21 done
+[macro_trace] mf=0 phys.substep DONE i=21/32
+[macro_trace] mf=0 phys.substep ENTER i=22/32
+[macro_trace] mf=0 phys.substep i=22 start
+[macro_trace] mf=0 phys.substep i=22 after_step1_integrate
+[macro_trace] mf=0 phys.substep i=22 after_step2_constraints
+[macro_trace] mf=0 phys.substep i=22 after_step3_velocity
+[macro_trace] mf=0 phys.substep i=22 before_step4_impulse
+[macro_trace] mf=0 phys.substep i=22 done
+[macro_trace] mf=0 phys.substep DONE i=22/32
+[macro_trace] mf=0 phys.substep ENTER i=23/32
+[macro_trace] mf=0 phys.substep i=23 start
+[macro_trace] mf=0 phys.substep i=23 after_step1_integrate
+[macro_trace] mf=0 phys.substep i=23 after_step2_constraints
+[macro_trace] mf=0 phys.substep i=23 after_step3_velocity
+[macro_trace] mf=0 phys.substep i=23 before_step4_impulse
+[macro_trace] mf=0 phys.substep i=23 done
+[macro_trace] mf=0 phys.substep DONE i=23/32
+[macro_trace] mf=0 phys.substep ENTER i=24/32
+[macro_trace] mf=0 phys.substep i=24 start
+[macro_trace] mf=0 phys.substep i=24 after_step1_integrate
+[macro_trace] mf=0 phys.substep i=24 after_step2_constraints
+[macro_trace] mf=0 phys.substep i=24 after_step3_velocity
+[macro_trace] mf=0 phys.substep i=24 before_step4_impulse
+[macro_trace] mf=0 phys.substep i=24 done
+[macro_trace] mf=0 phys.substep DONE i=24/32
+[macro_trace] mf=0 phys.substep ENTER i=25/32
+[macro_trace] mf=0 phys.substep i=25 start
+[macro_trace] mf=0 phys.substep i=25 after_step1_integrate
+[macro_trace] mf=0 phys.substep i=25 after_step2_constraints
+[macro_trace] mf=0 phys.substep i=25 after_step3_velocity
+[macro_trace] mf=0 phys.substep i=25 before_step4_impulse
+[macro_trace] mf=0 phys.substep i=25 done
+[macro_trace] mf=0 phys.substep DONE i=25/32
+[macro_trace] mf=0 phys.substep ENTER i=26/32
+[macro_trace] mf=0 phys.substep i=26 start
+[macro_trace] mf=0 phys.substep i=26 after_step1_integrate
+[macro_trace] mf=0 phys.substep i=26 after_step2_constraints
+[macro_trace] mf=0 phys.substep i=26 after_step3_velocity
+[macro_trace] mf=0 phys.substep i=26 before_step4_impulse
+[macro_trace] mf=0 phys.substep i=26 done
+[macro_trace] mf=0 phys.substep DONE i=26/32
+[macro_trace] mf=0 phys.substep ENTER i=27/32
+[macro_trace] mf=0 phys.substep i=27 start
+[macro_trace] mf=0 phys.substep i=27 after_step1_integrate
+[macro_trace] mf=0 phys.substep i=27 after_step2_constraints
+[macro_trace] mf=0 phys.substep i=27 after_step3_velocity
+[macro_trace] mf=0 phys.substep i=27 before_step4_impulse
+[macro_trace] mf=0 phys.substep i=27 done
+[macro_trace] mf=0 phys.substep DONE i=27/32
+[macro_trace] mf=0 phys.substep ENTER i=28/32
+[macro_trace] mf=0 phys.substep i=28 start
+[macro_trace] mf=0 phys.substep i=28 after_step1_integrate
+[macro_trace] mf=0 phys.substep i=28 after_step2_constraints
+[macro_trace] mf=0 phys.substep i=28 after_step3_velocity
+[macro_trace] mf=0 phys.substep i=28 before_step4_impulse
+[macro_trace] mf=0 phys.substep i=28 done
+[macro_trace] mf=0 phys.substep DONE i=28/32
+[macro_trace] mf=0 phys.substep ENTER i=29/32
+[macro_trace] mf=0 phys.substep i=29 start
+[macro_trace] mf=0 phys.substep i=29 after_step1_integrate
+[macro_trace] mf=0 phys.substep i=29 after_step2_constraints
+[macro_trace] mf=0 phys.substep i=29 after_step3_velocity
+[macro_trace] mf=0 phys.substep i=29 before_step4_impulse
+[macro_trace] mf=0 phys.substep i=29 done
+[macro_trace] mf=0 phys.substep DONE i=29/32
+[macro_trace] mf=0 phys.substep ENTER i=30/32
+[macro_trace] mf=0 phys.substep i=30 start
+[macro_trace] mf=0 phys.substep i=30 after_step1_integrate
+[macro_trace] mf=0 phys.substep i=30 after_step2_constraints
+[macro_trace] mf=0 phys.substep i=30 after_step3_velocity
+[macro_trace] mf=0 phys.substep i=30 before_step4_impulse
+[macro_trace] mf=0 phys.substep i=30 done
+[macro_trace] mf=0 phys.substep DONE i=30/32
+[macro_trace] mf=0 phys.substep ENTER i=31/32
+[macro_trace] mf=0 phys.substep i=31 start
+[macro_trace] mf=0 phys.substep i=31 after_step1_integrate
+[macro_trace] mf=0 phys.substep i=31 after_step2_constraints
+[macro_trace] mf=0 phys.substep i=31 after_step3_velocity
+[macro_trace] mf=0 phys.substep i=31 before_step4_impulse
+[macro_trace] mf=0 phys.substep i=31 done
+[macro_trace] mf=0 phys.substep DONE i=31/32
+[macro_trace] mf=0 t_end=0.0200 cloth.after_phys_world_step
+[macro_trace] mf=0 t_end=0.0200 cloth.after_restore_rigid
+[macro_trace] mf=0 t_end=0.0200 cloth.DONE
+[macro_trace] mf=0 t=0.0000 cloth_phys_DONE
+[macro_trace] mf=0 t=0.0000 grpc_ENTER
+[macro_trace] grpc UpdateMesh #1 t=0.000 ok=1
+[macro_trace] mf=0 t=0.0000 grpc_DONE
+[macro_trace] mf=0 t=0.0000 publish_FORCE_ENTER
+[body_track ACCEPTANCE] macro=0 COM pos_err=0.0000 m quat_err=0.056 deg PASS (thr 0.050 m / 5.0 deg)
+[MjcPbdOrcaLinkBridge] PUBLISH FORCE macro_frame=0 units=15
+[macro_trace] mf=0 t=0.0000 macro_DONE
+[OpenGL] Buffer detailed info: Buffer object 2 (bound to GL_ARRAY_BUFFER_ARB, usage hint is GL_STATIC_DRAW) will use VIDEO memory as the source for buffer object operations.
+[mjc_pbd_bridge] poll: SubscribeFrame: no frames (publisher may not have sent yet)
+[MjcPbdOrcaLinkBridge] RECV macro_frame=1 units=56
+[macro_trace] mf=0 t=0.0000 poll_recv
+[macro_trace] mf=0 t=0.0000 after_body_track
+[macro_trace] mf=0 t=0.0000 cloth_phys_ENTER
+[macro_trace] mf=0 t_end=0.0200 cloth.ENTER
+[macro_trace] mf=0 t_end=0.0200 cloth.after_grip_fsm
+[macro_trace] mf=0 t_end=0.0200 cloth.after_save_rigid
+[macro_trace] mf=0 t_end=0.0200 cloth.before_phys_world_step
+[macro_trace] mf=0 phys.substep ENTER i=0/32
+[macro_trace] mf=0 phys.substep i=0 start
+[macro_trace] mf=0 phys.substep i=0 after_step1_integrate

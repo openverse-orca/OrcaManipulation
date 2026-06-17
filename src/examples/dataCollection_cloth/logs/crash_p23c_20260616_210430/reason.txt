@@ -1,0 +1,7 @@
+collected_at=2026-06-16T21:06:45+08:00
+tele_exit=0
+SHOW_UI=0
+MJC_PBD_MACRO_TRACE=1
+ENABLE_CORE_DUMP=1
+LOG_TAG=p23c_20260616_210430
+core_files_copied=0

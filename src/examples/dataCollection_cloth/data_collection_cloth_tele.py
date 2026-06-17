@@ -127,19 +127,19 @@ def main():
             "Keyframe mode: 外部 Pico/replay 已禁用；dual_gripper 短链请运行 "
             "run_cloth_keyframe_shortchain.py（本地 MuJoCo + OrcaLink + XPBD）"
         )
-        base_dir = os.path.dirname(os.path.realpath(__file__))
-        repo_root = os.path.abspath(os.path.join(base_dir, "../../../.."))
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        repo_root = os.path.abspath(os.path.join(script_dir, "../../../.."))
         cfg = os.path.join(
             repo_root,
             "OrcaPlayground/examples/cloth_3d/cloth_sim_config.dual_gripper_cross_shortchain.debug.json",
         )
         argv = [
             sys.executable,
-            os.path.join(base_dir, "run_cloth_keyframe_shortchain.py"),
+            os.path.join(script_dir, "run_cloth_keyframe_shortchain.py"),
             "--cloth-config",
             cfg,
             "--log-dir",
-            os.path.join(base_dir, "logs"),
+            os.path.join(script_dir, "logs"),
         ]
         if args.max_macro_frames is not None:
             argv.extend(["--max-macro-frames", str(args.max_macro_frames)])

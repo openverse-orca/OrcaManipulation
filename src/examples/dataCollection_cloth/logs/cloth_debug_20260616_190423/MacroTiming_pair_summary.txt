@@ -1,0 +1,8 @@
+macro_frames=316
+paired=1
+mjc_only=315
+xpbd_only=0
+sim_time_fail_rows=1
+cycle_order_fail_rows=1
+max_t1_to_t1next_sec=0.060937
+macro_dt=0.020000
