@@ -224,9 +224,7 @@ def apply_xpbd_debug_environment(
     cloth_dir.mkdir(parents=True, exist_ok=True)
     env["MJC_PBD_CLOTH_STATS_DIR"] = str(cloth_dir)
     if dbg.get("export_cloth_vertex_capture", True):
-        env["MJC_PBD_CLOTH_VERT_CAPTURE"] = str(
-            int(dbg.get("cloth_vertex_capture_max", 32))
-        )
+        env["MJC_PBD_CLOTH_VERT_CAPTURE"] = "1"
         env["MJC_PBD_CLOTH_VERT_DIR"] = str(cloth_dir)
     if dbg.get("export_phys_trace", False):
         env["MJC_PBD_PHYS_TRACE"] = "1"

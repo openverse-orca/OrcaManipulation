@@ -143,6 +143,8 @@ def _print_snapshot(snap: dict[str, str]) -> None:
     spd = snap.get("cloth_speed_rows", "0")
     if int(spd or 0) > 0:
         print(f"  [XPBD cloth] macro_speed_csv_rows={spd}")
+    # grip_locked 需读 CSV 末行；简化为日志提示
+    print(f"  [XPBD cloth] see cloth_macro_speed.csv columns grip_locked_l/r/total")
     grpc = snap.get("pbd_grpc", "-")
     grpc_n = snap.get("pbd_grpc_count", "-")
     print(f"  [XPBD→Studio] PBD_GRPC={grpc}  UpdateMesh#{grpc_n}")

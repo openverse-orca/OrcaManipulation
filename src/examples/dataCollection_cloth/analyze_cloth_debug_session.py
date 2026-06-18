@@ -142,12 +142,28 @@ def analyze_cloth_speed(path: Path) -> dict[str, object]:
     vmax = [_f(r, "cloth_max_speed_mps") for r in rows]
     vmean = [_f(r, "cloth_mean_speed_mps") for r in rows]
     disp = [_f(r, "cloth_max_disp_m") for r in rows if "cloth_max_disp_m" in r]
+
+    def _grip_col(row: dict, *names: str) -> float:
+        for n in names:
+            if n in row and str(row.get(n, "")).strip() != "":
+                return _f(row, n)
+        return 0.0
+
+    grip_locked = [_grip_col(r, "grip_locked_total", "grip_count") for r in rows]
+    grip_l = [_grip_col(r, "grip_locked_l") for r in rows]
+    grip_r = [_grip_col(r, "grip_locked_r") for r in rows]
+
     out: dict[str, object] = {
         "rows": len(rows),
         "macro_frames": _count_macro_frames(rows),
         "max_speed_mps": max(vmax) if vmax else 0.0,
         "mean_of_max_mps": mean(vmax) if vmax else 0.0,
         "mean_of_mean_mps": mean(vmean) if vmean else 0.0,
+        "max_grip_locked": int(max(grip_locked)) if grip_locked else 0,
+        "mean_grip_locked": mean(grip_locked) if grip_locked else 0.0,
+        "max_grip_locked_l": int(max(grip_l)) if grip_l else 0,
+        "max_grip_locked_r": int(max(grip_r)) if grip_r else 0,
+        "macro_frames_with_grip": sum(1 for g in grip_locked if g > 0),
     }
     if disp:
         out["max_disp_m"] = max(disp)
@@ -402,12 +418,35 @@ def print_report(debug_dir: Path, xpbd_log: Path | None, *, target_mf: int = 200
             f"mean_of_max={cloth['mean_of_max_mps']:.4f} m/s  "
             f"mean_of_mean={cloth['mean_of_mean_mps']:.4f} m/s"
         )
+        print(
+            f"  grip_locked: max_total={cloth.get('max_grip_locked', 0)}  "
+            f"max_l={cloth.get('max_grip_locked_l', 0)}  "
+            f"max_r={cloth.get('max_grip_locked_r', 0)}  "
+            f"macro_frames_with_grip={cloth.get('macro_frames_with_grip', 0)}"
+        )
+        if cloth.get("max_grip_locked", 0) == 0:
+            print("  WARN: no particles locked (grip_locked_total=0 all frames)")
         if "max_disp_m" in cloth:
             print(f"  max_disp={cloth['max_disp_m']:.6f} m  mean_disp={cloth['mean_disp_m']:.6f} m")
 
     plot_path = _plot_session(debug_dir, vtx, cloth)
     if plot_path:
         print(f"\n[6] Plot saved: {plot_path}")
+
+    print("\n[7] Gripper ↔ cloth cuff distance")
+    try:
+        from analyze_gripper_cloth_distance import (
+            analyze_gripper_cloth_distance,
+            print_gripper_cloth_report,
+        )
+
+        grip = analyze_gripper_cloth_distance(debug_dir, xpbd_log=xpbd_log)
+        grip_rc = print_gripper_cloth_report(grip)
+        if grip_rc != 0:
+            ok = False
+    except Exception as exc:
+        print(f"  WARN: gripper distance analysis skipped: {exc}")
+        grip_rc = 0
 
     # Pass/fail heuristics
     ok = True
@@ -421,6 +460,8 @@ def print_report(debug_dir: Path, xpbd_log: Path | None, *, target_mf: int = 200
         print(f"\nWARN: body_track com_to_target max {snap['global_com_to_tgt_max_mm']:.2f} mm > 2 mm")
     if cloth.get("rows", 0) and cloth.get("max_speed_mps", 0) < 0.001:
         print("\nWARN: cloth barely moved (max_speed < 1 mm/s)")
+    if cloth.get("rows", 0) and cloth.get("max_grip_locked", 0) == 0:
+        print("\nWARN: L4 grip_locked_total=0 — check replay reaches cloth + dg_traj=cloth_robot")
     if ok and mf_cov >= target_mf * 0.9:
         print(f"\nPASS: >=90% of {target_mf} macro frames with CSV data")
     print("=" * 72)

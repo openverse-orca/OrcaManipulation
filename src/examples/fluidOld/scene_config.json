@@ -26,7 +26,7 @@
   },
   "scene_template": {
     "Configuration": {
-      "particleRadius": 0.01,
+      "particleRadius": 0.02,
       "numberOfStepsPerRenderUpdate": 4,
       "density0": 1000,
       "simulationMethod": 4,

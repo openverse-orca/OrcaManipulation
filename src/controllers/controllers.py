@@ -31,7 +31,9 @@ def create_arm_osc_controller(env: OrcaGymLocalEnv,
     osc_config["eef_name"] = env.site(arm_config["ee_site_name"])
     osc_config["joint_indexes"] = joint_indexes
     osc_config["actuator_range"] = motors_ranges
-    osc_config["policy_freq"] = 1.0 / env.dt
+    # 宏步控制频率 = 1/(dt*frame_skip)，与每 env.step 一次 run_controller 一致
+    macro_dt = float(env.dt) * max(1, int(getattr(env, "frame_skip", 1)))
+    osc_config["policy_freq"] = 1.0 / macro_dt
     osc_config["ndim"] = len(arm_joint_names)
     osc_config["control_delta"] = False
 
@@ -62,7 +64,8 @@ def create_arm_ik_controller(env: OrcaGymLocalEnv,
     ik_config["eef_name"] = env.site(arm_config["ee_site_name"])
     ik_config["joint_indexes"] = joint_indexes
     ik_config["actuator_range"] = positions_ranges
-    ik_config["policy_freq"] = 1.0 / env.dt
+    macro_dt = float(env.dt) * max(1, int(getattr(env, "frame_skip", 1)))
+    ik_config["policy_freq"] = 1.0 / macro_dt
     ik_config["ndim"] = len(arm_joint_names)
 
     controller = controller_factory(ik_config["type"], ik_config)

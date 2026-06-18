@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 # 获取脚本文件所在目录，然后计算项目根目录
-# 从 examples/fluid/run_fluid_sim.py 到项目根目录需要向上两级
+# 从 src/examples/fluid/run_fluid_sim.py 到 PYTHONPATH 根（src）需向上一级
 current_file_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_file_dir))
 
@@ -161,31 +161,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="配置文件路径 (默认: fluid_sim_config.json)",
     )
     parser.add_argument(
-        "--build-mode",
-        choices=("debug", "release"),
-        default=None,
-        help="覆盖配置 build_mode：debug=启用监测 CSV；release=强制关闭 force_position_trace",
-    )
-    parser.add_argument(
         "--manual-mode",
         action="store_true",
         help="手动模式：禁用自动启动，需预先启动 orcalink 和 orcasph",
     )
     parser.add_argument(
         "--gui",
-        "--sph-gui",
         action="store_true",
-        help="启用 OrcaSPH（SPlisHSPlasH）原生 GUI 窗口",
-    )
-    parser.add_argument(
-        "--mujoco-gui",
-        action="store_true",
-        help="启用 MuJoCo 原生被动查看器（短链无 Studio 时用于对照 SPH 同步）",
-    )
-    parser.add_argument(
-        "--mujoco-shutdown-on-close",
-        action="store_true",
-        help="关闭 MuJoCo 被动查看器窗口时结束整场仿真（默认：与 --gui 同开时不结束，可后台长跑）",
+        help="启用 OrcaSPH GUI 可视化界面（默认禁用）",
     )
     parser.add_argument(
         "--use-all-cpu",
@@ -265,20 +248,6 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PATH",
         help="record 模式：从该 HDF5 回放人类操作（在 bridge.step 之后叠加 mocap/eq/ctrl）",
-    )
-    parser.add_argument(
-        "--max-steps",
-        type=int,
-        default=0,
-        metavar="N",
-        help="主循环最大步数（达到后正常退出；0=无限）。无 --gui 时推荐与自动 OrcaLink 联调用以做短程检查",
-    )
-    parser.add_argument(
-        "--bench",
-        type=str,
-        default=None,
-        metavar="PATH",
-        help="基准测试 JSON 输出路径（逐圈计时：fluid/step/sleep/pause_rate）",
     )
     parser.add_argument(
         "--enable-performance-stats",
@@ -408,26 +377,6 @@ def _apply_mujoco_trajectory_config(
     return None
 
 
-def _apply_mujoco_gui_from_args(
-    config: dict,
-    mujoco_gui: bool,
-    *,
-    sph_gui: bool = False,
-    shutdown_on_close: Optional[bool] = None,
-) -> None:
-    mg = config.setdefault("mujoco_gui", {})
-    mg["enabled"] = bool(mujoco_gui)
-    if not mujoco_gui:
-        return
-    if shutdown_on_close is not None:
-        mg["shutdown_on_close"] = shutdown_on_close
-    elif sph_gui and "shutdown_on_close" not in mg:
-        mg["shutdown_on_close"] = False
-    print("🖥️  MuJoCo 被动查看器已启用（mujoco.viewer.launch_passive）")
-    if mg.get("shutdown_on_close") is False:
-        print("   ↳ 关 MuJoCo 窗口不会结束仿真（双界面长跑）；Ctrl+C 或 --mujoco-shutdown-on-close 可改行为")
-
-
 def _apply_orcasph_gui_from_args(config: dict, gui: bool) -> None:
     if "orcasph" not in config or not config["orcasph"].get("enabled", False):
         return
@@ -451,59 +400,6 @@ def _apply_performance_stats_from_args(config: dict, args: argparse.Namespace) -
         if args.performance_stats_plot:
             config["orcasph"]["args"].append("--performance-stats-plot")
             print("📈 性能统计图表实时显示已启用")
-
-
-def _print_sph_run_sanity_check(
-    orcagym_tmp_dir: Path, session_timestamp: str, max_steps: int
-) -> None:
-    """
-    根据当次会话日志做粗粒度「SPH 是否参与计算」检查（非物理精度证明）。
-    """
-    if max_steps <= 0:
-        return
-    run_log = orcagym_tmp_dir / f"run_fluid_sim_{session_timestamp}.log"
-    olink = orcagym_tmp_dir / f"orcalink_{session_timestamp}.log"
-    osph = orcagym_tmp_dir / f"orcasph_{session_timestamp}.log"
-    print("\n" + "=" * 60)
-    print("SPH 链路粗检（基于日志关键词）")
-    print("=" * 60)
-    if not run_log.is_file():
-        print(f"⚠️  未找到: {run_log}")
-        return
-    text = run_log.read_text(encoding="utf-8", errors="replace")
-    if "SPH 集成已禁用" in text or "Session ready timeout" in text:
-        print("❌ MuJoCo↔OrcaLink 未在时限内凑齐双客户端，或 SPH 集成被关闭。请用无 --gui 或提高 ready_timeout。")
-    elif "Session is ready" in text or "sph_wrapper.connect() returned: True" in text:
-        print("✅ OrcaLink 会话已就绪，Python 侧 bridge 已连接。")
-    else:
-        print("⚠️  未在 run_fluid_sim 日志中明确看到 Session ready / connect True，请人工打开日志核对。")
-    bad = ("NaN", "diverg", "Error: [OrcaLinkBridge]", "FATAL")
-    for p in orcagym_tmp_dir.glob(f"orcasph_{session_timestamp}.log*"):
-        if not p.is_file():
-            continue
-        raw = p.read_text(encoding="utf-8", errors="replace")
-        hits = [b for b in bad if b in raw]
-        if hits:
-            print(f"⚠️  {p.name} 含可疑关键词: {', '.join(hits)}（需结合全文判断是否影响步进）")
-        else:
-            print(f"✅ {p.name} 未命中常见错误关键词 {bad[:3]}…")
-        break
-    else:
-        print(f"⚠️  未找到 orcasph_{session_timestamp}.log")
-    if olink.is_file():
-        ot = olink.read_text(encoding="utf-8", errors="replace")
-        if "SPlisHSPlasH" in ot or "splishsplas" in ot.lower():
-            print("✅ orcalink 日志中出现 SPH 侧客户端名（双端之一已注册）。")
-        elif "mujoco_client" in ot and "2 clients" not in ot and "Session" in ot:
-            print("ℹ️  请搜 orcalink 日志是否仅 mujoco_client（若如此为双端未齐）。")
-    print("=" * 60 + "\n")
-
-
-def _apply_build_mode_from_args(config: dict, args: argparse.Namespace) -> None:
-    if args.build_mode is not None:
-        config["build_mode"] = args.build_mode
-        if args.build_mode == "release":
-            print("ℹ️  build_mode=release：force_position 调试采集已关闭")
 
 
 def _apply_manual_mode_from_args(config: dict, args: argparse.Namespace) -> None:
@@ -554,18 +450,11 @@ def main() -> int:
         config = load_config(str(config_path))
         script_dir = Path(__file__).parent
 
-        _apply_build_mode_from_args(config, args)
         _apply_particle_render_run_config(args, script_dir, session_timestamp, config)
         err = _apply_mujoco_trajectory_config(args, script_dir, session_timestamp, config)
         if err is not None:
             return err
         _apply_orcasph_gui_from_args(config, args.gui)
-        _apply_mujoco_gui_from_args(
-            config,
-            args.mujoco_gui,
-            sph_gui=bool(args.gui),
-            shutdown_on_close=True if args.mujoco_shutdown_on_close else None,
-        )
         _apply_performance_stats_from_args(config, args)
         _apply_manual_mode_from_args(config, args)
 
@@ -601,11 +490,6 @@ def main() -> int:
                     config,
                     session_timestamp=session_timestamp,
                     cpu_affinity=cpu_affinity,
-                    max_steps=max(0, int(args.max_steps or 0)),
-                    bench_output_path=args.bench,
-                )
-                _print_sph_run_sanity_check(
-                    orcagym_tmp_dir, session_timestamp, max(0, int(args.max_steps or 0))
                 )
         except KeyboardInterrupt:
             print("\n✅ 仿真已停止")

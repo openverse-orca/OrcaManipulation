@@ -1,0 +1,115 @@
+{
+  "description": "Fluid-MuJoCo 耦合仿真配置文件 (MuJoCo程序)",
+  "build_mode": "release",
+  "build_mode_comment": "release=关闭 debug/CSV 开销；debug=允许 verbose 与监测。CLI: --build-mode",
+  "orcagym": {
+    "address": "localhost:50051",
+    "agent_name": "NoRobot",
+    "env_name": "SimulationLoop"
+  },
+  
+  "orcalink": {
+    "enabled": true,
+    "host": "localhost",
+    "port": 50351,
+    "auto_start": true,
+    "startup_delay": 2,
+    "command": "orcalink",
+    "args": [],
+    
+    "client": {
+      "session_id": 1,
+      "client_name": "mujoco_client",
+      "update_rate_hz": 50,
+      "encoding": {
+        "i_frame_interval": 30,
+        "change_threshold": 0.0001
+      },
+      "session": {
+        "control_mode": "sync",
+        "expected_clients": 2,
+        "ready_timeout_sec": 30.0,
+        "grpc_call_timeout_sec": 5.0,
+        "async_params": {
+          "flow_control_enabled": true,
+          "flow_control_window_size": 5,
+          "speed_ratio_threshold": 1.5,
+          "comment": "异步模式参数：服务端中央流控"
+        },
+        "sync_params": {
+          "sync_window_size": 2,
+          "comment": "同步模式参数：客户端本地窗口大小（1~3）"
+        },
+        "comment": "control_mode: 'sync'=同步模式(客户端本地窗口控制), 'async'=异步模式(服务端中央流控)。grpc_call_timeout_sec: 单次gRPC调用超时（秒），防止服务器无响应时无限阻塞"
+      }
+    },
+    
+    "bridge": {
+      "coupling_mode": "multi_point_force",
+      "spring_constraint": {
+        "channels": {
+          "position": {
+            "channel_id": 2,
+            "publish": true,
+            "subscribe": true,
+            "comment": "MuJoCo发送和接收刚体位置：publish=发送本地位置给SPH, subscribe=接收SPH的位置用于计算弹簧力"
+          }
+        },
+        "force_clamping": {
+          "enabled": true,
+          "rigid_body": {
+            "enabled": true,
+            "max_acceleration_g": 10.0,
+            "discard_on_clamp": true
+          },
+          "debug": {
+            "log_clamped_forces": true,
+            "log_threshold_n": 1000.0
+          }
+        }
+      },
+      "multi_point_force": {
+        "channels": {
+          "position": {
+            "channel_id": 2,
+            "publish": true,
+            "subscribe": false,
+            "comment": "混合通道：MuJoCo发送position（data_type=POSITION），接收force（data_type=FORCE）"
+          },
+          "force": {
+            "channel_id": 2,
+            "publish": false,
+            "subscribe": true,
+            "comment": "混合通道：与position使用同一通道，通过data_type区分。客户端自动过滤：只发force，只收position"
+          }
+        }
+      }
+    }
+  },
+  
+  "orcasph": {
+    "enabled": true,
+    "auto_start": true,
+    "command": "orcasph",
+    "args": [],
+    "scene_auto_generate": true,
+    "config_template": "sph_sim_config.json"
+  },
+  
+  "sph": {
+    "scene_config": "scene_config.json",
+    "include_fluid_blocks": true,
+    "include_wall": true
+  },
+  
+  "simulation": {
+    "sync_mode": "multi_point_force",
+    "timestep": 0.001,
+    "substeps": 1
+  },
+  
+  "debug": {
+    "verbose_logging": false
+  }
+}
+

@@ -237,6 +237,7 @@ def start_cloth_coupling(
     log_dir: Optional[str | Path] = None,
     auto_start_orcalink: Optional[bool] = None,
     auto_start_xpbd: Optional[bool] = None,
+    cpu_affinity: Optional[str] = None,
 ) -> ClothCouplingHandle:
     """
     在已有 OrcaGym 环境上启动 OrcaLink / XPBD，并连接布料发布桥。
@@ -326,6 +327,7 @@ def start_cloth_coupling(
         process_manager=ctx.process_manager,
         log_dir=log_path,
         session_timestamp=ts,
+        cpu_affinity=cpu_affinity,
     )
 
     if is_cloth_init_compare_enabled(cfg):

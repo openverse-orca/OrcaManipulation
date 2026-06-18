@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from ..cpu_affinity import wrap_cmd_with_taskset
 from ..fluid.launch.process_utils import ProcessManager, _fluid_subprocess_preexec
 from .debug_session import (
     apply_cloth_init_compare_environment,
@@ -82,6 +83,7 @@ def start_xpbd_if_configured(
     process_manager: ProcessManager,
     log_dir: Optional[Path] = None,
     session_timestamp: str = "cloth",
+    cpu_affinity: Optional[str] = None,
 ) -> bool:
     """
     若 xpbd.enabled 且 auto_start，启动 dual_gripper_cross_mjc。
@@ -140,19 +142,41 @@ def start_xpbd_if_configured(
         )
 
     show_ui = bool(xpbd_cfg.get("show_ui", True))
+    xpbd_ui_env = os.environ.get("XPBD_UI", "").strip().lower()
+    show_ui_env = os.environ.get("SHOW_UI", "").strip().lower()
+    if xpbd_ui_env in ("0", "false", "no"):
+        show_ui = False
+    elif xpbd_ui_env in ("1", "true", "yes"):
+        show_ui = True
+    elif show_ui_env in ("0", "false", "no"):
+        show_ui = False
+    elif show_ui_env in ("1", "true", "yes"):
+        show_ui = True
     if show_ui:
         env.pop("MJC_PBD_NO_UI", None)
-        logger.info("XPBD show_ui=true（OpenGL 窗口 + dbgdraw）")
+        logger.info("XPBD XPBD_UI=1（OpenGL 窗口 + dbgdraw）")
     else:
         env["MJC_PBD_NO_UI"] = "1"
-        logger.info("XPBD MJC_PBD_NO_UI=1（无窗口）")
+        logger.info("XPBD XPBD_UI=0（MJC_PBD_NO_UI=1，无窗口）")
 
     pr = config.get("particle_render", {})
     overlay = xpbd_cfg.get("overlay_mjc", True)
+    overlay_env = os.environ.get("MJC_PBD_OVERLAY_MJC", "").strip().lower()
+    if overlay_env in ("0", "false", "no"):
+        overlay = False
+    elif overlay_env in ("1", "true", "yes"):
+        overlay = True
     if overlay:
         env["MJC_PBD_OVERLAY_MJC"] = "1"
+    else:
+        env.pop("MJC_PBD_OVERLAY_MJC", None)
+        logger.info("XPBD MJC_PBD_OVERLAY_MJC=0（无 overlay 快照）")
 
-    if pr.get("enabled", False):
+    pbd_grpc_env = os.environ.get("PBD_GRPC", "").strip().lower()
+    if pbd_grpc_env in ("0", "false", "no"):
+        env["PBD_GRPC"] = "0"
+        logger.info("XPBD PBD_GRPC=0（跳过 Studio 布料 gRPC UpdateMesh）")
+    elif pr.get("enabled", False):
         env["PBD_GRPC"] = "1"
         # 环境变量优先（test20260508 PBDRender 常为 :50261；JSON 基配置可能仍为 50251）
         grpc_addr = os.environ.get("PBD_GRPC_ADDRESS", "").strip()
@@ -187,7 +211,9 @@ def start_xpbd_if_configured(
     for arg in xpbd_cfg.get("args", []):
         args.append(str(arg).replace("{config_path}", str(mjc_pbd_config)))
 
-    cmd = [str(exe)] + args
+    cmd = wrap_cmd_with_taskset([str(exe)] + args, cpu_affinity)
+    if cpu_affinity:
+        logger.info("📌 XPBD CPU 亲和性: 核心 %s", cpu_affinity)
     logger.info("启动 XPBD: %s", " ".join(cmd))
     logger.info("MJC_PBD_CONFIG=%s", mjc_pbd_config)
 

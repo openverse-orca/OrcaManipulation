@@ -60,6 +60,22 @@ class ControllerArm(AbstractController):
         ctrl = self.controller.run_controller()
         return {self.ctrl_index[i]: ctrl[i] for i in range(len(self.ctrl_index))}
     
+    def get_osc_debug_snapshot(self) -> dict[str, np.ndarray | float]:
+        """
+        返回当前 OSC 目标与末端 site 世界系位姿及误差，供 CLOTH_DEBUG_OSC 宏步诊断。
+
+        字段：goal_world、ee_world（米）、gap_m（欧氏距离）、initial_ee_pos_B（B 系参考）。
+        """
+        ee = self.env.query_site_pos_and_quat([self.ee_name])[self.ee_name]
+        goal_pos = np.asarray(self.action[:3], dtype=np.float64)
+        ee_pos = np.asarray(ee["xpos"], dtype=np.float64)
+        return {
+            "goal_world": goal_pos,
+            "ee_world": ee_pos,
+            "gap_m": float(np.linalg.norm(ee_pos - goal_pos)),
+            "initial_ee_pos_B": np.asarray(self.initial_ee_pos_B, dtype=np.float64),
+        }
+
     def update_goal(self, relative_position: np.ndarray, relative_quat: np.ndarray):
         """
         relative_position: 手柄相对其初始位置的位移，B系 (x, y, z)

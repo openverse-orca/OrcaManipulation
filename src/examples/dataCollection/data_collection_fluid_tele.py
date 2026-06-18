@@ -23,7 +23,7 @@ from orca_gym.log.orca_log import get_orca_logger
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
 from envs.fluid import default_fluid_config_path, load_fluid_config, start_fluid_coupling
-from examples.dataCollection.utils.bench_fluid_config import apply_build_mode
+from examples.dataCollection.utils.bench_fluid_config import apply_build_mode, apply_orcasph_gui
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
 
@@ -75,6 +75,13 @@ def main():
         "--manual-fluid",
         action="store_true",
         help="手动模式：不自动启动 OrcaLink / OrcaSPH，需预先启动服务",
+    )
+    parser.add_argument(
+        "--gui",
+        "--sph-gui",
+        action="store_true",
+        dest="gui",
+        help="启用 OrcaSPH（SPlisHSPlasH）原生 GUI 窗口（粒子/刚体可视化）",
     )
     parser.add_argument(
         "--use-all-cpu",
@@ -201,6 +208,7 @@ def main():
         orca_logger.info("Fluid manual mode: orcalink/orcasph auto_start disabled")
 
     apply_build_mode(fluid_config, args.build_mode)
+    apply_orcasph_gui(fluid_config, args.gui)
 
     cpu_affinity = _resolve_cpu_affinity(args.use_all_cpu)
     orca_logger.info("Starting fluid coupling (OrcaLink + OrcaSPH)")

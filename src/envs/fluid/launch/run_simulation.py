@@ -32,6 +32,7 @@ from .fluid_session import (
     _try_start_record_stats_plot_viewer,
     resolve_record_stats_orcasph_log_path,
 )
+from .orcasph_log_utils import log_fluid_particle_count_to_terminal
 from .process_utils import ProcessManager, is_tcp_port_accepting_connections
 from .sph_config import generate_orcasph_config, setup_python_logging
 
@@ -60,6 +61,7 @@ class FluidSimulationContext:
     mujoco_qpos_sidecar: Any = None
     scene_output_path: Optional[Path] = None
     particle_render_override: Any = None
+    sphscale: float = 1.0
     prev_sigterm_handler: Any = None
 
 
@@ -288,6 +290,7 @@ def _maybe_generate_sph_scene(ctx: FluidSimulationContext) -> None:
     ctx.particle_render_override = scene_generator.generate_particle_render_config(
         sph_config
     )
+    ctx.sphscale = float(config["orcasph"].get("sphscale", 1.0))
 
 
 def _start_orcalink_if_configured(ctx: FluidSimulationContext) -> None:
@@ -349,6 +352,7 @@ def _start_orcasph_if_configured(ctx: FluidSimulationContext) -> None:
         config,
         orcasph_config_path,
         particle_render_override=ctx.particle_render_override,
+        sphscale=ctx.sphscale,
     )
 
     orcasph_args = config["orcasph"]["args"].copy()
@@ -375,8 +379,8 @@ def _start_orcasph_if_configured(ctx: FluidSimulationContext) -> None:
         orcasph_args,
         log_file,
     )
-    logger.info("⏳ 等待 OrcaSPH 初始化（2 秒）...")
-    time.sleep(2)
+    logger.info("⏳ 等待 OrcaSPH 初始化并读取流体粒子数量...")
+    log_fluid_particle_count_to_terminal(log_file, logger, timeout_sec=30.0)
     logger.info("✅ OrcaSPH 已启动\n")
 
 

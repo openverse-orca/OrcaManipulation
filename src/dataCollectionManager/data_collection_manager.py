@@ -55,11 +55,17 @@ class DataCollectionManager:
         self.data_storage: AbstractDataStorage = data_storage
         self.ctrl = np.zeros(self.env.nu, dtype=np.float32)
         self.disable_actuator_group = []
+        self._osc_substep = os.environ.get("CLOTH_OSC_SUBSTEP", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
         self.monitor_ports: list[int] = []
         self.monitor_processes: list[subprocess.Popen] = []
         self._fluid_coupling = None
         self._pre_fluid_step_callbacks: list[Callable[[OrcaGymLocalEnv], None]] = []
         self._post_step_callbacks: list[Callable[[OrcaGymLocalEnv], None]] = []
+        self._physics_reinit_callbacks: list[Callable[[], None]] = []
 
         self._save_video = False
         self._saving = False
@@ -76,8 +82,21 @@ class DataCollectionManager:
         self._skip_fluid_cleanup = False
         self._skip_ctrl = False
         self._skip_render = False
-        self._mujoco_gui_enabled = False
-        self._mujoco_viewer = None
+        self._sync_studio_vis = os.environ.get("CLOTH_SYNC_STUDIO_VIS", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        try:
+            self._studio_vis_stride = max(1, int(os.environ.get("CLOTH_STUDIO_VIS_STRIDE", "1")))
+        except ValueError:
+            self._studio_vis_stride = 1
+        self._studio_vis_step = 0
+        self._realtime_sync = os.environ.get("CLOTH_NO_REALTIME", "").strip().lower() not in (
+            "1",
+            "true",
+            "yes",
+        )
 
     @property
     def save_video(self) -> bool:
@@ -116,9 +135,17 @@ class DataCollectionManager:
         from orca_gym.scripts.camera_monitor import terminate_monitor
         for monitor_process in self.monitor_processes:
             try:
-                terminate_monitor(monitor_process)  
+                if monitor_process.poll() is not None:
+                    continue
+                terminate_monitor(monitor_process)
+                try:
+                    monitor_process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    monitor_process.kill()
+                    monitor_process.wait(timeout=1)
             except Exception as e:
                 orca_logger.error(f"Failed to stop monitor: {e}")
+        self.monitor_processes.clear()
 
     def create_env(self, agent_name:str, 
                   env_name:str,
@@ -193,6 +220,14 @@ class DataCollectionManager:
         for cb in self._pre_fluid_step_callbacks:
             cb(self.env)
 
+    def add_physics_reinit_callback(self, cb: Callable[[], None]) -> None:
+        """``update_scene`` / ``init_env`` 重建 MjModel 后调用（如重绑 P_arm 断开）。"""
+        self._physics_reinit_callbacks.append(cb)
+
+    def _run_physics_reinit_callbacks(self) -> None:
+        for cb in self._physics_reinit_callbacks:
+            cb()
+
     def add_post_step_callback(self, cb: Callable[[OrcaGymLocalEnv], None]) -> None:
         """注册在 env.step() 之后执行的回调（如 Studio 视口同步）。"""
         self._post_step_callbacks.append(cb)
@@ -225,34 +260,16 @@ class DataCollectionManager:
         """纯 SPH 基线：跳过 env.render()，不向 Studio 推送视口渲染。"""
         self._skip_render = skip
 
-    def enable_mujoco_gui(self, enabled: bool = True) -> None:
-        """启用 MuJoCo 原生被动查看器（launch_passive），与 Studio env.render() 可并存。"""
-        self._mujoco_gui_enabled = enabled
+    def set_realtime_sync(self, enabled: bool) -> None:
+        """为 False 时不按 macro_dt sleep，尽快跑满宏步（release 压测）。"""
+        self._realtime_sync = bool(enabled)
 
-    def _ensure_mujoco_viewer(self) -> None:
-        if not self._mujoco_gui_enabled or self._mujoco_viewer is not None:
-            return
-        from envs.mujoco_passive_viewer import launch_mujoco_passive_viewer
-
-        self._mujoco_viewer = launch_mujoco_passive_viewer(self.env)
-
-    def _sync_mujoco_viewer(self) -> None:
-        if self._mujoco_viewer is None:
-            return
-        from envs.mujoco_passive_viewer import sync_mujoco_passive_viewer
-
-        if not sync_mujoco_passive_viewer(self._mujoco_viewer):
-            self._mujoco_viewer = None
-            self._shutdown_requested = True
-            orca_logger.info("MuJoCo viewer closed by user, requesting shutdown")
-
-    def _close_mujoco_viewer(self) -> None:
-        if self._mujoco_viewer is None:
-            return
-        from envs.mujoco_passive_viewer import close_mujoco_passive_viewer
-
-        close_mujoco_passive_viewer(self._mujoco_viewer)
-        self._mujoco_viewer = None
+    def _push_studio_visual(self) -> None:
+        """skip_render 时可选：仅推送 qpos 到 Studio 视口，不应用 override_ctrls。"""
+        gym = self.env.gym
+        self.env.loop.run_until_complete(
+            gym.push_visual_state(self.env.data.qpos, gym._mjData.time)
+        )
 
     def _save_bench_data(self):
         if not self._bench_enabled or not self._bench_steps:
@@ -319,6 +336,29 @@ class DataCollectionManager:
             f"step={report['pct_step']}%, render={report['pct_render']}%"
         )
 
+    def _log_cloth_debug_osc(self, step_count: int) -> None:
+        """CLOTH_DEBUG_OSC=1 时在关键宏步后打印 OSC 目标与末端 site 世界系误差。"""
+        flag = os.environ.get("CLOTH_DEBUG_OSC", "").strip().lower()
+        if flag not in ("1", "true", "yes"):
+            return
+        watch = {1, 2, 3, 6, 11, 26, 51, 101, 201}
+        if step_count not in watch:
+            return
+        for controller in self.controllers:
+            snap_fn = getattr(controller, "get_osc_debug_snapshot", None)
+            if snap_fn is None:
+                continue
+            snap = snap_fn()
+            ee_name = getattr(controller, "ee_name", "?")
+            gw = snap["goal_world"]
+            ew = snap["ee_world"]
+            ib = np.array2string(snap["initial_ee_pos_B"], precision=4, separator=",")
+            orca_logger.info(
+                f"CLOTH_DEBUG_OSC step={step_count} ee={ee_name} gap_m={snap['gap_m']:.4f} "
+                f"goal_world=[{gw[0]:.4f},{gw[1]:.4f},{gw[2]:.4f}] "
+                f"ee_world=[{ew[0]:.4f},{ew[1]:.4f},{ew[2]:.4f}] initial_ee_B={ib}"
+            )
+
     def run_controllers(self) ->list[float]:
         if self.device is not None:
             self.device.update()
@@ -340,7 +380,7 @@ class DataCollectionManager:
         self._shutdown_requested = True
         orca_logger.info("Shutdown requested, finishing current operation...")
 
-    def run(self, max_episodes=None):
+    def run(self, max_episodes: int | None = None):
         self._shutdown_requested = False
         self.env.disable_actuator(self.disable_actuator_group)
         self.start_monitors()
@@ -377,7 +417,18 @@ class DataCollectionManager:
             self._save_bench_data()
             signal.signal(signal.SIGINT, self._original_sigint)
             orca_logger.info("Cleanup start")
-            self._close_mujoco_viewer()
+            if self._fluid_coupling is not None and not self._skip_fluid_cleanup:
+                try:
+                    self._fluid_coupling.cleanup()
+                except Exception as e:
+                    orca_logger.warning(f"Fluid coupling cleanup: {e}")
+                self._fluid_coupling = None
+            elif self._fluid_coupling is not None and self._skip_fluid_cleanup:
+                orca_logger.info("Skipping fluid coupling cleanup (keep SPH running)")
+            self.stop_monitors()
+            if self.data_storage is not None:
+                orca_logger.info("Clear data")
+                self.data_storage.clear_data()
             if not self._skip_env_teardown:
                 try:
                     self.env.reset()
@@ -385,16 +436,8 @@ class DataCollectionManager:
                     self.env.close()
                 except Exception as e:
                     orca_logger.warning(f"Env teardown: {e}")
-            if self._fluid_coupling is not None and not self._skip_fluid_cleanup:
-                try:
-                    self._fluid_coupling.cleanup()
-                except Exception as e:
-                    orca_logger.warning(f"Fluid coupling cleanup: {e}")
-                self._fluid_coupling = None
-            self.stop_monitors()
-            if self.data_storage is not None:
-                orca_logger.info("Clear data")
-                self.data_storage.clear_data()
+            else:
+                orca_logger.info("Skipping env reset/close (demo teardown)")
 
     def update_scene(self):
         if self.scene_manager is not None:
@@ -431,6 +474,7 @@ class DataCollectionManager:
                 self.task.get_task(self.scene_manager, task_info=task_info)
 
             self.env.disable_actuator(self.disable_actuator_group)
+            self._run_physics_reinit_callbacks()
             if self._fluid_coupling is not None and hasattr(
                 self._fluid_coupling, "on_physics_reinitialized"
             ):
@@ -442,7 +486,6 @@ class DataCollectionManager:
         self.set_init_ctrl()
         self.env.set_ctrl(self.ctrl)
         self.env.mj_forward()
-        self._ensure_mujoco_viewer()
 
         for controller in self.controllers:
             controller.reset()
@@ -467,8 +510,19 @@ class DataCollectionManager:
                 should_step = self._fluid_coupling.step()
             t2 = time.perf_counter()
             if should_step:
-                obs, reward, terminated, truncated, info = self.env.step(action)
+                if self._osc_substep:
+                    for _ in range(self.frame_skip):
+                        for controller in self.controllers:
+                            ctrl = controller.run_controller()
+                            for index, value in ctrl.items():
+                                self.ctrl[index] = value
+                        self.env.do_simulation(self.ctrl, 1)
+                    obs = self.env._get_obs().copy()
+                    reward, terminated, truncated, info = 0.0, False, False, {}
+                else:
+                    obs, reward, terminated, truncated, info = self.env.step(action)
                 step_count += 1
+                self._log_cloth_debug_osc(step_count)
                 self._run_post_step_hooks()
             else:
                 obs = self.env._get_obs().copy() if hasattr(self.env, "_get_obs") else {}
@@ -477,7 +531,11 @@ class DataCollectionManager:
             t3 = time.perf_counter()
             if not self._skip_render:
                 self.env.render()
-            self._sync_mujoco_viewer()
+            elif self._sync_studio_vis:
+                self._studio_vis_step += 1
+                if self._studio_vis_step >= self._studio_vis_stride:
+                    self._studio_vis_step = 0
+                    self._push_studio_visual()
             t4 = time.perf_counter()
 
             if self._bench_enabled:
@@ -539,7 +597,7 @@ class DataCollectionManager:
                 return task_is_success
 
             elapsed_time = time.perf_counter() - t0
-            sleep_dur = self.real_time_step - elapsed_time
+            sleep_dur = self.real_time_step - elapsed_time if self._realtime_sync else 0.0
             if sleep_dur > 0:
                 time.sleep(sleep_dur)
             if self._bench_enabled and self._bench_steps:

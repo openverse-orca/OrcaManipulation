@@ -50,11 +50,6 @@ def main():
         help="场景/任务 YAML（相对本目录）；省略或空字符串表示不加载配置，仅遥操采集（EmptyTask）",
     )
     parser.add_argument(
-        "--mujoco-gui",
-        action="store_true",
-        help="启用 MuJoCo 原生查看器窗口（mujoco.viewer.launch_passive，与 OrcaStudio 视口可并存）",
-    )
-    parser.add_argument(
         "--mjc-agent-prefix",
         type=str,
         default=None,
@@ -156,10 +151,6 @@ def main():
     data_collection_manager.add_monitor_port(7081)
     data_collection_manager.add_monitor_port(7090)
     data_collection_manager.add_monitor_port(7091)
-
-    if args.mujoco_gui:
-        orca_logger.info("MuJoCo passive viewer enabled (--mujoco-gui)")
-        data_collection_manager.enable_mujoco_gui(True)
 
     data_collection_manager.run()
 

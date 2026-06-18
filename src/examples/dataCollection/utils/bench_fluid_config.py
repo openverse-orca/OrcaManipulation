@@ -58,3 +58,20 @@ def apply_build_mode(fluid_config: Dict[str, Any], build_mode: str = "release") 
         orca_logger.info("build_mode=debug: debug options follow fluid_config")
 
     return mode
+
+
+def apply_orcasph_gui(fluid_config: Dict[str, Any], enabled: bool) -> None:
+    """
+    为 OrcaSPH 子进程启用/禁用 SPlisHSPlasH 原生 GUI（``orcasph ... --gui``）。
+
+    在 ``start_fluid_coupling`` 之前调用；``orcasph.enabled`` 为 false 时无操作。
+    """
+    orcasph = fluid_config.get("orcasph")
+    if not orcasph or not orcasph.get("enabled", False):
+        return
+    args = list(orcasph.get("args") or [])
+    args = [arg for arg in args if arg != "--gui"]
+    if enabled:
+        args.append("--gui")
+        orca_logger.info("OrcaSPH GUI enabled (--gui appended to orcasph args)")
+    orcasph["args"] = args
