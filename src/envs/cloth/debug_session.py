@@ -31,27 +31,20 @@ def _full_debug_profile() -> dict[str, Any]:
             "export_macro_packet_pair_verify": True,
             "export_vertex_pos_compare": True,
             "export_cloth_vertex_capture": True,
-<<<<<<< Updated upstream
-=======
             "export_cloth_init_compare": False,
-            "export_cloth_orientation_compare": True,
->>>>>>> Stashed changes
         }
     )
     return prof
 
 
-def is_cloth_orientation_compare_enabled(config: dict[str, Any]) -> bool:
-    """``debug.export_cloth_orientation_compare`` 或 ``debug_mode`` 为真时启用布方向比对。"""
-    dbg = config.get("debug") or {}
-    if bool(dbg.get("export_cloth_orientation_compare", False)):
-        return True
-    return bool(dbg.get("debug_mode", False))
-
-
 def is_cloth_debug_enabled(config: dict[str, Any]) -> bool:
     """config.debug.debug_mode 是否为真。"""
     return bool(config.get("debug", {}).get("debug_mode", False))
+
+
+def is_cloth_init_compare_enabled(config: dict[str, Any]) -> bool:
+    """``debug.export_cloth_init_compare`` 是否为真（可独立于其它 debug CSV）。"""
+    return bool(config.get("debug", {}).get("export_cloth_init_compare", False))
 
 
 def resolve_session_debug_dir(
@@ -77,6 +70,95 @@ def resolve_session_debug_dir(
             p = (_XPBD_DEBUG_LOG / p).resolve()
         return (p / session_timestamp).resolve()
     return (_XPBD_DEBUG_LOG / f"cloth_{session_timestamp}").resolve()
+
+
+def build_xpbd_session_config(base_cfg: dict[str, Any], adapted_cfg: dict[str, Any]) -> dict[str, Any]:
+    """
+    构造供 ``MJC_PBD_CONFIG`` 使用的会话 JSON。
+
+    P2 默认 ``xpbd.cloth_discover_only=true``：仅将 ``cloth`` discovered 段交给 XPBD，
+    ``rigid_body_map`` 保持基配置短链（暂不向 XPBD 传递 Studio 扫描的 N 刚体）。
+    """
+    out = copy.deepcopy(adapted_cfg)
+    xpbd_blk = out.setdefault("xpbd", {})
+    if bool(xpbd_blk.get("cloth_discover_only", True)):
+        if "rigid_body_map" in base_cfg:
+            out["rigid_body_map"] = copy.deepcopy(base_cfg["rigid_body_map"])
+        if "orcalink_rigid_body_map" in base_cfg:
+            out["orcalink_rigid_body_map"] = copy.deepcopy(base_cfg["orcalink_rigid_body_map"])
+        elif "orcagym_rigid_body_map" in base_cfg:
+            out["orcalink_rigid_body_map"] = copy.deepcopy(base_cfg["orcagym_rigid_body_map"])
+    return out
+
+
+def write_xpbd_runtime_session_config(
+    config: dict[str, Any],
+    *,
+    session_timestamp: str,
+    source_config_path: Path | None = None,
+    source_mjcf_path: Path | None = None,
+) -> Path:
+    """
+    将运行时 effective config 写入 ``cloth_3d/cloth_sim_session_{ts}.json``，供 XPBD 子进程加载。
+
+    路径须在 ``OrcaPlayground/examples/cloth_3d/`` 下，以便 XPBD 侧脚本相对解析。
+    """
+    session_path = (CLOTH_3D_DIR / f"cloth_sim_session_{session_timestamp}.json").resolve()
+    payload = copy.deepcopy(config)
+    meta: dict[str, str] = {
+        "session_timestamp": session_timestamp,
+        "source_config": str(source_config_path.resolve()) if source_config_path else "",
+    }
+    if source_mjcf_path is not None and source_mjcf_path.is_file():
+        meta["source_mjcf"] = str(source_mjcf_path.resolve())
+    payload["_cloth_robot_session_meta"] = meta
+    session_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    logger.info("XPBD session config: %s", session_path)
+    return session_path
+
+
+def export_xpbd_scene_for_session(
+    session_path: Path,
+    *,
+    out_path: Path | None = None,
+) -> Path:
+    """
+    调用 ``cloth_3d/scripts/export_xpbd_scene_from_mjcf.py``，从 session JSON 导出
+    ``xpbd_scene_from_mjcf.json``（与 XPBD ``mjc_pbd_bridge`` 自动导出同源）。
+
+    session 须含 ``rigid_body_map`` 与 ``mujoco.model_path`` 或 ``_cloth_robot_session_meta.source_mjcf``。
+    返回写出 JSON 的绝对路径。
+    """
+    import subprocess
+    import sys
+
+    session_path = session_path.resolve()
+    if not session_path.is_file():
+        raise FileNotFoundError(f"session config not found: {session_path}")
+
+    export_script = CLOTH_3D_DIR / "scripts" / "export_xpbd_scene_from_mjcf.py"
+    if not export_script.is_file():
+        raise FileNotFoundError(f"export script not found: {export_script}")
+
+    cmd = [sys.executable, str(export_script), "--config", str(session_path)]
+    if out_path is not None:
+        cmd.extend(["--out", str(out_path.resolve())])
+
+    logger.info("export xpbd scene: %s", " ".join(cmd))
+    proc = subprocess.run(cmd, cwd=str(CLOTH_3D_DIR), capture_output=True, text=True)
+    if proc.returncode != 0:
+        detail = (proc.stdout or "") + (proc.stderr or "")
+        raise RuntimeError(f"export_xpbd_scene_from_mjcf failed (rc={proc.returncode}): {detail}")
+
+    if out_path is not None:
+        return out_path.resolve()
+
+    cfg = json.loads(session_path.read_text(encoding="utf-8"))
+    dbg = cfg.get("debug", {})
+    dbg_dir = Path(str(dbg.get("debug_log_dir", _XPBD_DEBUG_LOG)))
+    if not dbg_dir.is_absolute():
+        dbg_dir = (CLOTH_3D_DIR / dbg_dir).resolve()
+    return (dbg_dir / "xpbd_scene_from_mjcf.json").resolve()
 
 
 def prepare_cloth_debug_session(
@@ -142,20 +224,11 @@ def apply_xpbd_debug_environment(
     cloth_dir.mkdir(parents=True, exist_ok=True)
     env["MJC_PBD_CLOTH_STATS_DIR"] = str(cloth_dir)
     if dbg.get("export_cloth_vertex_capture", True):
-        env["MJC_PBD_CLOTH_VERT_CAPTURE"] = str(
-            int(dbg.get("cloth_vertex_capture_max", 32))
-        )
+        env["MJC_PBD_CLOTH_VERT_CAPTURE"] = "1"
         env["MJC_PBD_CLOTH_VERT_DIR"] = str(cloth_dir)
     if dbg.get("export_phys_trace", False):
         env["MJC_PBD_PHYS_TRACE"] = "1"
-        env["MJC_PBD_PROFILE_PHYS"] = "1"
-        env["PBDX_PROFILE_PHYS_STEP"] = "1"
-        env["MJC_PBD_CLOTH_SUBSTEP_TRACE"] = "1"
-        env["MJC_PBD_CLOTH_SUBSTEP_TRACE_MAX_MF"] = "20"
-        env["PBDX_PHYS_SUBSTEP_TRACE"] = "1"
     logger.info("XPBD debug env: CLOTH_STATS=%s ORCALINK_TRACE=1", cloth_dir)
-<<<<<<< Updated upstream
-=======
 
 
 def apply_cloth_init_compare_environment(
@@ -166,9 +239,9 @@ def apply_cloth_init_compare_environment(
     """
     为 XPBD 设置布料初始化对比采集环境变量。
 
-    - ``MJC_PBD_CLOTH_INIT_COMPARE_DIR``：C 端写出 ``xpbd_init_particles.csv`` 与 ``xpbd_init_cloth_frame.json``
+    - ``MJC_PBD_CLOTH_INIT_COMPARE_DIR``：C 端写出 ``xpbd_init_particles.csv`` 的目录
     """
-    if not is_cloth_init_compare_enabled(config) and not is_cloth_orientation_compare_enabled(config):
+    if not is_cloth_init_compare_enabled(config):
         return
     compare_dir = out_dir.resolve()
     compare_dir.mkdir(parents=True, exist_ok=True)
@@ -219,51 +292,9 @@ def run_cloth_init_compare_if_configured(
     )
 
 
-def run_cloth_orientation_compare_if_configured(
-    config: dict[str, Any],
-    *,
-    model: Any,
-    data: Any,
-    session_cfg: dict[str, Any],
-    out_dir: Path,
-    session_path: Path | None = None,
-) -> Any | None:
-    """
-    若 debug 模式或 ``export_cloth_orientation_compare`` 为真，写出 ``ClothOrientation_summary.csv``。
-
-    须在 XPBD 写出 ``xpbd_init_cloth_frame.json`` 之后调用（与 init compare 同目录）。
-    """
-    if not is_cloth_orientation_compare_enabled(config):
-        return None
-    _ensure_cloth_3d_for_compare()
-    from modules.cloth_orientation_compare_export import (  # noqa: WPS433
-        cloth_orientation_compare_tolerance_deg,
-        cloth_orientation_compare_wait_sec,
-        run_cloth_orientation_compare,
-    )
-
-    dbg = config.get("debug") or {}
-    wait_sec = cloth_orientation_compare_wait_sec(config)
-    if dbg.get("cloth_orientation_compare_wait_sec") is None and is_cloth_debug_enabled(config):
-        xpbd_delay = float((config.get("xpbd") or {}).get("startup_delay", 4.0))
-        wait_sec = max(wait_sec, xpbd_delay + 6.0)
-
-    return run_cloth_orientation_compare(
-        model,
-        data,
-        session_cfg,
-        out_dir,
-        session_path=session_path,
-        tolerance_deg=cloth_orientation_compare_tolerance_deg(config),
-        wait_xpbd_frame=True,
-        wait_timeout_sec=wait_sec,
-    )
-
-
 def _ensure_cloth_3d_for_compare() -> None:
     import sys
 
     root = str(CLOTH_3D_DIR)
     if root not in sys.path:
         sys.path.insert(0, root)
->>>>>>> Stashed changes

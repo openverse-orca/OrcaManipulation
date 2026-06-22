@@ -28,6 +28,7 @@ from orca_gym.log.orca_log import get_orca_logger
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
 from controllers.auto_task_status import AutoStartTaskStatusController
+from envs.cpu_affinity import apply_current_process_cpu_affinity, resolve_cpu_affinity
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
 
@@ -48,27 +49,9 @@ orca_logger = get_orca_logger(
 )
 
 
-def _camera_monitor_enabled() -> bool:
-    """
-    是否启动 4 路 matplotlib 相机窗口（7080/7081/7090/7091）。
-
-    默认关闭，避免 PICO 遥操时弹出 figure；需要预览时设 CLOTH_CAMERA_MONITOR=1。
-    """
-    return os.environ.get("CLOTH_CAMERA_MONITOR", "0").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
-
-
 def main():
     parser = argparse.ArgumentParser(description="Cloth teleop / trajectory replay (no SPH fluid)")
-    parser.add_argument(
-        "--level",
-        type=str,
-        default=None,
-        help="Studio 关卡名；省略则从 Play 后 lastLoadPath.preset 自动读取",
-    )
+    parser.add_argument("--level", type=str, required=True, help="场景的名称")
     parser.add_argument("--agent_name", type=str, required=True, choices=["openloong", "tiangong2"])
     parser.add_argument(
         "--mjc-agent-prefix",
@@ -134,31 +117,55 @@ def main():
         help="开启 MjcPBD debug：全量 CSV + XPBD 刚体/布料跟踪；默认选用 *.debug.json",
     )
     parser.add_argument(
+        "--no-collect",
+        action="store_true",
+        help="不写入 dataset/HDF5（仅 replay 联调或 release 压测）",
+    )
+    parser.add_argument(
+        "--no-realtime",
+        action="store_true",
+        help="不按 macro_dt 做墙钟 sleep，尽快跑完",
+    )
+    parser.add_argument(
         "--keyframe",
         action="store_true",
         help="关闭 Pico/replay 外部驱动（功能保留）；dual_gripper 关键帧短链请用 run_cloth_keyframe_shortchain.py",
     )
+    parser.add_argument(
+        "--use-all-cpu",
+        action="store_true",
+        help="不使用 CPU 亲和性（默认 MuJoCo/Python + XPBD 绑定 4～末核，为 Studio 保留 0-3）",
+    )
+    parser.add_argument(
+        "--bench",
+        type=str,
+        default=None,
+        help="宏步逐帧计时输出 JSON（ctrl / cloth_coupling / env.step / render 分段 ms）",
+    )
 
     args = parser.parse_args()
+
+    cpu_affinity = resolve_cpu_affinity(args.use_all_cpu)
+    apply_current_process_cpu_affinity(cpu_affinity)
 
     if args.keyframe:
         orca_logger.info(
             "Keyframe mode: 外部 Pico/replay 已禁用；dual_gripper 短链请运行 "
             "run_cloth_keyframe_shortchain.py（本地 MuJoCo + OrcaLink + XPBD）"
         )
-        base_dir = os.path.dirname(os.path.realpath(__file__))
-        repo_root = os.path.abspath(os.path.join(base_dir, "../../../.."))
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        repo_root = os.path.abspath(os.path.join(script_dir, "../../../.."))
         cfg = os.path.join(
             repo_root,
             "OrcaPlayground/examples/cloth_3d/cloth_sim_config.dual_gripper_cross_shortchain.debug.json",
         )
         argv = [
             sys.executable,
-            os.path.join(base_dir, "run_cloth_keyframe_shortchain.py"),
+            os.path.join(script_dir, "run_cloth_keyframe_shortchain.py"),
             "--cloth-config",
             cfg,
             "--log-dir",
-            os.path.join(base_dir, "logs"),
+            os.path.join(script_dir, "logs"),
         ]
         if args.max_macro_frames is not None:
             argv.extend(["--max-macro-frames", str(args.max_macro_frames)])
@@ -170,11 +177,7 @@ def main():
         orca_logger.error("--replay requires --replay_data")
         return
 
-    from envs.cloth.paths import resolve_cloth_level
-
-    level = args.level or os.environ.get("LEVEL") or os.environ.get("ORCA_LEVEL_NAME") or None
-    level = resolve_cloth_level(level)
-    orca_logger.info(f"Cloth level: {level}")
+    level = args.level
     agent_name = args.agent_name
     task_config = (args.task_config or "").strip() or None
 
@@ -188,20 +191,40 @@ def main():
 
     if agent_name == "openloong":
         from conf import openloong_conf as agent_conf
-        from dataStorage.openloong_data_storage import OpenLoongDataStorage
 
-        data_storage = OpenLoongDataStorage(
-            dataset_path=os.path.join(base_dir, "dataset", agent_name, level),
-            hdf5_path="record/proprio_stats.hdf5",
-        )
+        if args.no_collect:
+            data_storage = None
+
+            def obs_callback(_env):
+                return {"bench_dummy": np.zeros(1, dtype=np.float32)}
+
+            orca_logger.info("No-collect mode: skip dataset/HDF5")
+        else:
+            from dataStorage.openloong_data_storage import OpenLoongDataStorage
+
+            data_storage = OpenLoongDataStorage(
+                dataset_path=os.path.join(base_dir, "dataset", agent_name, level),
+                hdf5_path="record/proprio_stats.hdf5",
+            )
+            obs_callback = data_storage.obs_callback
     elif agent_name == "tiangong2":
         from conf import tiangong2_conf as agent_conf
-        from dataStorage.tiangong_data_storage import Tiangong2DataStorage
 
-        data_storage = Tiangong2DataStorage(
-            dataset_path=os.path.join(base_dir, "dataset", agent_name, level),
-            hdf5_path="record/proprio_stats.hdf5",
-        )
+        if args.no_collect:
+            data_storage = None
+
+            def obs_callback(_env):
+                return {"bench_dummy": np.zeros(1, dtype=np.float32)}
+
+            orca_logger.info("No-collect mode: skip dataset/HDF5")
+        else:
+            from dataStorage.tiangong_data_storage import Tiangong2DataStorage
+
+            data_storage = Tiangong2DataStorage(
+                dataset_path=os.path.join(base_dir, "dataset", agent_name, level),
+                hdf5_path="record/proprio_stats.hdf5",
+            )
+            obs_callback = data_storage.obs_callback
     else:
         raise ValueError(f"Invalid agent name: {agent_name}")
 
@@ -224,12 +247,16 @@ def main():
     scene_manager = SceneManager(orcagym_addr, config=config)
 
     script_name = os.path.basename(sys.argv[0]) if sys.argv else os.path.basename(__file__)
-    msg = "布料轨迹回放中…" if args.replay else "布料遥操采集，请操作手柄"
-    scene_manager.show_ui_message(1, msg, "0xffff00", showtime=10)
-    scene_manager.get_scene_data(script_name, "beginscene")
+    if not args.no_collect:
+        msg = "布料轨迹回放中…" if args.replay else "布料遥操采集，请操作手柄"
+        scene_manager.show_ui_message(1, msg, "0xffff00", showtime=10)
+        scene_manager.get_scene_data(script_name, "beginscene")
 
-    orca_logger.info("Creating data storage")
-    data_storage.set_video_path("video")
+    if data_storage is not None:
+        orca_logger.info("Creating data storage")
+        data_storage.set_video_path("video")
+    else:
+        orca_logger.info("Skip data storage (no-collect)")
 
     frame_skip = max(1, int(args.frame_skip))
     time_step = float(args.time_step)
@@ -242,32 +269,16 @@ def main():
 
     orca_logger.info("Creating data collection manager")
     mjc_prefix = (args.mjc_agent_prefix or "").strip() or None
-    cloth_cfg_path_preview: str | None = (args.cloth_config or "").strip() or None
-    if args.cloth_coupling and mjc_prefix is None:
-        from envs.cloth.paths import (
-            apply_runtime_orcagym_level,
-            mjc_agent_prefix_from_config,
-            resolve_cloth_config_path,
-        )
-        from envs.cloth import load_cloth_config
-
-        preview_path = resolve_cloth_config_path(
-            level=level,
-            agent=agent_name,
-            debug=bool(args.cloth_debug),
-            explicit=cloth_cfg_path_preview,
-        )
-        preview_cfg = apply_runtime_orcagym_level(load_cloth_config(preview_path), level)
-        mjc_prefix = mjc_agent_prefix_from_config(preview_cfg, agent_name)
-        if mjc_prefix:
-            orca_logger.info(f"Auto mjc-agent-prefix from cloth config (level={level}): {mjc_prefix}")
+    if mjc_prefix is None and level == "test20260508" and agent_name == "openloong":
+        mjc_prefix = "openloong_gripper_2f85_fix_base_usda"
+        orca_logger.info(f"Auto mjc-agent-prefix for test20260508: {mjc_prefix}")
 
     data_collection_manager = DataCollectionManager(
         agent_name=agent_name,
         env_name=env_name,
         entry_point=ENTRY_POINT,
         default_joint_values=default_joint_values,
-        obs_callback=data_storage.obs_callback,
+        obs_callback=obs_callback,
         env_index=env_index,
         max_episode_steps=max_episode_steps,
         device=pico_joystick_device,
@@ -281,12 +292,10 @@ def main():
     env.reset()
 
     if args.cloth_coupling:
-        from envs.cloth import load_cloth_config, start_cloth_coupling
-        from envs.cloth.paths import apply_runtime_orcagym_level, resolve_cloth_config_path
+        from envs.cloth import default_cloth_config_path, load_cloth_config, start_cloth_coupling
 
-        cloth_cfg_path = cloth_cfg_path_preview
+        cloth_cfg_path = args.cloth_config
         if not cloth_cfg_path:
-<<<<<<< Updated upstream
             cloth_3d = default_cloth_config_path().parent
             if level == "test20260508":
                 if args.cloth_debug:
@@ -302,19 +311,6 @@ def main():
                 e2e = cloth_3d / "cloth_sim_config.orcagym_e2e.json"
                 cloth_cfg_path = str(e2e if e2e.is_file() else default_cloth_config_path())
         cloth_config = load_cloth_config(cloth_cfg_path)
-        if args.cloth_debug and not cloth_config.get("debug", {}).get("debug_mode", False):
-            cloth_config.setdefault("debug", {})["debug_mode"] = True
-            orca_logger.info("--cloth-debug: 已启用 debug_mode（未使用 .debug.json 时仅开总开关）")
-=======
-            cloth_cfg_path = str(
-                resolve_cloth_config_path(
-                    level=level,
-                    agent=agent_name,
-                    debug=bool(args.cloth_debug),
-                )
-            )
-        cloth_config = apply_runtime_orcagym_level(load_cloth_config(cloth_cfg_path), level)
-        orca_logger.info(f"Cloth config level={cloth_config.get('orcagym', {}).get('level')} file={cloth_cfg_path}")
         if args.cloth_debug:
             if not cloth_config.get("debug", {}).get("debug_mode", False):
                 cloth_config.setdefault("debug", {})["debug_mode"] = True
@@ -323,8 +319,9 @@ def main():
             cloth_config.setdefault("debug", {})["debug_mode"] = False
         if not args.replay:
             cloth_config.setdefault("xpbd", {})["dg_traj"] = "pico"
-            orca_logger.info("PICO mode: xpbd.dg_traj=pico（扳机>0.5 才 Closing；指间距>50%% 释放 grip）")
->>>>>>> Stashed changes
+            orca_logger.info(
+                "PICO mode: xpbd.dg_traj=pico（扳机>0.5 才 Closing；指间距>50%% 释放 grip）"
+            )
         mj_fs = int(cloth_config.get("mujoco", {}).get("frame_skip", 20))
         if mj_fs != frame_skip:
             orca_logger.warning(
@@ -338,6 +335,7 @@ def main():
             log_dir=log_dir,
             auto_start_orcalink=True if args.cloth_auto_start_orcalink else None,
             auto_start_xpbd=True if args.cloth_auto_start_xpbd else None,
+            cpu_affinity=cpu_affinity,
         )
         data_collection_manager.set_cloth_coupling(cloth_handle)
         if not args.replay:
@@ -360,10 +358,22 @@ def main():
             dbg_dir = cloth_handle.config.get("debug", {}).get("debug_log_dir", log_dir)
             orca_logger.info(
                 f"Cloth debug ON. CSV dir: {dbg_dir} | "
-                f"monitor: python run_cloth_debug_monitor.py --debug-dir {dbg_dir}"
+                f"monitor: python run_cloth_debug_monitor.py --debug-dir {dbg_dir} | "
+                f"analyze: python analyze_gripper_cloth_distance.py --debug-dir {dbg_dir} --plot"
             )
 
-    orca_logger.info("Disabling position controller")
+    if args.bench:
+        data_collection_manager.enable_bench(args.bench)
+        orca_logger.info(f"Bench enabled: {args.bench}")
+
+    from envs.cloth.openloong_osc_actuators import setup_openloong_dual_arm_osc_actuators
+
+    def _bind_osc_actuators() -> None:
+        setup_openloong_dual_arm_osc_actuators(env, agent_conf.l_arm, agent_conf.r_arm)
+
+    _bind_osc_actuators()
+    data_collection_manager.add_physics_reinit_callback(_bind_osc_actuators)
+    # 保留：若 MJCF 将 P_arm 置于 group 1 时仍生效；Studio 实场景全为 group 0，主要靠 trnid 断开
     data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
 
     orca_logger.info("Creating left gripper controller")
@@ -393,19 +403,25 @@ def main():
         orca_logger.info("Creating pick place task")
     data_collection_manager.set_task(create_task(env, config, task_config))
     if args.replay and (args.max_episode_sec is not None or args.max_macro_frames is not None):
+        macro_dt = frame_skip * time_step
+        duration_sec = None
         if args.max_macro_frames is not None:
-            wall_sec = max(120.0, float(args.max_macro_frames) * 15.0)
+            orca_logger.info(
+                f"Replay mode: AutoStartTaskStatusController (end by max_macro_frames={args.max_macro_frames}, "
+                f"macro_dt={macro_dt}s)"
+            )
         else:
-            wall_sec = float(args.max_episode_sec)
-        orca_logger.info(
-            f"Replay mode: AutoStartTaskStatusController wall_duration={wall_sec}s"
-        )
+            duration_sec = float(args.max_episode_sec)
+            orca_logger.info(
+                f"Replay mode: AutoStartTaskStatusController wall_duration={duration_sec}s "
+                f"(macro_dt={macro_dt}s)"
+            )
         data_collection_manager.set_task_status_controller(
             AutoStartTaskStatusController(
                 env,
                 agent_conf.base_body,
                 auto_start=True,
-                duration_sec=wall_sec,
+                duration_sec=duration_sec,
             )
         )
     else:
@@ -413,10 +429,6 @@ def main():
             data_collection_manager, env, pico_joystick_device, agent_conf.base_body,
         )
 
-<<<<<<< Updated upstream
-    data_collection_manager.save_video = not args.replay
-    if not args.replay:
-=======
     data_collection_manager.save_video = not args.replay and not args.no_collect
     if args.no_realtime:
         data_collection_manager.set_realtime_sync(False)
@@ -436,17 +448,11 @@ def main():
                 "Replay mode: skip_render=True（禁止 Studio override_ctrls 覆盖手臂电机；"
                 "Studio 刚体将保持 Play 初态，XPBD 窗口仍跟 body_track）"
             )
-    if not args.replay and _camera_monitor_enabled():
->>>>>>> Stashed changes
+    if not args.replay:
         data_collection_manager.add_monitor_port(7080)
         data_collection_manager.add_monitor_port(7081)
         data_collection_manager.add_monitor_port(7090)
         data_collection_manager.add_monitor_port(7091)
-        orca_logger.info(
-            "Camera monitor ON (7080/7081/7090/7091)；关闭请设 CLOTH_CAMERA_MONITOR=0"
-        )
-    elif not args.replay:
-        orca_logger.info("Camera monitor OFF（CLOTH_CAMERA_MONITOR=0，不弹出 4 路 figure）")
 
     data_collection_manager.run(
         max_episodes=1 if (args.max_episode_sec is not None or args.max_macro_frames is not None) else None

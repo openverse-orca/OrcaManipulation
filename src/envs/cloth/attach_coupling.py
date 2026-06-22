@@ -20,23 +20,18 @@ from .grip_trigger_sync import write_grip_triggers
 from .gripper_mocap_sync import sync_gripper_mocap_from_bodies
 from .orcalink_pose_remap import OrcaLinkPoseRemapper
 from .cloth_session import register_cloth_handle_for_atexit, set_cloth_owns_shared_services
-from .mujoco_access import get_mujoco_model_data
+from .mujoco_access import get_mujoco_model_data, get_mujoco_xml_path
 from .orcalink_server import start_orcalink_if_configured
 from .paths import CLOTH_3D_DIR, ORCALINK_CLIENT_PYTHON, default_cloth_config_path
 from .debug_session import (
+    build_xpbd_session_config,
+    export_xpbd_scene_for_session,
     is_cloth_debug_enabled,
-<<<<<<< Updated upstream
-    prepare_cloth_debug_session,
-    resolve_session_debug_dir,
-=======
     is_cloth_init_compare_enabled,
-    is_cloth_orientation_compare_enabled,
     prepare_cloth_debug_session,
     resolve_session_debug_dir,
     run_cloth_init_compare_if_configured,
-    run_cloth_orientation_compare_if_configured,
     write_xpbd_runtime_session_config,
->>>>>>> Stashed changes
 )
 from .xpbd_process import start_xpbd_if_configured
 
@@ -218,13 +213,16 @@ def _connect_cloth_bridge(
     env: OrcaGymLocalEnv,
     config: dict[str, Any],
     ctx: ClothCouplingContext,
+    *,
+    adapted: dict[str, Any] | None = None,
 ) -> bool:
     _ensure_cloth_3d_import_path()
     from modules.body_map import load_body_map_ordered  # noqa: WPS433
     from modules.cloth_orcalink_bridge import ClothOrcaLinkBridge  # noqa: WPS433
 
     model, data = get_mujoco_model_data(env)
-    adapted = adapt_config_for_orcagym(model, config)
+    if adapted is None:
+        adapted = adapt_config_for_orcagym(model, config, data=data)
     publish_entries = load_body_map_ordered(model, adapted)
     errs = validate_orcagym_body_map(model, publish_entries)
     if errs:
@@ -267,6 +265,7 @@ def start_cloth_coupling(
     log_dir: Optional[str | Path] = None,
     auto_start_orcalink: Optional[bool] = None,
     auto_start_xpbd: Optional[bool] = None,
+    cpu_affinity: Optional[str] = None,
 ) -> ClothCouplingHandle:
     """
     在已有 OrcaGym 环境上启动 OrcaLink / XPBD，并连接布料发布桥。
@@ -279,6 +278,7 @@ def start_cloth_coupling(
     _ensure_cloth_3d_import_path()
     cfg = copy.deepcopy(config)
     path = Path(config_path or default_cloth_config_path()).resolve()
+    base_cfg = load_cloth_config(path)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = Path(log_dir).resolve() if log_dir else None
@@ -298,9 +298,7 @@ def start_cloth_coupling(
     if is_cloth_debug_enabled(cfg):
         dbg_dir = resolve_session_debug_dir(cfg, session_timestamp=ts, log_dir=log_path)
         logger.info("Debug CSV/monitor dir: %s", dbg_dir)
-<<<<<<< Updated upstream
-=======
-    elif is_cloth_init_compare_enabled(cfg) or is_cloth_orientation_compare_enabled(cfg):
+    elif is_cloth_init_compare_enabled(cfg):
         cmp_dir = resolve_session_debug_dir(cfg, session_timestamp=ts, log_dir=log_path)
         cmp_dir.mkdir(parents=True, exist_ok=True)
         cfg.setdefault("debug", {})["debug_log_dir"] = str(cmp_dir)
@@ -330,11 +328,19 @@ def start_cloth_coupling(
         except Exception as exc:
             ctx.process_manager.cleanup_all()
             raise RuntimeError(f"export_xpbd_scene_from_mjcf 失败: {exc}") from exc
->>>>>>> Stashed changes
 
     logger.info("=" * 60)
     logger.info("布料 MjcPBD 耦合挂载（OrcaGym → OrcaLink → XPBD → Studio）")
     logger.info("config: %s", path)
+    logger.info("XPBD MJC_PBD_CONFIG: %s", session_path)
+    cloth_blk = xpbd_session_cfg.get("cloth") or {}
+    if cloth_blk.get("discovered"):
+        logger.info(
+            "cloth discovered: mesh=%s center_yup=%s quat_wxyz_yup=%s",
+            cloth_blk.get("mesh"),
+            cloth_blk.get("center_yup"),
+            cloth_blk.get("quat_wxyz_yup"),
+        )
     logger.info("=" * 60)
 
     start_orcalink_if_configured(
@@ -349,22 +355,13 @@ def start_cloth_coupling(
         os.environ["MJC_PBD_GRIP_TRIGGER_PATH"] = str(trigger_path)
         logger.info("PICO grip triggers → %s (MJC_PBD_DG_TRAJ=pico)", trigger_path)
     start_xpbd_if_configured(
-        cfg,
-        config_path=path,
+        adapted,
+        config_path=session_path,
         process_manager=ctx.process_manager,
         log_dir=log_path,
         session_timestamp=ts,
+        cpu_affinity=cpu_affinity,
     )
-
-<<<<<<< Updated upstream
-    if not _connect_cloth_bridge(env, cfg, ctx):
-        ctx.process_manager.cleanup_all()
-        raise RuntimeError("布料 OrcaLink 桥接初始化失败")
-=======
-    # 先 JoinSession（cloth_mujoco + xpbd_pbd），再阻塞等布初态 CSV，避免首帧 macro_frame=0 时 XPBD 仍 1/2 客户端。
-    if not _connect_cloth_bridge(env, cfg, ctx, adapted=adapted):
-        ctx.process_manager.cleanup_all()
-        raise RuntimeError("布料 OrcaLink 桥接初始化失败")
 
     if is_cloth_init_compare_enabled(cfg):
         compare_dir = Path(str(cfg.get("debug", {}).get("debug_log_dir", "")))
@@ -387,30 +384,11 @@ def start_cloth_coupling(
                 result.max_studio_vs_xpbd_mm,
             )
 
-    if is_cloth_orientation_compare_enabled(cfg):
-        orient_dir = Path(str(cfg.get("debug", {}).get("debug_log_dir", "")))
-        if not orient_dir.is_dir():
-            orient_dir = resolve_session_debug_dir(cfg, session_timestamp=ts, log_dir=log_path)
-        orient_result = run_cloth_orientation_compare_if_configured(
-            cfg,
-            model=model,
-            data=data,
-            session_cfg=xpbd_session_cfg,
-            out_dir=orient_dir,
-            session_path=session_path,
-        )
-        if orient_result is not None:
-            logger.info(
-                "ClothOrientation compare: %s (PASS=%s, studio↔xpbd_frame=%s)",
-                orient_result.summary_path,
-                orient_result.passed,
-                f"{orient_result.angle_studio_vs_xpbd_frame_deg:.2f}°"
-                if orient_result.angle_studio_vs_xpbd_frame_deg is not None
-                else "n/a",
-            )
->>>>>>> Stashed changes
+    if not _connect_cloth_bridge(env, cfg, ctx, adapted=adapted):
+        ctx.process_manager.cleanup_all()
+        raise RuntimeError("布料 OrcaLink 桥接初始化失败")
 
-    handle = ClothCouplingHandle(config=cfg, ctx=ctx, enabled=True)
+    handle = ClothCouplingHandle(config=adapted, ctx=ctx, enabled=True)
     register_cloth_handle_for_atexit(handle)
     set_cloth_owns_shared_services(True)
     return handle
