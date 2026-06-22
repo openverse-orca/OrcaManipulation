@@ -1,4 +1,4 @@
-"""OrcaGym Studio 场景下的刚体映射适配（body_track body-only，scan-first）。"""
+"""OrcaGym Studio 场景下的刚体映射适配（body_track body-only）。"""
 from __future__ import annotations
 
 import copy
@@ -10,141 +10,21 @@ import mujoco
 logger = logging.getLogger(__name__)
 
 
-def _ensure_logical_equals_mjc(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """``logical_name`` 与 ``mjc_body_name`` 完全一致（OrcaLink object_id 合同）。"""
-    out: list[dict[str, Any]] = []
-    for row in rows:
-        r = dict(row)
-        mjc = str(r.get("mjc_body_name", ""))
-        if mjc:
-            r["logical_name"] = mjc
-        out.append(r)
-    return out
-
-
-def adapt_config_for_orcagym(
-    model: mujoco.MjModel,
-    config: dict[str, Any],
-    *,
-    data: mujoco.MjData | None = None,
-) -> dict[str, Any]:
+def adapt_config_for_orcagym(model: mujoco.MjModel, config: dict[str, Any]) -> dict[str, Any]:
     """
-    按当前 Studio MJCF 构建 rigid_body_map；支持 ``xpbd_auto_discover`` 扫描优先。
+    按当前 Studio MJCF 过滤 rigid_body_map，关闭锚点 SITE 自动发现。
 
-    - ``xpbd_auto_discover.bodies=true``：``identify_xpbd_bodies`` 为主列表，JSON 行作 per-body override；
-    - ``xpbd_auto_discover.cloth=true``：``identify_xpbd_cloth`` 合并进 ``config[\"cloth\"]``；
-    - 扫描模式下强制 ``pose_remap.enabled=false``（实位姿 XPBD）；
-    - body_track body-only：不要求 anchor SITE。
+    body_track body-only 模式仅需 body 位姿，不要求 anchor_sites 存在于 MJCF。
+    保持 dual_gripper rigid_body_map 顺序；orcalink_publish=false 的刚体（如 base）不发布。
     """
     cfg = copy.deepcopy(config)
     disc = cfg.setdefault("anchor_discovery", {})
     disc["auto_from_model"] = False
 
-    auto = cfg.get("xpbd_auto_discover") or {}
-    use_bodies = bool(auto.get("bodies", False))
-    use_cloth = bool(auto.get("cloth", False))
-
-    if use_cloth:
-        try:
-            from modules.identify_xpbd_cloth import (  # noqa: WPS433
-                enrich_cloth_discovery_pose,
-                identify_xpbd_cloth,
-                merge_cloth_discovery,
-            )
-
-            cloths = identify_xpbd_cloth(model)
-            if data is not None and cloths:
-                cloths = enrich_cloth_discovery_pose(model, data, cloths)
-            cfg = merge_cloth_discovery(cfg, cloths)
-        except ImportError as exc:
-            logger.warning("cloth auto discover skipped: %s", exc)
-
     map_key = str(cfg.get("orcagym", {}).get("rigid_body_map_key", "rigid_body_map"))
-    rows_in: list[dict[str, Any]] = []
-
-    primary_collision_half_extents = None
-    if use_bodies:
-        try:
-            from modules.identify_xpbd_bodies import (  # noqa: WPS433
-                bodies_to_rigid_body_map,
-                filter_body_names,
-                identify_xpbd_bodies,
-                resolve_bodies_by_name_substrings,
-            )
-            from modules.body_map import primary_collision_half_extents as _pce  # noqa: WPS433
-
-            primary_collision_half_extents = _pce
-        except ImportError as exc:
-            logger.warning("body auto discover skipped: %s", exc)
-            use_bodies = False
-
-    if use_bodies:
-        scanned = identify_xpbd_bodies(model)
-        include_substrings = list(auto.get("body_include_substrings") or [])
-        geom_suffixes = list(auto.get("body_include_geom_suffixes") or [])
-        if include_substrings:
-            by_name = resolve_bodies_by_name_substrings(model, include_substrings)
-            if by_name:
-                scanned = sorted(set(scanned) | set(by_name))
-        if geom_suffixes:
-            try:
-                from modules.identify_xpbd_bodies import resolve_bodies_by_geom_suffixes  # noqa: WPS433
-
-                for bname in resolve_bodies_by_geom_suffixes(model, geom_suffixes):
-                    short = bname.rsplit("_", 1)[-1] if "_" in bname else bname
-                    if short not in include_substrings:
-                        include_substrings.append(short)
-            except ImportError as exc:
-                logger.warning("geom suffix body resolve skipped: %s", exc)
-        scanned = filter_body_names(
-            scanned,
-            include_substrings=include_substrings or None,
-            exclude_substrings=list(auto.get("body_exclude_substrings") or []),
-            exclude_exact=list(auto.get("body_exclude_exact") or []),
-        )
-        scanned_rows = bodies_to_rigid_body_map(
-            scanned,
-            default_follow_mode=str(auto.get("default_follow_mode", "kinematic")),
-            logical_name_from_body=False,
-        )
-        overrides_by_mjc = {
-            str(r.get("mjc_body_name")): r for r in (cfg.get(map_key) or []) if r.get("mjc_body_name")
-        }
-        rows_in = []
-        for row in scanned_rows:
-            mjc = str(row["mjc_body_name"])
-            if mjc in overrides_by_mjc:
-                merged = dict(row)
-                merged.update(overrides_by_mjc[mjc])
-                rows_in.append(merged)
-            else:
-                rows_in.append(row)
-        scanned_set = {str(r["mjc_body_name"]) for r in rows_in}
-        for row in cfg.get(map_key) or []:
-            mjc = str(row.get("mjc_body_name", ""))
-            if mjc and mjc not in scanned_set:
-                rows_in.append(dict(row))
-        og = cfg.setdefault("orcagym", {})
-        pr = dict(og.get("pose_remap") or {})
-        pr["enabled"] = False
-        og["pose_remap"] = pr
-        logger.info("xpbd_auto_discover: %d bodies from MJCF scan", len(rows_in))
-    else:
-        rows_in = list(cfg.get(map_key) or cfg.get("rigid_body_map") or [])
-
+    rows_in = list(cfg.get(map_key) or cfg.get("rigid_body_map") or [])
     rows_out: list[dict[str, Any]] = []
     publish_out: list[dict[str, Any]] = []
-    pce_fn = primary_collision_half_extents
-    if pce_fn is None:
-        try:
-            from modules.body_map import primary_collision_half_extents as pce_fn  # noqa: WPS433
-        except ImportError:
-            pce_fn = None
-    pce_data = data
-    if pce_fn is not None and pce_data is None:
-        pce_data = mujoco.MjData(model)
-        mujoco.mj_resetData(model, pce_data)
-        mujoco.mj_forward(model, pce_data)
     for row in rows_in:
         name = str(row.get("mjc_body_name", ""))
         if not name:
@@ -155,16 +35,12 @@ def adapt_config_for_orcagym(
             continue
         row_copy = dict(row)
         row_copy.pop("anchor_sites", None)
-        if row_copy.get("box_half_extents") is None and pce_fn is not None:
-            half = pce_fn(model, bid, pce_data)
-            row_copy["box_half_extents"] = [float(half[0]), float(half[1]), float(half[2])]
         rows_out.append(row_copy)
         if row_copy.get("orcalink_publish", True):
             publish_out.append(row_copy)
         else:
             logger.info("OrcaLink 不发布 %s（XPBD 保留场景初态）", row_copy.get("logical_name", name))
 
-    rows_out = _ensure_logical_equals_mjc(rows_out)
     cfg["rigid_body_map"] = rows_out
     cfg["orcalink_rigid_body_map"] = publish_out
     return cfg

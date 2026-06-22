@@ -39,7 +39,6 @@ def run_keyframe_shortchain(
     log_dir: Optional[Path] = None,
     realtime: bool = True,
     session_timestamp: Optional[str] = None,
-    cpu_affinity: Optional[str] = None,
 ) -> int:
     """
     执行 dual_gripper v4 关键帧短链主循环。
@@ -107,7 +106,6 @@ def run_keyframe_shortchain(
             process_manager=pm,
             log_dir=log_dir,
             session_timestamp=ts,
-            cpu_affinity=cpu_affinity,
         )
 
         if not cfg.get("orcalink", {}).get("enabled", True):
@@ -201,18 +199,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="OrcaLink/XPBD 日志与 debug CSV 父目录",
     )
     p.add_argument("--no-realtime", action="store_true", help="尽快跑满宏步，不 sleep")
-    p.add_argument(
-        "--use-all-cpu",
-        action="store_true",
-        help="不使用 CPU 亲和性（默认 MuJoCo/Python + XPBD 绑定 4～末核，为 Studio 保留 0-3）",
-    )
     p.add_argument("-v", "--verbose", action="store_true")
     return p
 
 
 def main(argv: Optional[list[str]] = None) -> int:
     """CLI 入口：加载配置并调用 ``run_keyframe_shortchain``。"""
-    from ..cpu_affinity import apply_current_process_cpu_affinity, resolve_cpu_affinity
     from .attach_coupling import load_cloth_config
 
     args = build_arg_parser().parse_args(argv)
@@ -220,9 +212,6 @@ def main(argv: Optional[list[str]] = None) -> int:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-
-    cpu_affinity = resolve_cpu_affinity(args.use_all_cpu)
-    apply_current_process_cpu_affinity(cpu_affinity)
 
     default_cfg = CLOTH_3D_DIR / "cloth_sim_config.dual_gripper_cross_shortchain.debug.json"
     cfg_path = Path(args.cloth_config or default_cfg).resolve()
@@ -239,7 +228,6 @@ def main(argv: Optional[list[str]] = None) -> int:
         max_macro_frames=args.max_macro_frames,
         log_dir=args.log_dir,
         realtime=not args.no_realtime,
-        cpu_affinity=cpu_affinity,
     )
 
 

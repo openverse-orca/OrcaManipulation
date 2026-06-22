@@ -15,26 +15,17 @@ MAX_SEC="${MAX_SEC:-12}"
 ORCAGYM_PORT="${ORCAGYM_PORT:-50051}"
 PBD_GRPC_PORT="${PBD_GRPC_PORT:-50261}"
 WAIT_SEC="${WAIT_SEC:-120}"
-SHOW_UI="${SHOW_UI:-1}"
 
 export PYTHONPATH="${REPO}/OrcaLink/Client/Python:${REPO}/OrcaGym:${REPO}/OrcaManipulation/src:${PYTHONPATH:-}"
 export PBD_GRPC_ADDRESS="${PBD_GRPC_ADDRESS:-localhost:${PBD_GRPC_PORT}}"
-export PBDX_FORCE_GS_ONLY="${PBDX_FORCE_GS_ONLY:-1}"
-export PBDX_SOLVER="${PBDX_SOLVER:-gs}"
 
-eval "$(bash "${REPO}/XPBD/Cloth_robot/resolve_orca_conda_python.sh")"
-
-if [[ "$SHOW_UI" == "1" ]]; then
-  unset MJC_PBD_NO_UI
-  export DISPLAY="${DISPLAY:-:0}"
-  echo "[SMOKE] SHOW_UI=1：Studio MuJoCo 视口 + XPBD OpenGL 窗口"
-else
-  export MJC_PBD_NO_UI=1
-fi
-
-if [[ "${XPBD_AUTO_BUILD:-1}" != "0" ]]; then
-  echo "[SMOKE] 检查/编译 XPBD dual_gripper_cross_mjc..."
-  python3 "${REPO}/XPBD/Cloth_robot/ensure_xpbd_build.py"
+PYTHON="${PYTHON:-}"
+if [[ -z "$PYTHON" ]]; then
+  if command -v conda >/dev/null 2>&1 && conda env list | grep -qE '^\s*orca-apr24\s'; then
+    PYTHON="conda run --no-capture-output -n orca-apr24 python3"
+  else
+    PYTHON="python3"
+  fi
 fi
 
 wait_port() {

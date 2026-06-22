@@ -27,12 +27,30 @@ def _find_orcalink_binary() -> Path:
     )
 
 
+def stop_orcalink_on_port(port: int) -> None:
+    """
+    结束占用指定端口的 orcalink 进程。
+
+    联调前必须清掉陈旧 session，否则 Python 可能误判 session_ready（僵尸 xpbd_pbd）。
+    """
+    try:
+        import socket
+
+        with socket.create_connection(("127.0.0.1", port), timeout=0.3):
+            logger.info("重启 OrcaLink：结束 localhost:%s 上的旧实例", port)
+    except OSError:
+        return
+    subprocess.run(["pkill", "-x", "orcalink"], check=False)
+    time.sleep(0.5)
+
+
 def start_orcalink_if_configured(
     config: Dict[str, Any],
     *,
     process_manager: ProcessManager,
     log_dir: Optional[Path] = None,
     session_timestamp: str = "cloth",
+    force_restart: bool = False,
 ) -> bool:
     """若 orcalink.enabled 且 auto_start，启动 orcalink --port。"""
     ol_cfg = config.get("orcalink", {})
@@ -40,6 +58,18 @@ def start_orcalink_if_configured(
         return False
 
     port = int(ol_cfg.get("port", 50361))
+    if force_restart:
+        stop_orcalink_on_port(port)
+    else:
+        try:
+            import socket
+
+            with socket.create_connection(("127.0.0.1", port), timeout=0.3):
+                logger.info("OrcaLink 已在 localhost:%s 监听，跳过 auto_start", port)
+                return False
+        except OSError:
+            pass
+
     server_bin = _find_orcalink_binary()
     cmd = [str(server_bin), "--port", str(port)]
 
@@ -69,6 +99,8 @@ def start_orcalink_if_configured(
     logger.info("OrcaLink Server 已启动 pid=%s port=%s", proc.pid, port)
 
     delay = float(ol_cfg.get("startup_delay", 3.0))
+    if force_restart:
+        delay = min(delay, 1.5)
     if delay > 0:
         time.sleep(delay)
     return True

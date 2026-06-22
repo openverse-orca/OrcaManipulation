@@ -1,0 +1,9 @@
+paired_macro_frames=600
+avg_ms_t1_to_t1w_POSITION_wire=8.398120
+avg_ms_t1w_to_t2_decode_ingest=8.742363
+avg_ms_t2_to_t3_xpbd_40substeps=114.280909
+avg_ms_t3_to_tforce_publish_FORCE=0.007919
+avg_ms_tforce_to_t4_MJC_recv_FORCE=1.426032
+avg_ms_t4_to_tstep_MJC_20substeps=0.017289
+avg_ms_tstep_to_t1next_prep=2.788760
+avg_ms_t1_to_t1next_full_cycle=135.445261

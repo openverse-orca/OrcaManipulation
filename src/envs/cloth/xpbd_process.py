@@ -121,6 +121,14 @@ def start_xpbd_if_configured(
     if dg_traj:
         env["MJC_PBD_DG_TRAJ"] = str(dg_traj)
         logger.info("XPBD MJC_PBD_DG_TRAJ=%s", dg_traj)
+        if str(dg_traj).strip() == "pico":
+            trigger_path = env.get("MJC_PBD_GRIP_TRIGGER_PATH", "").strip()
+            if trigger_path:
+                logger.info("XPBD MJC_PBD_GRIP_TRIGGER_PATH=%s", trigger_path)
+            else:
+                logger.warning(
+                    "XPBD pico 模式但 MJC_PBD_GRIP_TRIGGER_PATH 未设置（扳机文件无法读取）"
+                )
     elif discover_only and max_sim >= 60.0:
         env["MJC_PBD_DG_TRAJ"] = "full"
         logger.info("XPBD MJC_PBD_DG_TRAJ=full (max_sim_time=%.1fs)", max_sim)

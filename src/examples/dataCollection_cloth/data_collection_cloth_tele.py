@@ -12,6 +12,7 @@ import argparse
 import os
 import sys
 import traceback
+from pathlib import Path
 
 import numpy as np
 
@@ -316,6 +317,11 @@ def main():
                 orca_logger.info("--cloth-debug: 已启用 debug_mode（未使用 .debug.json 时仅开总开关）")
         else:
             cloth_config.setdefault("debug", {})["debug_mode"] = False
+        if not args.replay:
+            cloth_config.setdefault("xpbd", {})["dg_traj"] = "pico"
+            orca_logger.info(
+                "PICO mode: xpbd.dg_traj=pico（扳机>0.5 才 Closing；指间距>50%% 释放 grip）"
+            )
         mj_fs = int(cloth_config.get("mujoco", {}).get("frame_skip", 20))
         if mj_fs != frame_skip:
             orca_logger.warning(
@@ -332,6 +338,19 @@ def main():
             cpu_affinity=cpu_affinity,
         )
         data_collection_manager.set_cloth_coupling(cloth_handle)
+        if not args.replay:
+            trigger_path = Path(log_dir) / "grip_triggers.txt"
+
+            def _read_pico_triggers() -> tuple[float, float]:
+                ks = pico_joystick.get_key_state()
+                if not ks:
+                    return 0.0, 0.0
+                return (
+                    float(ks["leftHand"]["triggerValue"]),
+                    float(ks["rightHand"]["triggerValue"]),
+                )
+
+            cloth_handle.set_grip_trigger_provider(_read_pico_triggers, trigger_path)
         orca_logger.info(
             "Cloth coupling ready. Studio: PBDRender Play + OrcaGym 关卡含 dual_gripper 刚体"
         )

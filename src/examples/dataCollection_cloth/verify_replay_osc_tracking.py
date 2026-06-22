@@ -26,7 +26,9 @@ _LOGS = _SCRIPT_DIR / "logs"
 _CLOTH_3D = _SCRIPT_DIR.parents[3] / "OrcaPlayground" / "examples" / "cloth_3d"
 
 sys.path.insert(0, str(_CLOTH_3D))
+sys.path.insert(0, str(_SCRIPT_DIR))
 
+from cloth_replay_paths import resolve_replay_json, resolve_replay_meta_json
 from modules.cloth_robot_scene_layout import (  # noqa: E402
     OPENLOONG_TELE_ARM_JOINT_VALUES,
     prepare_mjcf_model_data,
@@ -69,7 +71,11 @@ def planned_palm_yup_at_mf(
     mf: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """由 replay JSON delta_B + tele neutral 反推左右规划掌位（Y-up）。"""
-    replay_path = _SCRIPT_DIR / "test20260508_cloth_grasp_replay.json"
+    replay_path = resolve_replay_json(_SCRIPT_DIR, meta)
+    if replay_path is None:
+        raise FileNotFoundError(
+            "replay JSON not found; run generate_cloth_robot_replay_data.py or set CLOTH_REPLAY_JSON"
+        )
     replay = json.loads(replay_path.read_text(encoding="utf-8"))
     frame = replay[min(max(mf, 0), len(replay) - 1)]
 
@@ -102,8 +108,8 @@ def run_verify(debug_dir: Path, *, plan_mf_offset: int = -1) -> int:
     debug_dir = debug_dir.resolve()
     ptr = json.loads((debug_dir / "cloth_sim_session.json").read_text(encoding="utf-8"))
     session = json.loads(Path(ptr["session_config"]).read_text(encoding="utf-8"))
-    meta_path = _SCRIPT_DIR / "test20260508_cloth_grasp_replay.replay_meta.json"
-    meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.is_file() else {}
+    meta_path = resolve_replay_meta_json(_SCRIPT_DIR)
+    meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path is not None else {}
 
     left_ln = "openloong_gripper_2f85_fix_base_usda_zbll_base_link"
     right_ln = "openloong_gripper_2f85_fix_base_usda_zbr_base_link"

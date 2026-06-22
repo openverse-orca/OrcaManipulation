@@ -105,14 +105,12 @@ def resolve_session_config(debug_dir: Path) -> dict[str, Any]:
 
 def resolve_replay_meta(debug_dir: Path) -> dict[str, Any] | None:
     """查找与本次会话匹配的 replay_meta.json。"""
-    for name in (
-        "test20260508_cloth_grasp_replay.replay_meta.json",
-        "cloth_grasp_replay.replay_meta.json",
-    ):
-        p = _SCRIPT_DIR / name
-        if p.is_file():
-            return json.loads(p.read_text(encoding="utf-8"))
-    return None
+    from cloth_replay_paths import resolve_replay_meta_json
+
+    meta_path = resolve_replay_meta_json(_SCRIPT_DIR)
+    if meta_path is None:
+        return None
+    return json.loads(meta_path.read_text(encoding="utf-8"))
 
 
 @dataclass(frozen=True)

@@ -4,17 +4,19 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import os
 import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
 
 from ..fluid.launch.process_utils import ProcessManager
 from .body_map_orcagym import adapt_config_for_orcagym, validate_orcagym_body_map
+from .grip_trigger_sync import write_grip_triggers
 from .gripper_mocap_sync import sync_gripper_mocap_from_bodies
 from .orcalink_pose_remap import OrcaLinkPoseRemapper
 from .cloth_session import register_cloth_handle_for_atexit, set_cloth_owns_shared_services
@@ -69,6 +71,31 @@ class ClothCouplingHandle:
     config: Dict[str, Any]
     ctx: ClothCouplingContext
     enabled: bool = True
+    _grip_trigger_provider: Callable[[], tuple[float, float]] | None = field(
+        default=None, repr=False
+    )
+    _grip_trigger_path: Path | None = field(default=None, repr=False)
+
+    def set_grip_trigger_provider(
+        self,
+        provider: Callable[[], tuple[float, float]],
+        trigger_path: Path | str,
+    ) -> None:
+        """
+        PICO 实时模式：每宏步将左右 ``triggerValue`` 写入 ``trigger_path``，
+        供 XPBD ``MJC_PBD_DG_TRAJ=pico`` 读取。
+        """
+        self._grip_trigger_provider = provider
+        self._grip_trigger_path = Path(trigger_path)
+
+    def _sync_grip_triggers_to_xpbd(self) -> None:
+        if self._grip_trigger_provider is None or self._grip_trigger_path is None:
+            return
+        try:
+            left, right = self._grip_trigger_provider()
+            write_grip_triggers(self._grip_trigger_path, left, right)
+        except Exception as exc:
+            logger.warning("写入 grip_triggers 失败: %s", exc)
 
     def _base_env(self):
         base = self.ctx.env
@@ -118,6 +145,7 @@ class ClothCouplingHandle:
         model, data = get_mujoco_model_data(base)
         sync_gripper_mocap_from_bodies(base, model, data, self.config)
         base.mj_forward()
+        self._sync_grip_triggers_to_xpbd()
 
         bridge = self.ctx.bridge
         if bridge.should_pause():
@@ -321,6 +349,11 @@ def start_cloth_coupling(
         log_dir=log_path,
         session_timestamp=ts,
     )
+    xpbd_dg_traj = str((adapted.get("xpbd") or {}).get("dg_traj", "")).strip()
+    if xpbd_dg_traj == "pico" and log_path is not None:
+        trigger_path = Path(log_path) / "grip_triggers.txt"
+        os.environ["MJC_PBD_GRIP_TRIGGER_PATH"] = str(trigger_path)
+        logger.info("PICO grip triggers → %s (MJC_PBD_DG_TRAJ=pico)", trigger_path)
     start_xpbd_if_configured(
         adapted,
         config_path=session_path,

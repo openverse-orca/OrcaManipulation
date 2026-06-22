@@ -21,7 +21,9 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 _ORCA_ROOT = _SCRIPT_DIR.parents[3]
 _CLOTH_3D = _ORCA_ROOT / "OrcaPlayground" / "examples" / "cloth_3d"
 sys.path.insert(0, str(_CLOTH_3D))
+sys.path.insert(0, str(_SCRIPT_DIR))
 
+from cloth_replay_paths import default_replay_json
 from modules.cloth_robot_scene_layout import (  # noqa: E402
     DURATION_SEC,
     OPENLOONG_TELE_ARM_JOINT_VALUES,
@@ -116,7 +118,7 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=_SCRIPT_DIR / "test20260508_cloth_grasp_replay.json",
+        default=default_replay_json(_SCRIPT_DIR),
     )
     args = parser.parse_args()
 

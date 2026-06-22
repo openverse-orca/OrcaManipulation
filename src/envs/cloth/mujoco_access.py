@@ -1,7 +1,6 @@
 """从 OrcaGymLocalEnv 取得原生 MuJoCo model/data。"""
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Tuple
 
 import mujoco
@@ -25,25 +24,3 @@ def get_mujoco_model_data(env: Any) -> Tuple[mujoco.MjModel, mujoco.MjData]:
     if model is None or data is None:
         raise RuntimeError("gym._mjModel/_mjData not initialized; call env.reset() first")
     return model, data
-
-
-def get_mujoco_xml_path(env: Any) -> Path:
-    """
-    返回当前 OrcaGym 仿真加载的 MJCF 绝对路径。
-
-    供 ``export_xpbd_scene_from_mjcf`` 与 ``cloth_sim_session_*.json`` 写入
-    ``mujoco.model_path`` / ``_cloth_robot_session_meta.source_mjcf``。
-    """
-    base = env
-    if hasattr(base, "unwrapped"):
-        base = base.unwrapped
-    gym = getattr(base, "gym", None)
-    if gym is None:
-        raise RuntimeError("env has no gym backend (expected OrcaGymLocalEnv)")
-    xml_path = getattr(gym, "_xml_path", None)
-    if not xml_path:
-        raise RuntimeError("gym._xml_path not set; call env.reset() after Studio Play")
-    path = Path(str(xml_path)).expanduser().resolve()
-    if not path.is_file():
-        raise FileNotFoundError(f"MJCF not found: {path}")
-    return path
