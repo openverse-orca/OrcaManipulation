@@ -10,7 +10,18 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from ..fluid.launch.process_utils import ProcessManager, _fluid_subprocess_preexec
+<<<<<<< Updated upstream
 from .debug_session import apply_xpbd_debug_environment, is_cloth_debug_enabled, resolve_session_debug_dir
+=======
+from .debug_session import (
+    apply_cloth_init_compare_environment,
+    apply_xpbd_debug_environment,
+    is_cloth_debug_enabled,
+    is_cloth_init_compare_enabled,
+    is_cloth_orientation_compare_enabled,
+    resolve_session_debug_dir,
+)
+>>>>>>> Stashed changes
 from .paths import CLOTH_3D_DIR, ORCA_REPO_ROOT, XPBD_BUILD_DIR, XPBD_ROOT
 
 logger = logging.getLogger(__name__)
@@ -91,10 +102,34 @@ def start_xpbd_if_configured(
     mjc_pbd_config = _resolve_mjc_pbd_config(config, config_path)
 
     env = os.environ.copy()
+    # 联调子进程不得继承本地冒烟/跳过 phys 的 shell 残留
+    env.pop("MJC_PBD_LOCAL_PHYS_SMOKE", None)
+    env.pop("MJC_PBD_NO_PHYS_STEP", None)
+    env.pop("MJC_PBD_BENCH_BODY_TRACK", None)
     env["MJC_PBD_CONFIG"] = str(mjc_pbd_config)
     sim_cfg = config.get("simulation", {})
     max_sim = float(sim_cfg.get("max_sim_time", 0) or 0)
+<<<<<<< Updated upstream
     if max_sim >= 60.0:
+=======
+    discover_only = bool(xpbd_cfg.get("cloth_discover_only", True))
+    disable_base_phys = bool(xpbd_cfg.get("disable_base_phys", False)) or not discover_only
+    if disable_base_phys:
+        env["MJC_PBD_DISABLE_BASE_PHYS"] = "1"
+        logger.info("XPBD MJC_PBD_DISABLE_BASE_PHYS=1 (no v4 fake table)")
+
+    dg_traj = xpbd_cfg.get("dg_traj")
+    if dg_traj:
+        env["MJC_PBD_DG_TRAJ"] = str(dg_traj)
+        logger.info("XPBD MJC_PBD_DG_TRAJ=%s", dg_traj)
+        if str(dg_traj).strip() == "pico":
+            trigger_path = env.get("MJC_PBD_GRIP_TRIGGER_PATH", "").strip()
+            if trigger_path:
+                logger.info("XPBD MJC_PBD_GRIP_TRIGGER_PATH=%s", trigger_path)
+            else:
+                logger.warning("XPBD pico 模式但 MJC_PBD_GRIP_TRIGGER_PATH 未设置（扳机文件无法读取）")
+    elif discover_only and max_sim >= 60.0:
+>>>>>>> Stashed changes
         env["MJC_PBD_DG_TRAJ"] = "full"
         logger.info("XPBD MJC_PBD_DG_TRAJ=full (max_sim_time=%.1fs)", max_sim)
     pr = config.get("particle_render", {})
@@ -125,6 +160,17 @@ def start_xpbd_if_configured(
             )
         apply_xpbd_debug_environment(config, env, dbg_dir)
 
+<<<<<<< Updated upstream
+=======
+    if is_cloth_init_compare_enabled(config) or is_cloth_orientation_compare_enabled(config):
+        cmp_dir = Path(str(config.get("debug", {}).get("debug_log_dir", "")))
+        if not cmp_dir.is_dir():
+            cmp_dir = resolve_session_debug_dir(
+                config, session_timestamp=session_timestamp, log_dir=log_dir
+            )
+        apply_cloth_init_compare_environment(config, env, cmp_dir)
+
+>>>>>>> Stashed changes
     args: list[str] = []
     for arg in xpbd_cfg.get("args", []):
         args.append(str(arg).replace("{config_path}", str(mjc_pbd_config)))

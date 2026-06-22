@@ -4,17 +4,19 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import os
 import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
 
 from ..fluid.launch.process_utils import ProcessManager
 from .body_map_orcagym import adapt_config_for_orcagym, validate_orcagym_body_map
+from .grip_trigger_sync import write_grip_triggers
 from .gripper_mocap_sync import sync_gripper_mocap_from_bodies
 from .orcalink_pose_remap import OrcaLinkPoseRemapper
 from .cloth_session import register_cloth_handle_for_atexit, set_cloth_owns_shared_services
@@ -23,8 +25,18 @@ from .orcalink_server import start_orcalink_if_configured
 from .paths import CLOTH_3D_DIR, ORCALINK_CLIENT_PYTHON, default_cloth_config_path
 from .debug_session import (
     is_cloth_debug_enabled,
+<<<<<<< Updated upstream
     prepare_cloth_debug_session,
     resolve_session_debug_dir,
+=======
+    is_cloth_init_compare_enabled,
+    is_cloth_orientation_compare_enabled,
+    prepare_cloth_debug_session,
+    resolve_session_debug_dir,
+    run_cloth_init_compare_if_configured,
+    run_cloth_orientation_compare_if_configured,
+    write_xpbd_runtime_session_config,
+>>>>>>> Stashed changes
 )
 from .xpbd_process import start_xpbd_if_configured
 
@@ -64,6 +76,31 @@ class ClothCouplingHandle:
     config: Dict[str, Any]
     ctx: ClothCouplingContext
     enabled: bool = True
+    _grip_trigger_provider: Callable[[], tuple[float, float]] | None = field(
+        default=None, repr=False
+    )
+    _grip_trigger_path: Path | None = field(default=None, repr=False)
+
+    def set_grip_trigger_provider(
+        self,
+        provider: Callable[[], tuple[float, float]],
+        trigger_path: Path | str,
+    ) -> None:
+        """
+        PICO 实时模式：每宏步将左右 ``triggerValue`` 写入 ``trigger_path``，
+        供 XPBD ``MJC_PBD_DG_TRAJ=pico`` 读取。
+        """
+        self._grip_trigger_provider = provider
+        self._grip_trigger_path = Path(trigger_path)
+
+    def _sync_grip_triggers_to_xpbd(self) -> None:
+        if self._grip_trigger_provider is None or self._grip_trigger_path is None:
+            return
+        try:
+            left, right = self._grip_trigger_provider()
+            write_grip_triggers(self._grip_trigger_path, left, right)
+        except Exception as exc:
+            logger.warning("写入 grip_triggers 失败: %s", exc)
 
     def _base_env(self):
         base = self.ctx.env
@@ -113,6 +150,7 @@ class ClothCouplingHandle:
         model, data = get_mujoco_model_data(base)
         sync_gripper_mocap_from_bodies(base, model, data, self.config)
         base.mj_forward()
+        self._sync_grip_triggers_to_xpbd()
 
         bridge = self.ctx.bridge
         if bridge.should_pause():
@@ -260,6 +298,39 @@ def start_cloth_coupling(
     if is_cloth_debug_enabled(cfg):
         dbg_dir = resolve_session_debug_dir(cfg, session_timestamp=ts, log_dir=log_path)
         logger.info("Debug CSV/monitor dir: %s", dbg_dir)
+<<<<<<< Updated upstream
+=======
+    elif is_cloth_init_compare_enabled(cfg) or is_cloth_orientation_compare_enabled(cfg):
+        cmp_dir = resolve_session_debug_dir(cfg, session_timestamp=ts, log_dir=log_path)
+        cmp_dir.mkdir(parents=True, exist_ok=True)
+        cfg.setdefault("debug", {})["debug_log_dir"] = str(cmp_dir)
+        logger.info("Cloth init compare dir: %s", cmp_dir)
+
+    model, data = get_mujoco_model_data(env)
+    base_env = env.unwrapped if hasattr(env, "unwrapped") else env
+    base_env.mj_forward()
+    adapted = adapt_config_for_orcagym(model, cfg, data=data)
+    xpbd_session_cfg = build_xpbd_session_config(base_cfg, adapted)
+    mjcf_path = get_mujoco_xml_path(env)
+    xpbd_session_cfg.setdefault("mujoco", {})["model_path"] = str(mjcf_path)
+    session_path = write_xpbd_runtime_session_config(
+        xpbd_session_cfg,
+        session_timestamp=ts,
+        source_config_path=path,
+        source_mjcf_path=mjcf_path,
+    )
+    ctx.config = adapted
+    ctx.config_path = session_path
+
+    discover_only = bool((xpbd_session_cfg.get("xpbd") or {}).get("cloth_discover_only", True))
+    if not discover_only:
+        try:
+            scene_path = export_xpbd_scene_for_session(session_path)
+            logger.info("XPBD scene exported: %s", scene_path)
+        except Exception as exc:
+            ctx.process_manager.cleanup_all()
+            raise RuntimeError(f"export_xpbd_scene_from_mjcf 失败: {exc}") from exc
+>>>>>>> Stashed changes
 
     logger.info("=" * 60)
     logger.info("布料 MjcPBD 耦合挂载（OrcaGym → OrcaLink → XPBD → Studio）")
@@ -272,6 +343,11 @@ def start_cloth_coupling(
         log_dir=log_path,
         session_timestamp=ts,
     )
+    xpbd_dg_traj = str((adapted.get("xpbd") or {}).get("dg_traj", "")).strip()
+    if xpbd_dg_traj == "pico" and log_path is not None:
+        trigger_path = Path(log_path) / "grip_triggers.txt"
+        os.environ["MJC_PBD_GRIP_TRIGGER_PATH"] = str(trigger_path)
+        logger.info("PICO grip triggers → %s (MJC_PBD_DG_TRAJ=pico)", trigger_path)
     start_xpbd_if_configured(
         cfg,
         config_path=path,
@@ -280,9 +356,59 @@ def start_cloth_coupling(
         session_timestamp=ts,
     )
 
+<<<<<<< Updated upstream
     if not _connect_cloth_bridge(env, cfg, ctx):
         ctx.process_manager.cleanup_all()
         raise RuntimeError("布料 OrcaLink 桥接初始化失败")
+=======
+    # 先 JoinSession（cloth_mujoco + xpbd_pbd），再阻塞等布初态 CSV，避免首帧 macro_frame=0 时 XPBD 仍 1/2 客户端。
+    if not _connect_cloth_bridge(env, cfg, ctx, adapted=adapted):
+        ctx.process_manager.cleanup_all()
+        raise RuntimeError("布料 OrcaLink 桥接初始化失败")
+
+    if is_cloth_init_compare_enabled(cfg):
+        compare_dir = Path(str(cfg.get("debug", {}).get("debug_log_dir", "")))
+        if not compare_dir.is_dir():
+            compare_dir = resolve_session_debug_dir(cfg, session_timestamp=ts, log_dir=log_path)
+        result = run_cloth_init_compare_if_configured(
+            cfg,
+            model=model,
+            data=data,
+            session_cfg=xpbd_session_cfg,
+            out_dir=compare_dir,
+            session_path=session_path,
+            config_path=path,
+        )
+        if result is not None:
+            logger.info(
+                "ClothInit compare: %s (PASS=%s, max_studio_xpbd=%.3f mm)",
+                result.csv_path,
+                result.passed,
+                result.max_studio_vs_xpbd_mm,
+            )
+
+    if is_cloth_orientation_compare_enabled(cfg):
+        orient_dir = Path(str(cfg.get("debug", {}).get("debug_log_dir", "")))
+        if not orient_dir.is_dir():
+            orient_dir = resolve_session_debug_dir(cfg, session_timestamp=ts, log_dir=log_path)
+        orient_result = run_cloth_orientation_compare_if_configured(
+            cfg,
+            model=model,
+            data=data,
+            session_cfg=xpbd_session_cfg,
+            out_dir=orient_dir,
+            session_path=session_path,
+        )
+        if orient_result is not None:
+            logger.info(
+                "ClothOrientation compare: %s (PASS=%s, studio↔xpbd_frame=%s)",
+                orient_result.summary_path,
+                orient_result.passed,
+                f"{orient_result.angle_studio_vs_xpbd_frame_deg:.2f}°"
+                if orient_result.angle_studio_vs_xpbd_frame_deg is not None
+                else "n/a",
+            )
+>>>>>>> Stashed changes
 
     handle = ClothCouplingHandle(config=cfg, ctx=ctx, enabled=True)
     register_cloth_handle_for_atexit(handle)

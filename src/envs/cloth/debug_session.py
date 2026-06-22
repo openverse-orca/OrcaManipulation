@@ -31,9 +31,22 @@ def _full_debug_profile() -> dict[str, Any]:
             "export_macro_packet_pair_verify": True,
             "export_vertex_pos_compare": True,
             "export_cloth_vertex_capture": True,
+<<<<<<< Updated upstream
+=======
+            "export_cloth_init_compare": False,
+            "export_cloth_orientation_compare": True,
+>>>>>>> Stashed changes
         }
     )
     return prof
+
+
+def is_cloth_orientation_compare_enabled(config: dict[str, Any]) -> bool:
+    """``debug.export_cloth_orientation_compare`` 或 ``debug_mode`` 为真时启用布方向比对。"""
+    dbg = config.get("debug") or {}
+    if bool(dbg.get("export_cloth_orientation_compare", False)):
+        return True
+    return bool(dbg.get("debug_mode", False))
 
 
 def is_cloth_debug_enabled(config: dict[str, Any]) -> bool:
@@ -135,4 +148,122 @@ def apply_xpbd_debug_environment(
         env["MJC_PBD_CLOTH_VERT_DIR"] = str(cloth_dir)
     if dbg.get("export_phys_trace", False):
         env["MJC_PBD_PHYS_TRACE"] = "1"
+        env["MJC_PBD_PROFILE_PHYS"] = "1"
+        env["PBDX_PROFILE_PHYS_STEP"] = "1"
+        env["MJC_PBD_CLOTH_SUBSTEP_TRACE"] = "1"
+        env["MJC_PBD_CLOTH_SUBSTEP_TRACE_MAX_MF"] = "20"
+        env["PBDX_PHYS_SUBSTEP_TRACE"] = "1"
     logger.info("XPBD debug env: CLOTH_STATS=%s ORCALINK_TRACE=1", cloth_dir)
+<<<<<<< Updated upstream
+=======
+
+
+def apply_cloth_init_compare_environment(
+    config: dict[str, Any],
+    env: dict[str, str],
+    out_dir: Path,
+) -> None:
+    """
+    为 XPBD 设置布料初始化对比采集环境变量。
+
+    - ``MJC_PBD_CLOTH_INIT_COMPARE_DIR``：C 端写出 ``xpbd_init_particles.csv`` 与 ``xpbd_init_cloth_frame.json``
+    """
+    if not is_cloth_init_compare_enabled(config) and not is_cloth_orientation_compare_enabled(config):
+        return
+    compare_dir = out_dir.resolve()
+    compare_dir.mkdir(parents=True, exist_ok=True)
+    env["MJC_PBD_CLOTH_INIT_COMPARE_DIR"] = str(compare_dir)
+    logger.info("XPBD cloth init compare dir: %s", compare_dir)
+
+
+def run_cloth_init_compare_if_configured(
+    config: dict[str, Any],
+    *,
+    model: Any,
+    data: Any,
+    session_cfg: dict[str, Any],
+    out_dir: Path,
+    session_path: Path | None = None,
+    config_path: Path | None = None,
+) -> Any | None:
+    """
+    若 ``debug.export_cloth_init_compare`` 为真，写出 ``ClothInit_Studio_XPBD.csv``。
+
+    须在 ``start_xpbd_if_configured`` 之后调用，以便轮询 ``xpbd_init_particles.csv``。
+    """
+    if not is_cloth_init_compare_enabled(config):
+        return None
+    _ensure_cloth_3d_for_compare()
+    from modules.cloth_init_compare_export import (  # noqa: WPS433
+        cloth_init_compare_tolerance_mm,
+        cloth_init_compare_wait_sec,
+        run_cloth_init_compare,
+    )
+
+    dbg = config.get("debug") or {}
+    wait_sec = cloth_init_compare_wait_sec(config)
+    if dbg.get("cloth_init_compare_wait_sec") is None and is_cloth_debug_enabled(config):
+        xpbd_delay = float((config.get("xpbd") or {}).get("startup_delay", 4.0))
+        wait_sec = max(wait_sec, xpbd_delay + 6.0)
+
+    return run_cloth_init_compare(
+        model,
+        data,
+        session_cfg,
+        out_dir,
+        session_path=session_path,
+        config_path=config_path,
+        wait_xpbd_particles=True,
+        wait_timeout_sec=wait_sec,
+        tolerance_mm=cloth_init_compare_tolerance_mm(config),
+    )
+
+
+def run_cloth_orientation_compare_if_configured(
+    config: dict[str, Any],
+    *,
+    model: Any,
+    data: Any,
+    session_cfg: dict[str, Any],
+    out_dir: Path,
+    session_path: Path | None = None,
+) -> Any | None:
+    """
+    若 debug 模式或 ``export_cloth_orientation_compare`` 为真，写出 ``ClothOrientation_summary.csv``。
+
+    须在 XPBD 写出 ``xpbd_init_cloth_frame.json`` 之后调用（与 init compare 同目录）。
+    """
+    if not is_cloth_orientation_compare_enabled(config):
+        return None
+    _ensure_cloth_3d_for_compare()
+    from modules.cloth_orientation_compare_export import (  # noqa: WPS433
+        cloth_orientation_compare_tolerance_deg,
+        cloth_orientation_compare_wait_sec,
+        run_cloth_orientation_compare,
+    )
+
+    dbg = config.get("debug") or {}
+    wait_sec = cloth_orientation_compare_wait_sec(config)
+    if dbg.get("cloth_orientation_compare_wait_sec") is None and is_cloth_debug_enabled(config):
+        xpbd_delay = float((config.get("xpbd") or {}).get("startup_delay", 4.0))
+        wait_sec = max(wait_sec, xpbd_delay + 6.0)
+
+    return run_cloth_orientation_compare(
+        model,
+        data,
+        session_cfg,
+        out_dir,
+        session_path=session_path,
+        tolerance_deg=cloth_orientation_compare_tolerance_deg(config),
+        wait_xpbd_frame=True,
+        wait_timeout_sec=wait_sec,
+    )
+
+
+def _ensure_cloth_3d_for_compare() -> None:
+    import sys
+
+    root = str(CLOTH_3D_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+>>>>>>> Stashed changes
