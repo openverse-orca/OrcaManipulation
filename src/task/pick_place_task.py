@@ -1,4 +1,4 @@
-from typing import override
+from typing_extensions import override
 from task.abstract_task import AbstractTask
 from scene.scene_manager import SceneManager
 from orca_gym.environment import OrcaGymLocalEnv

@@ -1,4 +1,4 @@
-from typing import override
+from typing_extensions import override
 from orca_gym.environment import OrcaGymLocalEnv
 from orca_gym.adapters.robosuite.controllers.base_controller import Controller
 

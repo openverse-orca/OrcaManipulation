@@ -1,7 +1,8 @@
 import abc
 
 from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
-from typing import Callable, override
+from typing import Callable
+from typing_extensions import override
 import numpy as np
 from orca_gym.log.orca_log import OrcaLog
 orca_logger = OrcaLog.get_instance()
