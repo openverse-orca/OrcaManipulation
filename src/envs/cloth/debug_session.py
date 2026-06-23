@@ -37,6 +37,26 @@ def _full_debug_profile() -> dict[str, Any]:
     return prof
 
 
+def _merge_debug_profile_for_session(dbg_in: dict[str, Any]) -> dict[str, Any]:
+    """
+    合并基配置 ``debug`` 段与全量 profile。
+
+    基配置（如 dual_gripper_cross_full）常带 ``export_csv:false``；cloth debug 联调须打开
+    VertexPos / body_track 等 CSV，故 ``export_*`` 以 profile 为准，仅合并非 export 字段。
+    """
+    profile = _full_debug_profile()
+    merged = copy.deepcopy(profile)
+    for key, value in (dbg_in or {}).items():
+        if key.startswith("export_"):
+            continue
+        if key == "debug_mode":
+            merged["debug_mode"] = bool(value) or bool(merged.get("debug_mode"))
+            continue
+        merged[key] = value
+    merged["debug_mode"] = True
+    return merged
+
+
 def is_cloth_debug_enabled(config: dict[str, Any]) -> bool:
     """config.debug.debug_mode 是否为真。"""
     return bool(config.get("debug", {}).get("debug_mode", False))
@@ -178,9 +198,7 @@ def prepare_cloth_debug_session(
     if not dbg_in.get("debug_mode", False):
         return cfg, config_path.resolve()
 
-    merged = _full_debug_profile()
-    merged.update(dbg_in)
-    cfg["debug"] = merged
+    cfg["debug"] = _merge_debug_profile_for_session(dbg_in if isinstance(dbg_in, dict) else {})
 
     debug_dir = resolve_session_debug_dir(cfg, session_timestamp=session_timestamp, log_dir=log_dir)
     debug_dir.mkdir(parents=True, exist_ok=True)

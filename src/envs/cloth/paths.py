@@ -13,7 +13,10 @@ CLOTH_PACKAGE_DIR: Path = Path(__file__).resolve().parent
 ORCA_REPO_ROOT: Path = PROJECT_ROOT.parent.parent
 CLOTH_3D_DIR: Path = ORCA_REPO_ROOT / "OrcaPlayground" / "examples" / "cloth_3d"
 XPBD_ROOT: Path = ORCA_REPO_ROOT / "XPBD"
+XPBD_DATA_DIR: Path = XPBD_ROOT / "data"
 XPBD_BUILD_DIR: Path = XPBD_ROOT / "build"
+STUDIO_CLOTH_ASSETS_DIR: Path = ORCA_REPO_ROOT / "OrcaStudio_2409" / "Assets" / "NEW20260508"
+XPBD_FABRIC_FOLD_VTK_DIR: Path = Path("/home/hjadmin/PBDX/xpbd/fabric_fold_output/data/Fabric-vtk")
 ORCALINK_CLIENT_PYTHON: Path = ORCA_REPO_ROOT / "OrcaLink" / "Client" / "Python"
 
 

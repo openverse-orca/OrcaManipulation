@@ -11,10 +11,13 @@ from .paths import (
 __all__ = [
     "ClothCouplingHandle",
     "apply_runtime_orcagym_level",
+    "check_masked_vtk_prefab",
     "default_cloth_config_path",
     "detect_studio_play_level",
     "load_cloth_config",
+    "print_masked_vtk_prefab_report",
     "resolve_cloth_config_path",
     "resolve_cloth_level",
+    "run_masked_vtk_prefab_check_at_startup",
     "start_cloth_coupling",
 ]

@@ -10,19 +10,28 @@ import mujoco
 logger = logging.getLogger(__name__)
 
 
-def adapt_config_for_orcagym(model: mujoco.MjModel, config: dict[str, Any]) -> dict[str, Any]:
+def adapt_config_for_orcagym(
+    model: mujoco.MjModel,
+    config: dict[str, Any],
+    data: mujoco.MjData | None = None,
+) -> dict[str, Any]:
     """
     按当前 Studio MJCF 过滤 rigid_body_map，关闭锚点 SITE 自动发现。
 
     body_track body-only 模式仅需 body 位姿，不要求 anchor_sites 存在于 MJCF。
     保持 dual_gripper rigid_body_map 顺序；orcalink_publish=false 的刚体（如 base）不发布。
+    ``data`` 保留供调用方对齐 ``mj_forward`` 后状态（当前未使用）。
     """
+    _ = data
     cfg = copy.deepcopy(config)
     disc = cfg.setdefault("anchor_discovery", {})
     disc["auto_from_model"] = False
 
     map_key = str(cfg.get("orcagym", {}).get("rigid_body_map_key", "rigid_body_map"))
-    rows_in = list(cfg.get(map_key) or cfg.get("rigid_body_map") or [])
+    # scan-first：merge_body_discovery 写入 rigid_body_map；orcagym_rigid_body_map 仅作 override 源
+    rows_in = list(cfg.get("rigid_body_map") or [])
+    if not rows_in:
+        rows_in = list(cfg.get(map_key) or [])
     rows_out: list[dict[str, Any]] = []
     publish_out: list[dict[str, Any]] = []
     for row in rows_in:

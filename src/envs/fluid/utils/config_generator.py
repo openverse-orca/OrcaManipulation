@@ -34,37 +34,91 @@ class ConfigGenerator:
         self.model = env.model
         print("[PRINT-DEBUG] ConfigGenerator.__init__() - END", file=sys.stderr, flush=True)
     
+    def _resolve_body_name_from_site(self, site_data: dict) -> str:
+        """
+        通过 site 的 BodyID 解析真实的 MuJoCo body 名称。
+
+        site_dict 中每条记录包含 'BodyID' 字段（MuJoCo 原生 body id），
+        利用 model.body_id2name() 可靠地拿到 body 名称，
+        避免依赖 site 名称前缀与 body 名称一致的假设。
+        """
+        body_id = site_data.get('BodyID')
+        if body_id is None:
+            return ""
+        try:
+            return self.model.body_id2name(int(body_id)) or ""
+        except Exception:
+            return ""
+
+    def _resolve_internal_prefix(self, body_name: str) -> str:
+        """
+        解析 body 对应的 SPH site/mocap 命名前缀（内部 ID 前缀）。
+
+        OrcaStudio 导出的 MJCF 中，body 名可能是描述性的（如
+        "Group_Interactive_Cup_01_fluid_02_bodyjoint"），而 site/mocap 名
+        使用内部 ID 前缀（如 "[11519992300482]_bodyjoint_SPH_SITE_000"）。
+        本方法通过 site 的 BodyID 反查内部 ID 前缀，保证前缀匹配可靠。
+        """
+        try:
+            site_dict = self.model.get_site_dict()
+            if not site_dict:
+                return body_name
+            try:
+                target_body_id = int(self.model.body_name2id(body_name))
+            except Exception:
+                return body_name
+            for site_name, site_data in site_dict.items():
+                if "_SPH_SITE_" not in site_name:
+                    continue
+                site_body_id = site_data.get('BodyID')
+                if site_body_id is not None and int(site_body_id) == target_body_id:
+                    return site_name.split("_SPH_SITE_")[0]
+            return body_name
+        except Exception:
+            return body_name
+
     def identify_sph_bodies(self) -> List[str]:
         """
         识别所有带有 SPH_SITE 的 body
-        
+
+        优先通过 site 的 BodyID 解析真实 body 名称（兼容 site 名称前缀
+        与 body 名称不一致的场景，例如 OrcaStudio 导出的 XML 中
+        site 名使用内部 ID 前缀如 "[11519992300482]_bodyjoint_SPH_SITE_000"，
+        而 body 名为 "Group_Interactive_Cup_01_fluid_02_bodyjoint"）。
+        若 BodyID 不可用，则回退到从 site 名称推断。
+
         Returns:
             List[str]: body 名称列表
         """
         sph_bodies = set()
-        
+
         try:
             body_names = self.model.get_body_names()
-            
+
             # 使用 OrcaGymModel API 获取所有 site 的字典
             site_dict = self.model.get_site_dict()
-            
+
             # 遍历所有 site 名称，识别带有 SPH_SITE 标记的 body
-            for site_name in site_dict.keys():
-                if "SPH_SITE" in site_name:
-                    # 从 site 名称推断 body 名称
-                    # 例如: "toys_usda_sphere_body_SPH_SITE_000" -> "toys_usda_sphere_body"
+            for site_name, site_data in site_dict.items():
+                if "_SPH_SITE_" not in site_name:
+                    continue
+
+                # 优先：通过 BodyID 解析真实 body 名称
+                body_name = self._resolve_body_name_from_site(site_data)
+
+                # 回退：从 site 名称推断 body 名称
+                if not body_name:
                     body_name = site_name.split("_SPH_SITE_")[0]
-                    
-                    # 验证 body 是否存在
-                    if body_name in body_names:
-                        sph_bodies.add(body_name)
-                        logger.debug(f"Identified SPH body: {body_name}")
-            
+
+                # 验证 body 是否存在
+                if body_name and body_name in body_names:
+                    sph_bodies.add(body_name)
+                    logger.debug(f"Identified SPH body: {body_name} (from site '{site_name}')")
+
             result = sorted(list(sph_bodies))
             logger.info(f"Identified {len(result)} SPH bodies: {result}")
             return result
-            
+
         except Exception as e:
             logger.error(f"Error identifying SPH bodies: {e}", exc_info=True)
             return []
@@ -87,15 +141,18 @@ class ConfigGenerator:
         try:
             # 使用 OrcaGymModel API 获取所有 site 的字典
             site_dict = self.model.get_site_dict()
-            
+
+            # site 名前缀可能与 body 名不一致（OrcaStudio 导出场景），用内部 ID 前缀匹配
+            internal_prefix = self._resolve_internal_prefix(body_name)
+
             # 遍历所有 site 名称
             for site_name in site_dict.keys():
                 # 检查是否是该 body 的 SPH_SITE
-                if site_name.startswith(f"{body_name}_SPH_SITE_"):
+                if site_name.startswith(f"{internal_prefix}_SPH_SITE_"):
                     sph_sites.append(site_name)
-                
+
                 # 检查是否是该 body 的 SPH_MOCAP_SITE
-                if site_name.startswith(f"{body_name}_SPH_MOCAP_SITE_"):
+                if site_name.startswith(f"{internal_prefix}_SPH_MOCAP_SITE_"):
                     mocap_sites.append(site_name)
             
             # 按索引排序
@@ -141,16 +198,20 @@ class ConfigGenerator:
         for i in range(min_len):
             site_name = sph_sites[i]
             mocap_site_name = mocap_sites[i]
-            
+
+            # 从 site 名称提取内部 ID 前缀，用于构造 mocap body 名称
+            internal_prefix = site_name.split("_SPH_SITE_")[0]
+
             # 从 mocap_site_name 提取索引
-            # "toys_usda_box_body_SPH_MOCAP_SITE_000" → 0
             match = re.search(r'SPH_MOCAP_SITE_(\d+)$', mocap_site_name)
             if match:
                 index = int(match.group(1))
-                # 构造 mocap BODY 名称（不是 site 名称）
-                mocap_body_name = f"{body_name}_SPH_MOCAP_{index:03d}"
             else:
-                mocap_body_name = f"{body_name}_SPH_MOCAP_{i:03d}"
+                match = re.search(r'SPH_SITE_(\d+)$', site_name)
+                index = int(match.group(1)) if match else i
+
+            # 构造 mocap BODY 名称（使用内部 ID 前缀，与 XML 中实际 mocap body 名一致）
+            mocap_body_name = f"{internal_prefix}_SPH_MOCAP_{index:03d}"
             
             connection_points.append({
                 "point_id": site_name,  # 使用实际 site 名称

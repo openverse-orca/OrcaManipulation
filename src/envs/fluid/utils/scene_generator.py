@@ -210,7 +210,45 @@ class SceneGenerator:
         except json.JSONDecodeError as e:
             logger.warning(f"Invalid JSON in config file: {e}, using defaults")
             return {}
-    
+
+    def _resolve_internal_prefix(self, body_name: str) -> str:
+        """
+        解析 body 对应的 SPH site/mocap 命名前缀（内部 ID 前缀）。
+
+        OrcaStudio 导出的 MJCF 中，body 名可能是描述性的（如
+        "Group_Interactive_Cup_01_fluid_02_bodyjoint"），而 site/mocap 名
+        使用内部 ID 前缀（如 "[11519992300482]_bodyjoint_SPH_SITE_000"）。
+        本方法通过 site 的 BodyID 反查内部 ID 前缀，保证前缀匹配可靠。
+
+        Args:
+            body_name: MuJoCo body 名称
+
+        Returns:
+            str: site/mocap 命名使用的内部前缀；若无法解析则回退为 body_name
+        """
+        try:
+            model = self.env.model
+            site_dict = model.get_site_dict()
+            if not site_dict:
+                return body_name
+
+            try:
+                target_body_id = int(model.body_name2id(body_name))
+            except Exception:
+                return body_name
+
+            for site_name, site_data in site_dict.items():
+                if "_SPH_SITE_" not in site_name:
+                    continue
+                site_body_id = site_data.get('BodyID')
+                if site_body_id is not None and int(site_body_id) == target_body_id:
+                    return site_name.split("_SPH_SITE_")[0]
+
+            # 回退：未找到匹配的 site，假定 body 名即前缀
+            return body_name
+        except Exception:
+            return body_name
+
     def identify_sph_bodies(self) -> List[str]:
         """
         识别需要导出的刚体（有 SPH_MESH_GEOM 或 SPH_STATIC_MESH_GEOM 的 body）并缓存 geom 信息
@@ -461,8 +499,10 @@ class SceneGenerator:
                 return []
             
             # 2. 筛选出属于该主刚体的 mocap site
-            # 命名模式: "{body_name}_SPH_MOCAP_SITE_{index:03d}"
-            prefix = f"{body_name}_SPH_MOCAP_SITE_"
+            # 命名模式: "{internal_prefix}_SPH_MOCAP_SITE_{index:03d}"
+            # 注意：site 名前缀可能与 body 名不一致（OrcaStudio 导出场景）
+            internal_prefix = self._resolve_internal_prefix(body_name)
+            prefix = f"{internal_prefix}_SPH_MOCAP_SITE_"
             
             # 收集符合条件的 site 名称
             site_names = []
@@ -502,8 +542,8 @@ class SceneGenerator:
                     logger.warning(f"Site '{site_name}' not found in query_site_pos_and_mat result")
                     world_pos = [0.0, 0.0, 0.0]
                 
-                # 构造对应的 mocap body 名称
-                mocap_body_name = f"{body_name}_SPH_MOCAP_{index:03d}"
+                # 构造对应的 mocap body 名称（使用内部 ID 前缀，与 XML 中实际 mocap body 名一致）
+                mocap_body_name = f"{internal_prefix}_SPH_MOCAP_{index:03d}"
                 
                 mocap_info_list.append({
                     'mocap_body_name': mocap_body_name,
@@ -557,7 +597,9 @@ class SceneGenerator:
         try:
             # 从 model 获取所有 site 的字典（包含 LocalPos）
             site_dict = self.env.model.get_site_dict()
-            prefix = f"{body_name}_SPH_SITE_"
+            # site 名前缀可能与 body 名不一致（OrcaStudio 导出场景），用内部 ID 前缀匹配
+            internal_prefix = self._resolve_internal_prefix(body_name)
+            prefix = f"{internal_prefix}_SPH_SITE_"
             
             for site_name, site_data in site_dict.items():
                 if site_name.startswith(prefix):
@@ -613,7 +655,9 @@ class SceneGenerator:
         try:
             # 1. 从 model 获取所有 body 的字典，筛选出属于该主刚体的 SPH_MOCAP body
             body_dict = self.env.model.get_body_dict()
-            prefix = f"{body_name}_SPH_MOCAP_"
+            # mocap body 名前缀可能与主刚体名不一致（OrcaStudio 导出场景），用内部 ID 前缀匹配
+            internal_prefix = self._resolve_internal_prefix(body_name)
+            prefix = f"{internal_prefix}_SPH_MOCAP_"
             
             # 收集符合条件的 mocap body 名称
             mocap_body_names = []
@@ -673,7 +717,9 @@ class SceneGenerator:
         try:
             # 1. 从 model 获取所有 site 的字典，筛选出属于该主刚体的 SPH_SITE
             site_dict = self.env.model.get_site_dict()
-            prefix = f"{body_name}_SPH_SITE_"
+            # site 名前缀可能与 body 名不一致（OrcaStudio 导出场景），用内部 ID 前缀匹配
+            internal_prefix = self._resolve_internal_prefix(body_name)
+            prefix = f"{internal_prefix}_SPH_SITE_"
             
             # 收集符合条件的 site 名称
             site_names = []

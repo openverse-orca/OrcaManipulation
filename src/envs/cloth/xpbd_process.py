@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -112,6 +113,10 @@ def start_xpbd_if_configured(
     sim_cfg = config.get("simulation", {})
     max_sim = float(sim_cfg.get("max_sim_time", 0) or 0)
     discover_only = bool(xpbd_cfg.get("cloth_discover_only", True))
+    # 全链联调须 JoinSession；勿继承 shell 冒烟遗留的 MJC_PBD_NO_ORCALINK=1
+    if not discover_only:
+        env.pop("MJC_PBD_NO_ORCALINK", None)
+        env.pop("MJC_PBD_LOCAL_PHYS_SMOKE", None)
     disable_base_phys = bool(xpbd_cfg.get("disable_base_phys", False)) or not discover_only
     if disable_base_phys:
         env["MJC_PBD_DISABLE_BASE_PHYS"] = "1"
@@ -215,6 +220,19 @@ def start_xpbd_if_configured(
             )
         apply_cloth_init_compare_environment(config, env, cmp_dir)
 
+    cloth_root = str(CLOTH_3D_DIR)
+    if cloth_root not in sys.path:
+        sys.path.insert(0, cloth_root)
+    from modules.cloth_phy_para import apply_phy_world_particle_env  # noqa: WPS433
+
+    apply_phy_world_particle_env(config, env)
+    if env.get("PARTICLE_FRICTION"):
+        logger.info(
+            "XPBD PARTICLE_FRICTION=%s PARTICLE_RESTITUTION=%s（来自 cloth.phy_world）",
+            env.get("PARTICLE_FRICTION"),
+            env.get("PARTICLE_RESTITUTION", "(default)"),
+        )
+
     args: list[str] = []
     for arg in xpbd_cfg.get("args", []):
         args.append(str(arg).replace("{config_path}", str(mjc_pbd_config)))
@@ -230,9 +248,9 @@ def start_xpbd_if_configured(
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / f"xpbd_{session_timestamp}.log"
 
-    # dual_gripper_cross_mjc 从 ./data/shirt_v4.vtk 加载布；须在 XPBD 根目录运行（见 README_dual_gripper_cross_v4.md）
+    # dual_gripper_cross_mjc 从 session cloth.mesh 加载布；须在 XPBD 根目录运行（见 README_dual_gripper_cross_v4.md）
     xpbd_cwd = XPBD_ROOT if XPBD_ROOT.is_dir() else exe.parent.parent
-    logger.info("XPBD cwd=%s (data/shirt_v4.vtk)", xpbd_cwd)
+    logger.info("XPBD cwd=%s (cloth.mesh from MJC_PBD_CONFIG session)", xpbd_cwd)
 
     if log_file:
         log_handle = open(log_file, "w", buffering=1)
