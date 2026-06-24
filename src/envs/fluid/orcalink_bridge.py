@@ -123,8 +123,13 @@ class OrcaLinkBridge:
             from .utils.config_generator import ConfigGenerator
             
             generator = ConfigGenerator(self.env)
-            print("[PRINT-DEBUG] _prepare_orcalink_config - ConfigGenerator created, calling generate_rigid_bodies()", file=sys.stderr, flush=True)
-            rigid_bodies = generator.generate_rigid_bodies()
+            coupling_mode = orcalink_cfg.get('bridge', {}).get('coupling_mode', 'multi_point_force')
+            print(f"[PRINT-DEBUG] _prepare_orcalink_config - coupling_mode={coupling_mode}", file=sys.stderr, flush=True)
+            if coupling_mode == 'force_position':
+                rigid_bodies = generator.generate_rigid_bodies_force_position()
+            else:
+                print("[PRINT-DEBUG] _prepare_orcalink_config - calling generate_rigid_bodies()", file=sys.stderr, flush=True)
+                rigid_bodies = generator.generate_rigid_bodies()
             print(f"[PRINT-DEBUG] _prepare_orcalink_config - generate_rigid_bodies() returned {len(rigid_bodies)} bodies", file=sys.stderr, flush=True)
             orcalink_config['rigid_bodies'] = rigid_bodies
             logger.info(f"Generated {len(rigid_bodies)} rigid bodies from MuJoCo model")
@@ -601,8 +606,12 @@ class OrcaLinkBridge:
                     scene_config_path = str(default_config_path)
                     logger.info(f"Using default scene config: {scene_config_path}")
             
-            # 创建生成器
-            generator = SceneGenerator(self.env, config_path=scene_config_path)
+            # 创建生成器（传入 fluid_config 以在 force_position 下跳过 AnchorPoints）
+            generator = SceneGenerator(
+                self.env,
+                config_path=scene_config_path,
+                fluid_config=self.fluid_config,
+            )
             
             # 生成完整的 scene.json（而不是只生成 RigidBodies）
             scene_data = generator.generate_complete_scene(

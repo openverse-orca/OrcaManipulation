@@ -79,13 +79,11 @@ class ConfigGenerator:
 
     def identify_sph_bodies(self) -> List[str]:
         """
-        识别所有带有 SPH_SITE 的 body
+        识别所有 SPH 相关的 body（三层识别策略）
 
-        优先通过 site 的 BodyID 解析真实 body 名称（兼容 site 名称前缀
-        与 body 名称不一致的场景，例如 OrcaStudio 导出的 XML 中
-        site 名使用内部 ID 前缀如 "[11519992300482]_bodyjoint_SPH_SITE_000"，
-        而 body 名为 "Group_Interactive_Cup_01_fluid_02_bodyjoint"）。
-        若 BodyID 不可用，则回退到从 site 名称推断。
+        1. SPH_SITE 标记的动态体（有力反馈耦合）；优先通过 BodyID 解析 body 名
+        2. _SPH_MESH_GEOM 标记的动态体（可能缺少 SPH_SITE）
+        3. _SPH_STATIC_MESH_GEOM 标记的静态体（无锚点，仅边界碰撞）
 
         Returns:
             List[str]: body 名称列表
@@ -94,26 +92,38 @@ class ConfigGenerator:
 
         try:
             body_names = self.model.get_body_names()
-
-            # 使用 OrcaGymModel API 获取所有 site 的字典
             site_dict = self.model.get_site_dict()
+            geom_dict = self.model.get_geom_dict()
 
-            # 遍历所有 site 名称，识别带有 SPH_SITE 标记的 body
-            for site_name, site_data in site_dict.items():
-                if "_SPH_SITE_" not in site_name:
-                    continue
+            # 第1层：SPH_SITE（BodyID 优先，兼容 site 前缀与 body 名不一致）
+            if site_dict:
+                for site_name, site_data in site_dict.items():
+                    if "_SPH_SITE_" not in site_name:
+                        continue
+                    body_name = self._resolve_body_name_from_site(site_data)
+                    if not body_name:
+                        body_name = site_name.split("_SPH_SITE_")[0]
+                    if body_name and body_name in body_names:
+                        sph_bodies.add(body_name)
+                        logger.debug(f"Identified SPH body via SPH_SITE: {body_name} (from site '{site_name}')")
 
-                # 优先：通过 BodyID 解析真实 body 名称
-                body_name = self._resolve_body_name_from_site(site_data)
+            # 第2层：_SPH_MESH_GEOM 标记的动态体
+            if geom_dict:
+                for geom_name, geom_info in geom_dict.items():
+                    if '_SPH_MESH_GEOM' in geom_name and '_SPH_STATIC_MESH_GEOM' not in geom_name:
+                        body_name = geom_info.get('BodyName', '')
+                        if body_name and body_name in body_names and body_name not in sph_bodies:
+                            sph_bodies.add(body_name)
+                            logger.info(f"Identified SPH body via _SPH_MESH_GEOM: {body_name}")
 
-                # 回退：从 site 名称推断 body 名称
-                if not body_name:
-                    body_name = site_name.split("_SPH_SITE_")[0]
-
-                # 验证 body 是否存在
-                if body_name and body_name in body_names:
-                    sph_bodies.add(body_name)
-                    logger.debug(f"Identified SPH body: {body_name} (from site '{site_name}')")
+            # 第3层：_SPH_STATIC_MESH_GEOM 标记的静态体
+            if geom_dict:
+                for geom_name, geom_info in geom_dict.items():
+                    if '_SPH_STATIC_MESH_GEOM' in geom_name:
+                        body_name = geom_info.get('BodyName', '')
+                        if body_name and body_name in body_names and body_name not in sph_bodies:
+                            sph_bodies.add(body_name)
+                            logger.info(f"Identified SPH static body via _SPH_STATIC_MESH_GEOM: {body_name}")
 
             result = sorted(list(sph_bodies))
             logger.info(f"Identified {len(result)} SPH bodies: {result}")
@@ -220,10 +230,31 @@ class ConfigGenerator:
             })
         
         return connection_points
-    
+
+    def generate_rigid_bodies_force_position(self) -> List[Dict]:
+        """
+        force_position 模式：按刚体 body 生成配置（object_id = MuJoCo body 名，与 sph scene entityName 对齐）。
+        仅包含带 SPH_SITE 的动力学耦合体；不生成 connection_points（由 position_follow 驱动）。
+        """
+        rigid_bodies = []
+        sph_bodies = self.identify_sph_bodies()
+        for body_name in sph_bodies:
+            sites_info = self.extract_sites_for_body(body_name)
+            if not sites_info['sph_sites']:
+                continue
+            rigid_bodies.append({
+                "object_id": body_name,
+                "mujoco_body": body_name,
+                "coupling_mode": "force_position",
+                "connection_points": [],
+            })
+            logger.info(f"Generated force_position body '{body_name}'")
+        logger.info(f"Generated {len(rigid_bodies)} force_position rigid bodies")
+        return rigid_bodies
+
     def generate_rigid_bodies(self) -> List[Dict]:
         """
-        从 MuJoCo 模型生成完整的 rigid_bodies 配置
+        从 MuJoCo 模型生成完整的 rigid_bodies 配置（multipoint / static_boundary，非 force_position 时使用）
         
         Returns:
             List[Dict]: rigid_bodies 配置列表
@@ -245,18 +276,31 @@ class ConfigGenerator:
             mocap_sites = sites_info['mocap_sites']
             
             if not sph_sites:
-                logger.warning(f"Body '{body_name}' has no SPH_SITE, skipping")
+                rigid_body = {
+                    "object_id": body_name,
+                    "mujoco_body": body_name,
+                    "coupling_mode": "static_boundary",
+                    "connection_points": []
+                }
+                rigid_bodies.append(rigid_body)
+                logger.info(f"Generated static body config for '{body_name}' (no SPH_SITE)")
                 continue
             
             # 生成 connection_points
             connection_points = self.generate_connection_points(body_name, sph_sites, mocap_sites)
             
             if not connection_points:
-                logger.warning(f"Body '{body_name}' has no connection points, skipping")
+                rigid_body = {
+                    "object_id": body_name,
+                    "mujoco_body": body_name,
+                    "coupling_mode": "static_boundary",
+                    "connection_points": []
+                }
+                rigid_bodies.append(rigid_body)
+                logger.info(f"Generated static body config for '{body_name}' (no connection points)")
                 continue
             
             # 生成 rigid body 配置
-            # object_id 使用 body 名称（或可以提取简化名称，这里直接使用 body_name）
             rigid_body = {
                 "object_id": body_name,
                 "mujoco_body": body_name,

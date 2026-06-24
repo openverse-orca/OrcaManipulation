@@ -1,4 +1,0 @@
-merged=/home/hjadmin/OrcaApr24/OrcaManipulation/src/examples/dataCollection_cloth/logs/cloth_debug_20260612_144306/VertexPos_Mjc_XPBD.csv
-mjc_partial=/home/hjadmin/OrcaApr24/OrcaManipulation/src/examples/dataCollection_cloth/logs/cloth_debug_20260612_144306/VertexPos_Mjc_XPBD.mjc_partial.csv
-xpbd_partial=/home/hjadmin/OrcaApr24/OrcaManipulation/src/examples/dataCollection_cloth/logs/cloth_debug_20260612_144306/VertexPos_Mjc_XPBD.xpbd_partial.csv
-vertices_per_body=8

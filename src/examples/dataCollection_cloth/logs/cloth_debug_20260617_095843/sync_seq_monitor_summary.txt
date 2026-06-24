@@ -1,6 +1,0 @@
-last_xpbd_position_seq=177
-last_xpbd_force_pub_seq=177
-bridge_gap_count=0
-bridge_duplicate_count=0
-monitor_pos_violations=0
-monitor_force_violations=0

@@ -1,2 +1,0 @@
-macro_frame,sim_time_mjc,sim_time_xpbd,t1_utc,t1w_utc,t2_utc,t3_utc,t_force_utc,t4_utc,t_step_utc,t1_next_utc,dt_t1_t1w,dt_t1w_t2,dt_t2_t3,dt_t3_tforce,dt_tforce_t4,dt_t4_tstep,dt_tstep_t1next,dt_t1_t1next,cycle_order_ok,paired,note
-0,0.000000,0.000000,1781613202.094348431,1781613202.110024452,1781613202.110091686,1781613202.324031115,1781613202.324041843,1781613202.324877977,1781613202.324891090,,0.015676,0.000067,0.213939,0.000011,0.000836,0.000013,,,1,1,

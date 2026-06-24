@@ -103,14 +103,8 @@
     "config_template": "sph_sim_config_force_position.json",
     "sphscale": 1.0,
     "position_follow": {
-      "mode": "lag_compensated",
-      "kp": 180.0,
-      "velocity_cap_mps": 1.0,
-      "snap_at_macro_end": false,
-      "lag_compensated": {
-        "min_lag_frames": 1
-      },
-      "comment": "v_sph=v_mj+clamp(Δx/T_remain,cap)"
+      "scheme": "lag_compensated",
+      "velocity_cap_mps": 1.0
     },
     "rigid_body_dynamics": {
       "mode": "external",

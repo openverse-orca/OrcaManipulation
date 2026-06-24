@@ -1,3 +1,0 @@
-started_utc=2026-06-12T06:47:06.358162+00:00
-units_csv=/home/hjadmin/OrcaApr24/OrcaManipulation/src/examples/dataCollection_cloth/logs/cloth_debug_20260612_144658/mujoco_orcalink_units.csv
-samples_csv=/home/hjadmin/OrcaApr24/OrcaManipulation/src/examples/dataCollection_cloth/logs/cloth_debug_20260612_144658/mujoco_anchor_samples.csv

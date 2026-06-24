@@ -1,3 +1,0 @@
-session_timestamp=20260616_202257
-source_config=/home/hjadmin/OrcaApr24/OrcaPlayground/examples/cloth_3d/cloth_sim_config.test20260508_openloong.json
-debug_dir=/home/hjadmin/OrcaApr24/OrcaManipulation/src/examples/dataCollection_cloth/logs/cloth_debug_20260616_202257

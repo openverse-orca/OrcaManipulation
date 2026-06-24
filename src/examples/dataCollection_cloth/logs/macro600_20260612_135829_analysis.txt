@@ -1,3 +1,0 @@
-========================================================================
-Cloth debug session analysis: /home/hjadmin/OrcaApr24/OrcaManipulation/src/examples/dataCollection_cloth/logs/cloth_debug_20260612_135831
-========================================================================

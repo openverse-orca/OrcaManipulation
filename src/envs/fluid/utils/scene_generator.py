@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 
 from ..paths import FLUID_PACKAGE_DIR
-from ..launch.sph_config import _deep_merge
+from ..launch.sph_config import _deep_merge, _resolve_coupling_mode
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass, asdict
 import sys
@@ -46,7 +46,15 @@ class GeomInfo:
 class SceneGenerator:
     """MuJoCo to SPH 场景生成器"""
     
-    def __init__(self, env, config: Dict = None, config_path: str = None, runtime_config: Dict = None):
+    def __init__(
+        self,
+        env,
+        config: Dict = None,
+        config_path: str = None,
+        runtime_config: Dict = None,
+        coupling_mode: Optional[str] = None,
+        fluid_config: Optional[Dict] = None,
+    ):
         """
         初始化 SceneGenerator
         
@@ -54,11 +62,15 @@ class SceneGenerator:
             env: OrcaGymLocalEnv 实例
             config: 配置字典（场景模板配置，直接传入）
             config_path: 场景模板配置文件路径（优先从路径加载）
-            runtime_config: 运行时配置（必须包含 orcalink_bridge.shared_modules.spring_force）
+            runtime_config: 运行时配置（SPH 模板，含 orcalink_bridge）
+            coupling_mode: 显式耦合模式（优先）；缺省时从 fluid_config / runtime_config 解析
+            fluid_config: 完整 fluid JSON（用于解析 simulation.sync_mode / orcalink.bridge）
         """
         self.env = env
         self.config = self._load_config(config_path) if config_path else config or {}
         self.runtime_config = runtime_config or {}
+        self.fluid_config = fluid_config or {}
+        self._coupling_mode_override = coupling_mode
 
         # particleRadius — authoritative value used throughout scene generation.
         # Initialized from scene_config.json as a safe default; overridden early in
@@ -82,8 +94,23 @@ class SceneGenerator:
         # 基准目录：envs.fluid 包根（与原先 scene_generator 位于 fluid/ 下时一致）
         self._base_dir = str(FLUID_PACKAGE_DIR)
         
-        logger.info(f"SceneGenerator initialized")
-    
+        logger.info(
+            "SceneGenerator initialized (coupling_mode=%s)",
+            self.get_coupling_mode(),
+        )
+
+    def get_coupling_mode(self) -> str:
+        """解析当前场景生成应使用的 OrcaLink 耦合模式。"""
+        if self._coupling_mode_override:
+            return self._coupling_mode_override
+        if self.fluid_config:
+            return _resolve_coupling_mode(self.fluid_config)
+        bridge = (self.runtime_config.get("orcalink_bridge") or {})
+        return bridge.get("coupling_mode") or "multi_point_force"
+
+    def uses_force_position_coupling(self) -> bool:
+        return self.get_coupling_mode() == "force_position"
+
     def _resolve_geometry_path(self, geometry_file: str) -> str:
         """
         将相对路径转换为绝对路径，支持包资源加载
@@ -1532,34 +1559,43 @@ class SceneGenerator:
             # 添加刚体
             complete_scene["RigidBodies"] = all_rigid_bodies
             
-            # 生成 AnchorPoints
-            logger.info("Generating AnchorPoints configuration...")
-            anchor_points = []
-            for main_rb in main_rigid_bodies:
-                main_body_name = main_rb.get("entityName")
-                if not main_body_name:
-                    continue
-                rb_id = main_rb.get("id")
-                if rb_id is None:
-                    continue
-                
-                # 跳过静态刚体（不需要锚点）
-                if main_rb.get("isDynamic") == False:
-                    logger.info(f"  Skipping anchor points for static body '{main_body_name}'")
-                    continue
-                
-                anchor_point = self.generate_anchor_points(main_body_name, rb_id)
-                if anchor_point:
-                    anchor_points.append(anchor_point)
-                    logger.info(f"  Generated {len(anchor_point['site_points'])} site points + "
-                               f"{len(anchor_point['mocap_points'])} mocap points for '{main_body_name}'")
-            
-            # 添加到场景
-            if anchor_points:
-                complete_scene["AnchorPoints"] = anchor_points
-                logger.info(f"Total: {len(anchor_points)} rigid bodies with anchor points")
-            
-            # 注意：不再生成辅助刚体和约束，虚拟锚点粒子将在运行时通过 PBD 创建
+            coupling_mode = self.get_coupling_mode()
+            if self.uses_force_position_coupling():
+                logger.info(
+                    "coupling_mode=force_position: skip AnchorPoints in auto-generated scene "
+                    "(rigid bodies follow MuJoCo via position_follow; no virtual anchor particles)"
+                )
+            else:
+                logger.info(
+                    "Generating AnchorPoints configuration (coupling_mode=%s)...",
+                    coupling_mode,
+                )
+                anchor_points = []
+                for main_rb in main_rigid_bodies:
+                    main_body_name = main_rb.get("entityName")
+                    if not main_body_name:
+                        continue
+                    rb_id = main_rb.get("id")
+                    if rb_id is None:
+                        continue
+
+                    if main_rb.get("isDynamic") == False:
+                        logger.info(f"  Skipping anchor points for static body '{main_body_name}'")
+                        continue
+
+                    anchor_point = self.generate_anchor_points(main_body_name, rb_id)
+                    if anchor_point:
+                        anchor_points.append(anchor_point)
+                        logger.info(
+                            f"  Generated {len(anchor_point['site_points'])} site points + "
+                            f"{len(anchor_point['mocap_points'])} mocap points for '{main_body_name}'"
+                        )
+
+                if anchor_points:
+                    complete_scene["AnchorPoints"] = anchor_points
+                    logger.info(f"Total: {len(anchor_points)} rigid bodies with anchor points")
+
+            # force_position：无 AnchorPoints；multi_point_force：虚拟锚点由 PBD 在运行时创建
             
             # 添加 FluidBlocks：使用已计算的 fluid_blocks_yup，无重复 identify
             if include_fluid_blocks:

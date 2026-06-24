@@ -34,7 +34,7 @@ from .fluid_session import (
 )
 from .orcasph_log_utils import log_fluid_particle_count_to_terminal
 from .process_utils import ProcessManager, is_tcp_port_accepting_connections
-from .sph_config import generate_orcasph_config, setup_python_logging
+from .sph_config import generate_orcasph_config, setup_python_logging, _resolve_coupling_mode
 
 logger = logging.getLogger(__name__)
 
@@ -274,10 +274,13 @@ def _maybe_generate_sph_scene(ctx: FluidSimulationContext) -> None:
             f"尝试的路径: {sph_config_template_path}"
         )
 
+    coupling_mode = _resolve_coupling_mode(config)
     scene_generator = SceneGenerator(
         ctx.env.unwrapped,
         config_path=str(scene_config_path),
         runtime_config=sph_config,
+        coupling_mode=coupling_mode,
+        fluid_config=config,
     )
     scene_data = scene_generator.generate_complete_scene(
         output_path=str(ctx.scene_output_path),

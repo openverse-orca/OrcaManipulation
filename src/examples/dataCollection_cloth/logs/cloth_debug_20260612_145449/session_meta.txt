@@ -1,3 +1,0 @@
-session_timestamp=20260612_145449
-source_config=/home/hjadmin/OrcaApr24/OrcaPlayground/examples/cloth_3d/cloth_sim_config.dual_gripper_cross_shortchain.debug.json
-debug_dir=/home/hjadmin/OrcaApr24/OrcaManipulation/src/examples/dataCollection_cloth/logs/cloth_debug_20260612_145449
