@@ -12,5 +12,20 @@ dependencies = ["orca-gym", "typing-extensions"]
 [tool.setuptools.packages.find]
 include = ["envs*", "examples*"]
 
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+# Third-party fork code follows upstream style, not enforced SLF001
+exclude = []
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "SLF001"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files allow white-box access
+"tests/**" = ["SLF001"]
+# __init__.py allows re-export
+"**/__init__.py" = ["SLF001", "F401"]
+
 
 
