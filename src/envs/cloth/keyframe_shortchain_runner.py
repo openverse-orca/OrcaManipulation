@@ -213,7 +213,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    default_cfg = CLOTH_3D_DIR / "cloth_sim_config.dual_gripper_cross_shortchain.debug.json"
+    default_cfg = CLOTH_3D_DIR / "cloth_sim_config.debug.json"
     cfg_path = Path(args.cloth_config or default_cfg).resolve()
     if not cfg_path.is_file():
         logger.error("配置文件不存在: %s", cfg_path)

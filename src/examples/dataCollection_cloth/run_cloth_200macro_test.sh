@@ -52,9 +52,9 @@ if [[ ! -f "./dual_gripper_cross_v4_replay.json" ]]; then
   $PYTHON generate_pico_replay_data.py
 fi
 
-CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.test20260508_openloong.debug.json"
+CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.debug.json"
 if [[ ! -f "$CFG" ]]; then
-  CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.test20260508_openloong.json"
+  CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.json"
 fi
 
 LOG_TAG="macro${MAX_MACRO_FRAMES}_$(date +%Y%m%d_%H%M%S)"

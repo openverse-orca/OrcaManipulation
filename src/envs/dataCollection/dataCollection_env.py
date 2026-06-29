@@ -1,9 +1,13 @@
-from typing import Callable
-from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
-from orca_gym.log.orca_log import OrcaLog
+from typing import Callable, Optional
+
 import numpy as np
 
+from orca_gym.environment.orca_gym_env import OrcaGymBaseEnv
+from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
+from orca_gym.log.orca_log import OrcaLog
+
 orca_logger = OrcaLog.get_instance()
+
 
 class DataCollectionEnv(OrcaGymLocalEnv):
     def __init__(
@@ -34,6 +38,35 @@ class DataCollectionEnv(OrcaGymLocalEnv):
 
         self.default_joint_values = None
         self.set_default_joint_values(default_joint_values)
+        self._skip_studio_render_on_reset = False
+
+    def clear_studio_override_ctrls(self) -> None:
+        """清除 Studio 侧缓存的 override_ctrls，防止覆盖本地遥操输出。"""
+        if hasattr(self.gym, "clear_override_ctrls"):
+            self.gym.clear_override_ctrls()
+
+    def set_protected_override_ctrl_ids(self, actuator_ids: set[int] | list[int]) -> None:
+        """注册不受 Studio override 覆盖的执行器（如夹爪 pctrl）。"""
+        if hasattr(self.gym, "set_protected_override_ctrl_ids"):
+            self.gym.set_protected_override_ctrl_ids(actuator_ids)
+
+    def reset(
+        self,
+        *,
+        seed: Optional[int] = None,
+        options: Optional[dict] = None,
+    ):
+        # 与 OrcaGymBaseEnv.reset 相同，但布料联调时跳过 render()，避免加载 override_ctrls
+        super(OrcaGymBaseEnv, self).reset(seed=seed)
+        if seed is not None:
+            self.set_seed_value(seed)
+        self.reset_simulation()
+        obs, info = self.reset_model()
+        if self._skip_studio_render_on_reset:
+            self.clear_studio_override_ctrls()
+        else:
+            self.render()
+        return obs, info
 
     def step(self, action):
         self.ctrl = action

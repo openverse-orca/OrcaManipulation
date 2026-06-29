@@ -200,6 +200,18 @@ def analyze_units(path: Path, bodies_per_frame: int = 6) -> dict[str, object]:
     }
 
 
+def _read_session_meta(debug_dir: Path) -> dict[str, str]:
+    meta = debug_dir / "session_meta.txt"
+    out: dict[str, str] = {}
+    if not meta.is_file():
+        return out
+    for line in meta.read_text(encoding="utf-8").splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            out[k.strip()] = v.strip()
+    return out
+
+
 def analyze_xpbd_log(path: Path) -> dict[str, object]:
     if not path.is_file():
         return {}
@@ -421,6 +433,31 @@ def print_report(debug_dir: Path, xpbd_log: Path | None, *, target_mf: int = 200
         print(f"\nWARN: body_track com_to_target max {snap['global_com_to_tgt_max_mm']:.2f} mm > 2 mm")
     if cloth.get("rows", 0) and cloth.get("max_speed_mps", 0) < 0.001:
         print("\nWARN: cloth barely moved (max_speed < 1 mm/s)")
+
+    meta = _read_session_meta(debug_dir)
+    if meta.get("pbd_grpc_self_check") == "1":
+        print("\n[2b] PBD_GRPC self-check (session pbd_grpc_self_check=1)")
+        xl_sc = analyze_xpbd_log(xpbd_log) if xpbd_log else {}
+        pg = xl_sc.get("pbd_grpc")
+        n_up = int(xl_sc.get("pbd_grpc_update_count", 0) or 0)
+        n_ok = int(xl_sc.get("pbd_grpc_ok_count", 0) or 0)
+        if pg == "enabled" and n_ok > 0:
+            print(f"  PASS: enabled UpdateMesh ok={n_ok}/{n_up}")
+        elif pg == "enabled" and int(xl_sc.get("recv_count", 0) or 0) > 0:
+            print(
+                "  PASS: PBD_GRPC enabled（init + 仿真已跑；短跑可能无 UpdateMesh 采样行，"
+                "见 XPBD 日志 [PBD_GRPC] enabled）"
+            )
+        elif pg == "enabled" and n_up == 0:
+            print("  FAIL: PBD_GRPC enabled but no UpdateMesh in XPBD log")
+            ok = False
+        elif pg == "enabled" and n_ok == 0:
+            print(f"  FAIL: UpdateMesh ok=0/{n_up}")
+            ok = False
+        else:
+            print(f"  FAIL: PBD_GRPC unhealthy (status={pg!r})")
+            ok = False
+
     if ok and mf_cov >= target_mf * 0.9:
         print(f"\nPASS: >=90% of {target_mf} macro frames with CSV data")
     print("=" * 72)

@@ -150,9 +150,21 @@ def cloth_endpoints_from_session(session: dict[str, Any]) -> ClothEndpoints:
 
 
 def resolve_palm_logical_names(session: dict[str, Any]) -> tuple[str | None, str | None]:
-    """在 rigid_body_map 中查找左右掌 logical_name（zbll / zbr 或 gripper_*_palm）。"""
-    left_pat = ("zbll_base_link", "gripper_l_palm")
-    right_pat = ("zbr_base_link", "gripper_r_palm")
+    """在 rigid_body_map / MJCF tele_layout 中查找左右掌 logical_name。"""
+    try:
+        import sys
+
+        manip = _SCRIPT_DIR.parents[1]
+        if str(manip) not in sys.path:
+            sys.path.insert(0, str(manip))
+        from envs.cloth.mjcf_tele_layout import resolve_palm_logical_names as _scan_palms
+
+        left, right = _scan_palms(session)
+        return left, right
+    except Exception:
+        pass
+    left_pat = ("arm_l_end_link", "zbll_base_link", "gripper_l_palm")
+    right_pat = ("arm_r_end_link", "zbr_base_link", "gripper_r_palm")
     bodies = (
         (session.get("rigid_body_map") or [])
         + (session.get("orcalink_rigid_body_map") or [])
@@ -186,10 +198,10 @@ def planned_palm_yup_at_times(
         from scipy.spatial.transform import Rotation as R
 
         from modules.cloth_robot_scene_layout import (
-            OPENLOONG_TELE_ARM_JOINT_VALUES,
             build_ee_delta_keyframes_mjc,
             interp_ee_deltas_at,
             prepare_mjcf_model_data,
+            tele_joint_values_for_session,
             _site_xpos,
         )
     except ImportError:
@@ -202,9 +214,9 @@ def planned_palm_yup_at_times(
             sess.setdefault("mujoco", {})["model_path"] = mjcf
             sess.setdefault("_cloth_robot_session_meta", {})["source_mjcf"] = mjcf
         joints = meta.get("default_joint_values")
-        neutral = joints if joints else OPENLOONG_TELE_ARM_JOINT_VALUES
+        neutral = joints if joints else tele_joint_values_for_session(sess)
     else:
-        neutral = OPENLOONG_TELE_ARM_JOINT_VALUES
+        neutral = tele_joint_values_for_session(sess)
 
     try:
         model, data, layout = prepare_mjcf_model_data(sess, default_joint_values=neutral)

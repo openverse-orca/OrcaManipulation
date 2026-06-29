@@ -26,7 +26,6 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 from cloth_replay_paths import default_replay_json
 from modules.cloth_robot_scene_layout import (  # noqa: E402
     DURATION_SEC,
-    OPENLOONG_TELE_ARM_JOINT_VALUES,
     build_ee_delta_keyframes_mjc,
     delta_b_to_unity_position,
     format_layout_report,
@@ -35,6 +34,7 @@ from modules.cloth_robot_scene_layout import (  # noqa: E402
     load_scene_layout_from_session,
     prepare_mjcf_model_data,
     reload_gripper_trajectory,
+    tele_joint_values_for_session,
     verify_replay_approach_palm_targets,
 )
 
@@ -136,7 +136,7 @@ def main() -> int:
         joint_values = (
             _load_joint_values_json(args.joint_values_json)
             if args.joint_values_json
-            else dict(OPENLOONG_TELE_ARM_JOINT_VALUES)
+            else tele_joint_values_for_session(session)
         )
 
     if args.print_layout:

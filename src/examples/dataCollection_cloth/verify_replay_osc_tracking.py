@@ -30,8 +30,8 @@ sys.path.insert(0, str(_SCRIPT_DIR))
 
 from cloth_replay_paths import resolve_replay_json, resolve_replay_meta_json
 from modules.cloth_robot_scene_layout import (  # noqa: E402
-    OPENLOONG_TELE_ARM_JOINT_VALUES,
     prepare_mjcf_model_data,
+    tele_joint_values_for_session,
     _site_xpos,
 )
 import mujoco
@@ -85,9 +85,8 @@ def planned_palm_yup_at_mf(
         sess.setdefault("mujoco", {})["model_path"] = mjcf
         sess.setdefault("_cloth_robot_session_meta", {})["source_mjcf"] = mjcf
 
-    model, data, layout = prepare_mjcf_model_data(
-        sess, default_joint_values=meta.get("default_joint_values") or OPENLOONG_TELE_ARM_JOINT_VALUES
-    )
+    neutral = meta.get("default_joint_values") or tele_joint_values_for_session(sess)
+    model, data, layout = prepare_mjcf_model_data(sess, default_joint_values=neutral)
     base_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, layout.base_link)
     bp, bq = data.xpos[base_bid], data.xquat[base_bid]
     rot = R.from_quat(bq[[1, 2, 3, 0]])
@@ -111,8 +110,10 @@ def run_verify(debug_dir: Path, *, plan_mf_offset: int = -1) -> int:
     meta_path = resolve_replay_meta_json(_SCRIPT_DIR)
     meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path is not None else {}
 
-    left_ln = "openloong_gripper_2f85_fix_base_usda_zbll_base_link"
-    right_ln = "openloong_gripper_2f85_fix_base_usda_zbr_base_link"
+    sys.path.insert(0, str(_SCRIPT_DIR.parents[1]))
+    from envs.cloth.mjcf_tele_layout import resolve_palm_logical_names
+
+    left_ln, right_ln = resolve_palm_logical_names(session)
     units = debug_dir / "mujoco_orcalink_units.csv"
     if not units.is_file():
         print(f"FAIL: 缺少 {units}")

@@ -52,7 +52,12 @@ orca_logger = get_orca_logger(
 def main():
     parser = argparse.ArgumentParser(description="Cloth teleop / trajectory replay (no SPH fluid)")
     parser.add_argument("--level", type=str, required=True, help="场景的名称")
-    parser.add_argument("--agent_name", type=str, required=True, choices=["openloong", "tiangong2"])
+    parser.add_argument(
+        "--agent_name",
+        type=str,
+        required=True,
+        choices=["openloong", "tiangong2", "g1_omnipicker"],
+    )
     parser.add_argument(
         "--mjc-agent-prefix",
         type=str,
@@ -142,6 +147,16 @@ def main():
         default=None,
         help="宏步逐帧计时输出 JSON（ctrl / cloth_coupling / env.step / render 分段 ms）",
     )
+    parser.add_argument(
+        "--gripper-trace",
+        action="store_true",
+        help="记录 PICO 扳机按下后 G1 夹爪 MuJoCo 全程闭合 CSV（亦可用 CLOTH_GRIPPER_TRACE=1）",
+    )
+    parser.add_argument(
+        "--pico-delta-trace",
+        action="store_true",
+        help="每宏步记录 PICO 与 MuJoCo 末端 B 系位移增量对比 CSV（亦可用 CLOTH_PICO_DELTA_TRACE=1）",
+    )
 
     args = parser.parse_args()
 
@@ -157,7 +172,7 @@ def main():
         repo_root = os.path.abspath(os.path.join(script_dir, "../../../.."))
         cfg = os.path.join(
             repo_root,
-            "OrcaPlayground/examples/cloth_3d/cloth_sim_config.dual_gripper_cross_shortchain.debug.json",
+            "OrcaPlayground/examples/cloth_3d/cloth_sim_config.debug.json",
         )
         argv = [
             sys.executable,
@@ -225,6 +240,21 @@ def main():
                 hdf5_path="record/proprio_stats.hdf5",
             )
             obs_callback = data_storage.obs_callback
+    elif agent_name == "g1_omnipicker":
+        from conf import g1_omnipicker_conf as agent_conf
+
+        # G1 尚无专用 HDF5 storage；OpenLoongDataStorage 夹爪 actuator 名与 G1 MJCF 不兼容
+        data_storage = None
+
+        def obs_callback(_env):
+            return {"bench_dummy": np.zeros(1, dtype=np.float32)}
+
+        if args.no_collect:
+            orca_logger.info("No-collect mode: skip dataset/HDF5")
+        else:
+            orca_logger.warning(
+                "G1 cloth tele: 暂无 G1 dataset 存储，使用 bench_dummy obs（跳过 HDF5 采集）"
+            )
     else:
         raise ValueError(f"Invalid agent name: {agent_name}")
 
@@ -269,7 +299,10 @@ def main():
 
     orca_logger.info("Creating data collection manager")
     mjc_prefix = (args.mjc_agent_prefix or "").strip() or None
-    if mjc_prefix is None and level == "test20260508" and agent_name == "openloong":
+    if mjc_prefix is None and agent_name == "g1_omnipicker":
+        mjc_prefix = "g1_omnipicker_usda"
+        orca_logger.info(f"Auto mjc-agent-prefix for g1_omnipicker: {mjc_prefix}")
+    elif mjc_prefix is None and level == "test20260508" and agent_name == "openloong":
         mjc_prefix = "openloong_gripper_2f85_fix_base_usda"
         orca_logger.info(f"Auto mjc-agent-prefix for test20260508: {mjc_prefix}")
 
@@ -292,25 +325,37 @@ def main():
     env.reset()
 
     if args.cloth_coupling:
-        from envs.cloth import default_cloth_config_path, load_cloth_config, start_cloth_coupling
+        from envs.cloth import (
+            apply_runtime_cloth_overrides,
+            default_cloth_config_path,
+            load_cloth_config,
+            start_cloth_coupling,
+        )
 
         cloth_cfg_path = args.cloth_config
         if not cloth_cfg_path:
-            cloth_3d = default_cloth_config_path().parent
-            if level == "test20260508":
-                if args.cloth_debug:
-                    dbg = cloth_3d / "cloth_sim_config.test20260508_openloong.debug.json"
-                    base = cloth_3d / "cloth_sim_config.test20260508_openloong.json"
-                    cloth_cfg_path = str(dbg if dbg.is_file() else base)
-                else:
-                    candidate = cloth_3d / "cloth_sim_config.test20260508_openloong.json"
-                    cloth_cfg_path = str(
-                        candidate if candidate.is_file() else cloth_3d / "cloth_sim_config.orcagym_e2e.json"
-                    )
-            else:
-                e2e = cloth_3d / "cloth_sim_config.orcagym_e2e.json"
-                cloth_cfg_path = str(e2e if e2e.is_file() else default_cloth_config_path())
+            cloth_cfg_path = str(default_cloth_config_path())
         cloth_config = load_cloth_config(cloth_cfg_path)
+        cloth_config = apply_runtime_cloth_overrides(
+            cloth_config,
+            level=level,
+            mjc_agent_prefix=mjc_prefix,
+        )
+        if agent_name == "openloong" and mjc_prefix:
+            sync = cloth_config.setdefault("orcagym", {}).setdefault(
+                "sync_mocap_from_gripper", {}
+            )
+            sync["enabled"] = True
+            sync["pairs"] = [
+                {
+                    "mocap_body": f"{mjc_prefix}_leftHandMocap",
+                    "palm_body": f"{mjc_prefix}_zbll_base_link",
+                },
+                {
+                    "mocap_body": f"{mjc_prefix}_rightHandMocap",
+                    "palm_body": f"{mjc_prefix}_zbr_base_link",
+                },
+            ]
         if args.cloth_debug:
             if not cloth_config.get("debug", {}).get("debug_mode", False):
                 cloth_config.setdefault("debug", {})["debug_mode"] = True
@@ -320,7 +365,7 @@ def main():
         if not args.replay:
             cloth_config.setdefault("xpbd", {})["dg_traj"] = "pico"
             orca_logger.info(
-                "PICO mode: xpbd.dg_traj=pico（扳机>0.5 才 Closing；指间距>50%% 释放 grip）"
+                "PICO mode: xpbd.dg_traj=pico（扳机>trigger_close_thresh 才 Closing；指间距>finger_close_ratio 释放 grip）"
             )
         mj_fs = int(cloth_config.get("mujoco", {}).get("frame_skip", 20))
         if mj_fs != frame_skip:
@@ -366,26 +411,51 @@ def main():
         data_collection_manager.enable_bench(args.bench)
         orca_logger.info(f"Bench enabled: {args.bench}")
 
-    from envs.cloth.openloong_osc_actuators import setup_openloong_dual_arm_osc_actuators
+    if agent_name == "openloong":
+        from envs.cloth.openloong_osc_actuators import setup_openloong_dual_arm_osc_actuators
 
-    def _bind_osc_actuators() -> None:
-        setup_openloong_dual_arm_osc_actuators(env, agent_conf.l_arm, agent_conf.r_arm)
+        def _bind_osc_actuators() -> None:
+            setup_openloong_dual_arm_osc_actuators(env, agent_conf.l_arm, agent_conf.r_arm)
 
-    _bind_osc_actuators()
-    data_collection_manager.add_physics_reinit_callback(_bind_osc_actuators)
-    # 保留：若 MJCF 将 P_arm 置于 group 1 时仍生效；Studio 实场景全为 group 0，主要靠 trnid 断开
-    data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
+        _bind_osc_actuators()
+        data_collection_manager.add_physics_reinit_callback(_bind_osc_actuators)
+        # 保留：若 MJCF 将 P_arm 置于 group 1 时仍生效；Studio 实场景全为 group 0，主要靠 trnid 断开
+        data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
+    else:
+        orca_logger.info(
+            f"Skip openloong P_arm detach for agent={agent_name} "
+            "(G1 仅 mctrl/pctrl，无 P_arm 双控)"
+        )
 
-    orca_logger.info("Creating left gripper controller")
-    controllers.add_gripper_2f85_pico_controller(
-        data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body,
-        pico_joystick_device, [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
-    )
-    orca_logger.info("Creating right gripper controller")
-    controllers.add_gripper_2f85_pico_controller(
-        data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body,
-        pico_joystick_device, [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
-    )
+    if agent_name == "g1_omnipicker":
+        from envs.cloth.g1_omnipicker_gripper_actuators import setup_g1_dual_gripper_actuators
+
+        def _bind_g1_gripper_actuators() -> None:
+            setup_g1_dual_gripper_actuators(env, agent_conf.gripper_l, agent_conf.gripper_r)
+
+        _bind_g1_gripper_actuators()
+        data_collection_manager.add_physics_reinit_callback(_bind_g1_gripper_actuators)
+        orca_logger.info("Creating left Omnipicker gripper controller")
+        controllers.add_gripper_omnipicker_pico_controller(
+            data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body,
+            pico_joystick_device, [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
+        )
+        orca_logger.info("Creating right Omnipicker gripper controller")
+        controllers.add_gripper_omnipicker_pico_controller(
+            data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body,
+            pico_joystick_device, [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
+        )
+    else:
+        orca_logger.info("Creating left gripper controller")
+        controllers.add_gripper_2f85_pico_controller(
+            data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body,
+            pico_joystick_device, [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
+        )
+        orca_logger.info("Creating right gripper controller")
+        controllers.add_gripper_2f85_pico_controller(
+            data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body,
+            pico_joystick_device, [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
+        )
     orca_logger.info("Creating left arm controller")
     controllers.add_arm_osc_pico_controller(
         data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body,
@@ -433,26 +503,81 @@ def main():
     if args.no_realtime:
         data_collection_manager.set_realtime_sync(False)
         orca_logger.info("No-realtime mode: skip wall-clock sleep between macro steps")
-    if args.replay:
-        # 避免每宏步 render→UpdateLocalEnv 时 Studio 注入 override_ctrls 覆盖 OSC 力矩
+    if args.cloth_coupling:
+        # render() 会从 Studio 读 override_ctrls 并在下次 set_ctrl 覆盖本地输出，
+        # 导致 PICO 扳机无法驱动夹爪 pctrl（及手臂 OSC 力矩）。
         data_collection_manager.set_skip_render(True)
-        import os as _os
-
-        if _os.environ.get("CLOTH_SYNC_STUDIO_VIS", "").strip().lower() in ("1", "true", "yes"):
+        if os.environ.get("CLOTH_SYNC_STUDIO_VIS", "").strip().lower() in ("1", "true", "yes"):
             orca_logger.info(
-                "Replay mode: skip_render=True + CLOTH_SYNC_STUDIO_VIS=1 "
-                "（仅推送 qpos 到 Studio 视口，不读 override_ctrls）"
+                "Cloth coupling: skip_render=True + CLOTH_SYNC_STUDIO_VIS=1 "
+                "（推送 qpos 到 Studio，不读 override_ctrls）"
             )
         else:
             orca_logger.info(
-                "Replay mode: skip_render=True（禁止 Studio override_ctrls 覆盖手臂电机；"
-                "Studio 刚体将保持 Play 初态，XPBD 窗口仍跟 body_track）"
+                "Cloth coupling: skip_render=True（禁止 Studio override_ctrls；"
+                "设 CLOTH_SYNC_STUDIO_VIS=1 可同步 Studio 视口姿态）"
             )
-    if not args.replay:
+    elif args.replay:
+        data_collection_manager.set_skip_render(True)
+        orca_logger.info(
+            "Replay mode: skip_render=True（禁止 Studio override_ctrls 覆盖手臂电机）"
+        )
+    if not args.replay and os.environ.get("CLOTH_CAMERA_MONITOR", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
         data_collection_manager.add_monitor_port(7080)
         data_collection_manager.add_monitor_port(7081)
         data_collection_manager.add_monitor_port(7090)
         data_collection_manager.add_monitor_port(7091)
+        orca_logger.info("CLOTH_CAMERA_MONITOR=1：启动 4 路 camera_monitor（7080/7081/7090/7091）")
+
+    gripper_trace = args.gripper_trace or os.environ.get("CLOTH_GRIPPER_TRACE", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if gripper_trace and agent_name == "g1_omnipicker" and not args.replay:
+        from envs.cloth.gripper_closure_trace import attach_gripper_closure_tracer
+
+        trace_csv = Path(log_dir) / "gripper_closure_trace.csv"
+        attach_gripper_closure_tracer(
+            data_collection_manager,
+            env,
+            agent_conf.gripper_l,
+            agent_conf.gripper_r,
+            pico_joystick,
+            trace_csv,
+            gripper_controllers=data_collection_manager.controllers,
+        )
+        orca_logger.info(
+            f"Gripper trace ON → {trace_csv} | "
+            f"plot: python plot_gripper_closure_trace.py --csv {trace_csv}"
+        )
+
+    pico_delta_trace = args.pico_delta_trace or os.environ.get(
+        "CLOTH_PICO_DELTA_TRACE", ""
+    ).strip().lower() in ("1", "true", "yes")
+    if pico_delta_trace and not args.keyframe:
+        from envs.cloth.pico_mjc_delta_trace import attach_pico_mjc_delta_tracer
+
+        delta_csv = Path(log_dir) / "pico_mjc_delta_trace.csv"
+        palm_l = palm_r = None
+        if agent_name == "g1_omnipicker":
+            palm_l, palm_r = "arm_l_end_link", "arm_r_end_link"
+        attach_pico_mjc_delta_tracer(
+            data_collection_manager,
+            env,
+            pico_joystick,
+            agent_conf.base_body,
+            agent_conf.l_arm,
+            agent_conf.r_arm,
+            delta_csv,
+            arm_controllers=data_collection_manager.controllers,
+            palm_l_body=palm_l,
+            palm_r_body=palm_r,
+        )
 
     data_collection_manager.run(
         max_episodes=1 if (args.max_episode_sec is not None or args.max_macro_frames is not None) else None

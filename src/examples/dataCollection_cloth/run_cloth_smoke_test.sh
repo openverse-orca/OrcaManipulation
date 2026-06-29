@@ -53,17 +53,13 @@ if [[ ! -f "./dual_gripper_cross_v4_replay.json" ]]; then
 fi
 
 CLOTH_DEBUG="${CLOTH_DEBUG:-0}"
-if [[ "$LEVEL" == "test20260508" ]]; then
-  if [[ "$CLOTH_DEBUG" == "1" ]]; then
-    CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.test20260508_openloong.debug.json"
-    if [[ ! -f "$CFG" ]]; then
-      CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.test20260508_openloong.json"
-    fi
-  else
-    CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.test20260508_openloong.json"
+if [[ "$CLOTH_DEBUG" == "1" ]]; then
+  CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.debug.json"
+  if [[ ! -f "$CFG" ]]; then
+    CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.json"
   fi
 else
-  CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.orcagym_e2e.json"
+  CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.json"
 fi
 LOG_TAG="smoke_$(date +%Y%m%d_%H%M%S)"
 echo "[SMOKE] 启动 data_collection_cloth_tele (日志 logs/${LOG_TAG}_tele.log)..."

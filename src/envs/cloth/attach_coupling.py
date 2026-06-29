@@ -34,7 +34,6 @@ from .debug_session import (
     write_xpbd_runtime_session_config,
 )
 from .xpbd_process import start_xpbd_if_configured
-from .masked_vtk_prefab_check import run_masked_vtk_prefab_check_at_startup
 
 logger = logging.getLogger(__name__)
 
@@ -295,6 +294,13 @@ def start_cloth_coupling(
     if auto_start_xpbd is not None:
         cfg.setdefault("xpbd", {})["auto_start"] = bool(auto_start_xpbd)
 
+    from .paths import apply_masked_cloth_from_level, resolve_cloth_level
+
+    og = cfg.setdefault("orcagym", {})
+    resolved_level = resolve_cloth_level(str(og.get("level") or "").strip() or None)
+    og["level"] = resolved_level
+    cfg = apply_masked_cloth_from_level(cfg, resolved_level)
+
     ctx = ClothCouplingContext(config=cfg, config_path=path, env=env, session_timestamp=ts)
     if is_cloth_debug_enabled(cfg):
         dbg_dir = resolve_session_debug_dir(cfg, session_timestamp=ts, log_dir=log_path)
@@ -309,56 +315,16 @@ def start_cloth_coupling(
     base_env = env.unwrapped if hasattr(env, "unwrapped") else env
     base_env.mj_forward()
 
+    from .masked_vtk_prefab_check import run_masked_vtk_prefab_check_at_startup
+
     if not run_masked_vtk_prefab_check_at_startup(model, cfg):
         raise RuntimeError(
             "掩码 VTK 预制检查未通过（见 terminal 输出）。"
-            "预制: PBDX/xpbd/fabric_fold_output/scripts/gen_yixuan_masked_vtk.py；"
             "跳过: CLOTH_SKIP_MASKED_PREFAB_CHECK=1"
         )
 
-    _ensure_cloth_3d_import_path()
-    from modules.identify_xpbd_cloth import (  # noqa: WPS433
-        enrich_cloth_discovery_pose,
-        identify_xpbd_cloth,
-        merge_cloth_discovery,
-    )
-    from modules.masked_vtk_assets import (  # noqa: WPS433
-        default_vtk_search_roots,
-        enrich_discovered_cloths_with_masked_assets,
-    )
-    from .paths import STUDIO_CLOTH_ASSETS_DIR, XPBD_DATA_DIR, XPBD_FABRIC_FOLD_VTK_DIR
-
-    vtk_roots = [
-        STUDIO_CLOTH_ASSETS_DIR,
-        XPBD_DATA_DIR,
-        XPBD_FABRIC_FOLD_VTK_DIR,
-        *default_vtk_search_roots(),
-    ]
-    cloths = enrich_discovered_cloths_with_masked_assets(
-        enrich_cloth_discovery_pose(model, data, identify_xpbd_cloth(model)),
-        vtk_roots,
-    )
-    cfg = merge_cloth_discovery(cfg, cloths)
-    cloth_blk = cfg.get("cloth") or {}
-    if not cloths:
-        raise RuntimeError(
-            "MJCF 未发现 _XPBD_CLOTHSHEET_* 布片；请在 Studio 挂 EditorMjXpbdClothSheet，"
-            "勿在 JSON 硬编码 cloth.mesh"
-        )
-    if not str(cloth_blk.get("mesh") or "").strip():
-        raise RuntimeError(
-            f"布扫描完成但未解析 vtk 路径（body={cloth_blk.get('body_name')}）"
-        )
-    from modules.cloth_phy_para import apply_cloth_phy_para_to_config  # noqa: WPS433
-    from modules.identify_xpbd_bodies import merge_body_discovery  # noqa: WPS433
-
-    cfg = apply_cloth_phy_para_to_config(cfg)
-    cfg = merge_body_discovery(cfg, model, data)
-
     adapted = adapt_config_for_orcagym(model, cfg, data=data)
     xpbd_session_cfg = build_xpbd_session_config(base_cfg, adapted)
-    if is_cloth_debug_enabled(cfg):
-        xpbd_session_cfg["debug"] = copy.deepcopy(cfg.get("debug") or {})
     mjcf_path = get_mujoco_xml_path(env)
     xpbd_session_cfg.setdefault("mujoco", {})["model_path"] = str(mjcf_path)
     session_path = write_xpbd_runtime_session_config(
@@ -386,23 +352,12 @@ def start_cloth_coupling(
     cloth_blk = xpbd_session_cfg.get("cloth") or {}
     if cloth_blk.get("discovered"):
         logger.info(
-            "cloth discovered: mesh=%s center_yup=%s quat_wxyz_yup=%s align_mode=%s compact_count=%s",
+            "cloth discovered: mesh=%s asset_dir=%s center_yup=%s quat_wxyz_yup=%s",
             cloth_blk.get("mesh"),
+            cloth_blk.get("asset_dir"),
             cloth_blk.get("center_yup"),
             cloth_blk.get("quat_wxyz_yup"),
-            cloth_blk.get("align_mode"),
-            cloth_blk.get("compact_count"),
         )
-    if cloth_blk.get("phy_para_applied"):
-        logger.info(
-            "cloth phy_para: mass_kg=%s stretch=%s bend=%s substeps=%s",
-            cloth_blk.get("mass_kg"),
-            cloth_blk.get("stretch_compliance"),
-            cloth_blk.get("bend_compliance"),
-            (xpbd_session_cfg.get("xpbd") or {}).get("substeps"),
-        )
-    if cloth_blk.get("idxmap_path"):
-        logger.info("cloth idxmap: %s", cloth_blk.get("idxmap_path"))
     logger.info("=" * 60)
 
     start_orcalink_if_configured(
@@ -410,6 +365,7 @@ def start_cloth_coupling(
         process_manager=ctx.process_manager,
         log_dir=log_path,
         session_timestamp=ts,
+        force_restart=True,
     )
     xpbd_dg_traj = str((adapted.get("xpbd") or {}).get("dg_traj", "")).strip()
     if xpbd_dg_traj == "pico" and log_path is not None:
