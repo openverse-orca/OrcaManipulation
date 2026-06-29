@@ -1,5 +1,5 @@
 import enum
-from typing import override
+from typing_extensions import override
 from orca_gym.environment import OrcaGymLocalEnv
 from controllers.abstract_controller import AbstractController
 import numpy as np

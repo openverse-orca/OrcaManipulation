@@ -1,7 +1,8 @@
 import json
 from devices.abstract_device import AbstractDevice
 import os
-from typing import Callable, override
+from typing import Callable
+from typing_extensions import override
 import numpy as np
 import h5py
 from devices.Interpolator.abstract_interpolator import AbstractInterpolator

@@ -7,7 +7,7 @@
 # @CopyRight: 松应科技
 
 import time
-from typing import override
+from typing_extensions import override
 from controllers.abstract_controller import AbstractController
 from orca_gym.environment import OrcaGymLocalEnv
 from orca_gym.log import OrcaLog
