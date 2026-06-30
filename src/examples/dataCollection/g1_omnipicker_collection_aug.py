@@ -43,11 +43,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--level", type=str, required=True, help="场景的名称")
     parser.add_argument("--task_config", type=str, required=True, help="任务配置文件")
+    parser.add_argument(
+        "--aug_count",
+        type=int,
+        default=1,
+        help="每条源数据的增强次数，即一条数据增强为多少条（默认: 1）",
+    )
 
     args = parser.parse_args()
 
     level = args.level
     task_config = args.task_config
+    aug_count = args.aug_count
     agent_name = "g1_omnipicker"
 
     orca_logger.info(f"log file: {log_file}")
@@ -90,6 +97,7 @@ def main():
     data_storage.set_video_path("video")
 
     orca_logger.info("Creating data collection manager")
+    orca_logger.info(f"Augmentation count per data unit: {aug_count}")
     data_collection_manager = DataCollectionManager(
         agent_name=agent_name,
         env_name=env_name,
@@ -101,6 +109,7 @@ def main():
         scene_manager=scene_manager,
         data_storage=data_storage,
         frame_skip=5,
+        aug_count=aug_count,
     )
     env = data_collection_manager.env
     env.reset()

@@ -600,14 +600,27 @@ def main():
             r_gm,
         )
         data_collection_manager.set_device(device)
-        task_is_success = data_collection_manager.run_episode()
+        task_is_success, record_start_time, record_end_time, initial_joint_qpos = data_collection_manager.run_episode()
         orca_logger.info(f"Episode finished, success={task_is_success}")
         if args.record_hdf5 and data_collection_manager.data_storage is not None:
             if task_is_success:
+                sim_metadata = data_collection_manager._collect_sim_metadata()
                 data_collection_manager.data_storage.save_data(
                     task_info=data_collection_manager.task.get_task_info(),
                     scene_info=data_collection_manager.scene_manager.get_scene_info(),
                     task_description=data_collection_manager.task.get_task_description(),
+                    record_start_time=(
+                        record_start_time.isoformat()
+                        if record_start_time is not None
+                        else None
+                    ),
+                    record_end_time=(
+                        record_end_time.isoformat()
+                        if record_end_time is not None
+                        else None
+                    ),
+                    initial_joint_qpos=initial_joint_qpos,
+                    **sim_metadata,
                 )
                 orca_logger.info(
                     f"HDF5 已保存（可与 data_collection_aug 使用相同 --level 与 dataset 路径回放）"

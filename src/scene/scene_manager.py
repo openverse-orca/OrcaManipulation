@@ -62,6 +62,15 @@ class SceneManager:
         task_config = self._config.get("task", {})
         return task_config
 
+    def get_agent_joint_prefix(self) -> str | None:
+        '''
+        @description: 读取数据采集时需要记录的机器人关节前缀。
+                      仅记录/恢复前缀匹配的关节，避免带随机 GUID 的 actor 关节导致回放失败。
+        @return:
+            前缀字符串（如 "g1_omnipicker_"）；未配置时返回 None，表示不过滤
+        '''
+        return self._config.get("data_collection", {}).get("agent_joint_prefix")
+
     def set_actor_qpos(self, joint_name: str, qpos: np.array):
         '''
         @param:

@@ -119,6 +119,37 @@ class G1OmniPickerDataStorage(AbstractDataStorage):
             f.create_dataset("task_info", data=task_info_str)
             f.create_dataset("scene_info", data=scene_info_str)
 
+            # 保存增强溯源信息
+            augmentation_info = kwargs.get("augmentation_info")
+            if augmentation_info is not None:
+                aug_info_str = json.dumps(augmentation_info)
+                f.create_dataset("augmentation_info", data=aug_info_str)
+
+            # 保存录制时间信息
+            record_start_time = kwargs.get("record_start_time")
+            record_end_time = kwargs.get("record_end_time")
+            if record_start_time is not None:
+                f.create_dataset("record_start_time", data=record_start_time)
+            if record_end_time is not None:
+                f.create_dataset("record_end_time", data=record_end_time)
+
+            # 保存机器人初始关节位置（用于回放时恢复）
+            initial_joint_qpos = kwargs.get("initial_joint_qpos")
+            if initial_joint_qpos is not None:
+                initial_qpos_str = json.dumps(initial_joint_qpos)
+                f.create_dataset("initial_joint_qpos", data=initial_qpos_str)
+
+            # 保存仿真器元数据（用于训练时复现仿真设置）
+            opt_config = kwargs.get("opt_config")
+            if opt_config is not None:
+                f.create_dataset("opt_config", data=json.dumps(opt_config))
+            frame_skip = kwargs.get("frame_skip")
+            if frame_skip is not None:
+                f.create_dataset("frame_skip", data=int(frame_skip))
+            dt = kwargs.get("dt")
+            if dt is not None:
+                f.create_dataset("dt", data=float(dt))
+
         self.data = {"time_step": []}
         self.get_next_unit_path()
 
