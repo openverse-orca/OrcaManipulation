@@ -19,12 +19,14 @@ import math
 import re
 import sys
 from pathlib import Path
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+from paths import CLOTH_3D_DIR, LOGS_DIR, MANIP_SRC_DIR, TELE_DIR, find_latest_debug_dir, find_latest_xpbd_log
 from typing import Any
 
 import numpy as np
 
-_SCRIPT_DIR = Path(__file__).resolve().parent
-_LOGS = _SCRIPT_DIR / "logs"
 
 # 检测阈值（可通过 CLI 覆盖）
 DEFAULT_SPEED_SPIKE_MPS = 0.35
@@ -32,21 +34,6 @@ DEFAULT_COM_JUMP_M = 0.03
 DEFAULT_PARTICLE_JUMP_M = 0.05
 DEFAULT_MIN_GRIP_LOCKED = 1
 
-
-def find_latest_debug_dir() -> Path | None:
-    """返回 ``logs/cloth_debug_*`` 中修改时间最新目录。"""
-    if not _LOGS.is_dir():
-        return None
-    cands = sorted(_LOGS.glob("cloth_debug_*"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return cands[0] if cands else None
-
-
-def find_latest_xpbd_log() -> Path | None:
-    """返回 ``logs/xpbd_*.log`` 中修改时间最新文件。"""
-    if not _LOGS.is_dir():
-        return None
-    cands = sorted(_LOGS.glob("xpbd_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return cands[0] if cands else None
 
 
 def load_cloth_macro_speed_csv(path: Path) -> list[dict[str, Any]]:

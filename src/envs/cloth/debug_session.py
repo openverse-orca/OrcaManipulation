@@ -37,33 +37,38 @@ def _full_debug_profile() -> dict[str, Any]:
     return prof
 
 
-def _merge_debug_profile_for_session(dbg_in: dict[str, Any]) -> dict[str, Any]:
-    """
-    合并基配置 ``debug`` 段与全量 profile。
-
-    基配置（如 dual_gripper_cross_full）常带 ``export_csv:false``；cloth debug 联调须打开
-    VertexPos / body_track 等 CSV，故 ``export_*`` 以 profile 为准，仅合并非 export 字段。
-    """
-    profile = _full_debug_profile()
-    merged = copy.deepcopy(profile)
-    for key, value in (dbg_in or {}).items():
-        if key.startswith("export_"):
-            continue
-        if key == "debug_mode":
-            merged["debug_mode"] = bool(value) or bool(merged.get("debug_mode"))
-            continue
-        merged[key] = value
-    merged["debug_mode"] = True
-    return merged
-
-
 def is_cloth_debug_enabled(config: dict[str, Any]) -> bool:
     """config.debug.debug_mode 是否为真。"""
     return bool(config.get("debug", {}).get("debug_mode", False))
 
 
+def is_pbd_grpc_self_check_enabled(config: dict[str, Any]) -> bool:
+    """
+    是否开启 PBD_GRPC 布料渲染自检。
+
+    为真时 debug 联调仍向 Studio 推送 UpdateMesh，并在 analyze 中验收连通性。
+    环境变量 ``CLOTH_PBD_GRPC_SELF_CHECK=1`` 优先于 ``debug.pbd_grpc_self_check``。
+    """
+    env_flag = os.environ.get("CLOTH_PBD_GRPC_SELF_CHECK", "").strip().lower()
+    if env_flag in ("1", "true", "yes", "on"):
+        return True
+    if env_flag in ("0", "false", "no", "off"):
+        return False
+    return bool(config.get("debug", {}).get("pbd_grpc_self_check", False))
+
+
 def is_cloth_init_compare_enabled(config: dict[str, Any]) -> bool:
-    """``debug.export_cloth_init_compare`` 是否为真（可独立于其它 debug CSV）。"""
+    """
+    布料初态对比是否开启。
+
+    优先读环境变量 ``CLOTH_INIT_COMPARE``（1/0）；未设置时读 ``debug.export_cloth_init_compare``。
+    可独立于全量 ``CLOTH_DEBUG`` 使用。
+    """
+    env_flag = os.environ.get("CLOTH_INIT_COMPARE", "").strip().lower()
+    if env_flag in ("1", "true", "yes", "on"):
+        return True
+    if env_flag in ("0", "false", "no", "off"):
+        return False
     return bool(config.get("debug", {}).get("export_cloth_init_compare", False))
 
 
@@ -108,6 +113,14 @@ def build_xpbd_session_config(base_cfg: dict[str, Any], adapted_cfg: dict[str, A
             out["orcalink_rigid_body_map"] = copy.deepcopy(base_cfg["orcalink_rigid_body_map"])
         elif "orcagym_rigid_body_map" in base_cfg:
             out["orcalink_rigid_body_map"] = copy.deepcopy(base_cfg["orcagym_rigid_body_map"])
+    cloth = out.setdefault("cloth", {})
+    level = str((out.get("orcagym") or {}).get("level") or cloth.get("level") or "").strip()
+    if level:
+        cloth["level"] = level
+        if not str(cloth.get("asset_dir") or "").strip():
+            from envs.cloth.paths import studio_cloth_assets_dir  # noqa: WPS433
+
+            cloth["asset_dir"] = str(studio_cloth_assets_dir(level))
     return out
 
 
@@ -198,7 +211,31 @@ def prepare_cloth_debug_session(
     if not dbg_in.get("debug_mode", False):
         return cfg, config_path.resolve()
 
-    cfg["debug"] = _merge_debug_profile_for_session(dbg_in if isinstance(dbg_in, dict) else {})
+    merged = _full_debug_profile()
+    merged.update(dbg_in)
+    cfg["debug"] = merged
+    # 联调 debug 会话强制项（extends 链上 dual_gripper_cross_full 常为 false，不可被覆盖）
+    profile = _full_debug_profile()
+    for key in (
+        "export_csv",
+        "export_recv_yup_csv",
+        "export_anchor_substep_csv",
+        "export_body_track_monitor_csv",
+        "export_sync_seq_monitor",
+        "export_macro_timing_pair",
+        "export_macro_packet_pair_verify",
+        "export_vertex_pos_compare",
+        "export_cloth_vertex_capture",
+    ):
+        cfg["debug"][key] = profile[key]
+
+    # 首帧 A/B 包 debug：PBD_GRPC 烘焙较慢，延长 JoinSession 等待避免 bridge 超时
+    ol = cfg.setdefault("orcalink", {})
+    client = ol.setdefault("client", {})
+    sess = client.setdefault("session", {})
+    sess["ready_timeout_sec"] = max(float(sess.get("ready_timeout_sec", 60.0)), 180.0)
+    xpbd_blk = cfg.setdefault("xpbd", {})
+    xpbd_blk["startup_delay"] = max(float(xpbd_blk.get("startup_delay", 5.0)), 20.0)
 
     debug_dir = resolve_session_debug_dir(cfg, session_timestamp=session_timestamp, log_dir=log_dir)
     debug_dir.mkdir(parents=True, exist_ok=True)
@@ -212,15 +249,48 @@ def prepare_cloth_debug_session(
         encoding="utf-8",
     )
     meta = debug_dir / "session_meta.txt"
-    meta.write_text(
-        f"session_timestamp={session_timestamp}\n"
-        f"source_config={config_path.resolve()}\n"
+    meta_lines = [
+        f"session_timestamp={session_timestamp}\n",
+        f"source_config={config_path.resolve()}\n",
         f"debug_dir={debug_dir}\n",
-        encoding="utf-8",
-    )
+    ]
+    if is_pbd_grpc_self_check_enabled(cfg):
+        meta_lines.append("pbd_grpc_self_check=1\n")
+    meta.write_text("".join(meta_lines), encoding="utf-8")
     logger.info("Cloth debug session: %s", debug_dir)
     logger.info("Session config: %s", session_path)
     return cfg, session_path.resolve()
+
+
+def _apply_debug_pbd_grpc_env(config: dict[str, Any], env: dict[str, str]) -> str:
+    """
+    debug 联调为 XPBD 配置 Studio PBDRender gRPC。
+
+    默认 ``PBD_GRPC=1``（含 ``cloth_vert_trace.csv`` 三类顶点采集）；
+    若父进程已设 ``PBD_GRPC=0`` 则尊重关闭。
+    返回日志用摘要（地址或 ``off``）。
+    """
+    pbd_grpc_env = os.environ.get("PBD_GRPC", "").strip().lower()
+    if pbd_grpc_env in ("0", "false", "no"):
+        env["PBD_GRPC"] = "0"
+        return "off"
+    pr = config.get("particle_render", {})
+    env["PBD_GRPC"] = "1"
+    grpc_addr = os.environ.get("PBD_GRPC_ADDRESS", "").strip()
+    if not grpc_addr:
+        grpc_addr = str(pr.get("grpc_address", "localhost:50261"))
+    if not grpc_addr.startswith("localhost:") and ":" not in grpc_addr:
+        grpc_addr = f"localhost:{grpc_addr}"
+    env["PBD_GRPC_ADDRESS"] = grpc_addr
+    mesh_id = pr.get("mesh_id")
+    if mesh_id is not None and str(mesh_id).strip() != "":
+        env["PBD_GRPC_MESH_ID"] = str(int(mesh_id))
+    sbt_rot = os.environ.get("PBD_GRPC_SBT_ROTATION", "").strip()
+    if not sbt_rot:
+        sbt_rot = str(pr.get("sbt_rotation", "from_quat")).strip()
+    if sbt_rot:
+        env["PBD_GRPC_SBT_ROTATION"] = sbt_rot
+    return grpc_addr
 
 
 def apply_xpbd_debug_environment(
@@ -233,6 +303,7 @@ def apply_xpbd_debug_environment(
 
     - MJC_PBD_DEBUG_ORCALINK：OrcaLink RECV/PUBLISH 跟踪
     - MJC_PBD_CLOTH_STATS_DIR / MJC_PBD_CLOTH_VERT_DIR：布料宏步统计与顶点采样
+      （含 cloth_mf_*.txt、cloth_vert_trace.csv、cloth_particle_studio_compare.csv 粒子/Studio 对比）
     """
     if not is_cloth_debug_enabled(config):
         return
@@ -244,9 +315,29 @@ def apply_xpbd_debug_environment(
     if dbg.get("export_cloth_vertex_capture", True):
         env["MJC_PBD_CLOTH_VERT_CAPTURE"] = "1"
         env["MJC_PBD_CLOTH_VERT_DIR"] = str(cloth_dir)
+        env["MJC_PBD_CLOTH_STUDIO_COMPARE"] = "1"
+    # 方案 A：mf=0 不覆盖 xpbd_rest，重力形变进入 SBT/UpdateMesh
+    if os.environ.get("PBD_GRPC_REFRESH_REST_MF0", "").strip().lower() not in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        env["PBD_GRPC_REFRESH_REST_MF0"] = "0"
     if dbg.get("export_phys_trace", False):
         env["MJC_PBD_PHYS_TRACE"] = "1"
-    logger.info("XPBD debug env: CLOTH_STATS=%s ORCALINK_TRACE=1", cloth_dir)
+    grpc_summary = _apply_debug_pbd_grpc_env(config, env)
+    if grpc_summary == "off":
+        logger.info(
+            "XPBD debug env: CLOTH_STATS=%s ORCALINK_TRACE=1 PBD_GRPC=0 (env override)",
+            cloth_dir,
+        )
+    else:
+        logger.info(
+            "XPBD debug env: CLOTH_STATS=%s ORCALINK_TRACE=1 PBD_GRPC=1 -> %s",
+            cloth_dir,
+            grpc_summary,
+        )
 
 
 def apply_cloth_init_compare_environment(

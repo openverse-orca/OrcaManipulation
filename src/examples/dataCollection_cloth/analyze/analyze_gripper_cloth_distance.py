@@ -24,13 +24,17 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+from paths import CLOTH_3D_DIR, LOGS_DIR, MANIP_SRC_DIR, TELE_DIR, find_latest_debug_dir, find_latest_xpbd_log
+
+if str(TELE_DIR) not in sys.path:
+    sys.path.insert(0, str(TELE_DIR))
 from typing import Any
 
 import numpy as np
 
-_SCRIPT_DIR = Path(__file__).resolve().parent
-_LOGS = _SCRIPT_DIR / "logs"
-_CLOTH_3D = _SCRIPT_DIR.parents[3] / "OrcaPlayground" / "examples" / "cloth_3d"
 
 _RE_TIP_L = re.compile(
     r"left grip: 0 locked; tip=\(([-0-9.]+),([-0-9.]+),([-0-9.]+)\) min_dist=([0-9.]+)"
@@ -51,18 +55,6 @@ def mjc_vec_to_yup(x: float, y: float, z: float) -> np.ndarray:
     return np.array([x, z, -y], dtype=np.float64)
 
 
-def _find_latest_debug_dir() -> Path | None:
-    if not _LOGS.is_dir():
-        return None
-    cands = sorted(_LOGS.glob("cloth_debug_*"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return cands[0] if cands else None
-
-
-def _find_latest_xpbd_log() -> Path | None:
-    if not _LOGS.is_dir():
-        return None
-    cands = sorted(_LOGS.glob("xpbd_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return cands[0] if cands else None
 
 
 def _load_csv(path: Path) -> list[dict[str, str]]:
@@ -107,7 +99,7 @@ def resolve_replay_meta(debug_dir: Path) -> dict[str, Any] | None:
     """查找与本次会话匹配的 replay_meta.json。"""
     from cloth_replay_paths import resolve_replay_meta_json
 
-    meta_path = resolve_replay_meta_json(_SCRIPT_DIR)
+    meta_path = resolve_replay_meta_json(TELE_DIR)
     if meta_path is None:
         return None
     return json.loads(meta_path.read_text(encoding="utf-8"))
@@ -128,8 +120,8 @@ def cloth_endpoints_from_session(session: dict[str, Any]) -> ClothEndpoints:
     从 session ``cloth.discovered_cloths[0]`` 读取布心 COM 与袖口半宽，
     假定衬衫长轴沿世界 X，袖口为 center ± half_x（默认粒子极值 ±0.5 m）。
     """
-    if _CLOTH_3D.is_dir() and str(_CLOTH_3D) not in sys.path:
-        sys.path.insert(0, str(_CLOTH_3D))
+    if CLOTH_3D_DIR.is_dir() and str(CLOTH_3D_DIR) not in sys.path:
+        sys.path.insert(0, str(CLOTH_3D_DIR))
     try:
         from modules.cloth_robot_scene_layout import SLEEVE_HALF_X_M  # noqa: WPS433
     except ImportError:
@@ -150,9 +142,21 @@ def cloth_endpoints_from_session(session: dict[str, Any]) -> ClothEndpoints:
 
 
 def resolve_palm_logical_names(session: dict[str, Any]) -> tuple[str | None, str | None]:
-    """在 rigid_body_map 中查找左右掌 logical_name（zbll / zbr 或 gripper_*_palm）。"""
-    left_pat = ("zbll_base_link", "gripper_l_palm")
-    right_pat = ("zbr_base_link", "gripper_r_palm")
+    """在 rigid_body_map / MJCF tele_layout 中查找左右掌 logical_name。"""
+    try:
+        import sys
+
+        manip = MANIP_SRC_DIR
+        if str(manip) not in sys.path:
+            sys.path.insert(0, str(manip))
+        from envs.cloth.mjcf_tele_layout import resolve_palm_logical_names as _scan_palms
+
+        left, right = _scan_palms(session)
+        return left, right
+    except Exception:
+        pass
+    left_pat = ("arm_l_end_link", "zbll_base_link", "gripper_l_palm")
+    right_pat = ("arm_r_end_link", "zbr_base_link", "gripper_r_palm")
     bodies = (
         (session.get("rigid_body_map") or [])
         + (session.get("orcalink_rigid_body_map") or [])
@@ -179,17 +183,17 @@ def planned_palm_yup_at_times(
 
     依赖 cloth_robot_scene_layout；失败时返回空 dict。
     """
-    if _CLOTH_3D.is_dir() and str(_CLOTH_3D) not in sys.path:
-        sys.path.insert(0, str(_CLOTH_3D))
+    if CLOTH_3D_DIR.is_dir() and str(CLOTH_3D_DIR) not in sys.path:
+        sys.path.insert(0, str(CLOTH_3D_DIR))
     try:
         import mujoco
         from scipy.spatial.transform import Rotation as R
 
         from modules.cloth_robot_scene_layout import (
-            OPENLOONG_TELE_ARM_JOINT_VALUES,
             build_ee_delta_keyframes_mjc,
             interp_ee_deltas_at,
             prepare_mjcf_model_data,
+            tele_joint_values_for_session,
             _site_xpos,
         )
     except ImportError:
@@ -202,9 +206,9 @@ def planned_palm_yup_at_times(
             sess.setdefault("mujoco", {})["model_path"] = mjcf
             sess.setdefault("_cloth_robot_session_meta", {})["source_mjcf"] = mjcf
         joints = meta.get("default_joint_values")
-        neutral = joints if joints else OPENLOONG_TELE_ARM_JOINT_VALUES
+        neutral = joints if joints else tele_joint_values_for_session(sess)
     else:
-        neutral = OPENLOONG_TELE_ARM_JOINT_VALUES
+        neutral = tele_joint_values_for_session(sess)
 
     try:
         model, data, layout = prepare_mjcf_model_data(sess, default_joint_values=neutral)
@@ -411,7 +415,7 @@ def analyze_gripper_cloth_distance(
     planned = planned_palm_yup_at_times(session, meta, sample_times)
     mjc_palm = load_mjc_palm_series(debug_dir, left_ln, right_ln)
     xpbd_palm = load_xpbd_palm_series(debug_dir, left_ln, right_ln)
-    log_path = xpbd_log or _find_latest_xpbd_log()
+    log_path = xpbd_log or find_latest_xpbd_log()
     tips = parse_grip_tips_from_log(log_path) if log_path else []
     macro_rows = _load_csv(debug_dir / "cloth_macro_speed.csv")
 
@@ -631,7 +635,7 @@ def main() -> int:
 
     debug_dir = args.debug_dir
     if args.watch_latest or debug_dir is None:
-        debug_dir = _find_latest_debug_dir()
+        debug_dir = find_latest_debug_dir()
     if debug_dir is None or not debug_dir.is_dir():
         print("No cloth_debug_* directory found.", file=sys.stderr)
         return 1

@@ -11,8 +11,13 @@ All plot labels are in English (matplotlib default fonts).
 from __future__ import annotations
 
 import argparse
+import sys
 import csv
 from pathlib import Path
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+from paths import CLOTH_3D_DIR, LOGS_DIR, MANIP_SRC_DIR, TELE_DIR, find_latest_debug_dir, find_latest_xpbd_log
 from typing import Dict, List, Tuple
 
 import numpy as np
@@ -49,17 +54,6 @@ def mjc_vec_to_yup(x: float, y: float, z: float) -> Tuple[float, float, float]:
     """(x,y,z)_mjc → (x,y,z)_yup; same as cloth_3d modules.mjc_coords.orca_vec_to_yup."""
     return (x, z, -y)
 
-
-def find_latest_debug_dir(logs_dir: Path) -> Path:
-    """Return the most recently modified cloth_debug_* directory under logs_dir."""
-    candidates = sorted(
-        logs_dir.glob("cloth_debug_*"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    if not candidates:
-        raise FileNotFoundError(f"No cloth_debug_* under {logs_dir}")
-    return candidates[0]
 
 
 def load_mjc_com_yup(units_csv: Path) -> Dict[str, List[Tuple[int, float, np.ndarray]]]:
@@ -309,8 +303,9 @@ def main() -> None:
     parser.add_argument("--stride", type=int, default=1, help="Use every Nth macro frame")
     args = parser.parse_args()
 
-    base = Path(__file__).resolve().parent
-    debug_dir = args.debug_dir or find_latest_debug_dir(base / "logs")
+    debug_dir = args.debug_dir or find_latest_debug_dir()
+    if debug_dir is None:
+        raise SystemExit(f"No cloth_debug_* under {LOGS_DIR}")
     output = args.output or (debug_dir / "rigid_bodies_mjc_xpbd.gif")
 
     out = render_gif(debug_dir, output, fps=args.fps, stride=args.stride)

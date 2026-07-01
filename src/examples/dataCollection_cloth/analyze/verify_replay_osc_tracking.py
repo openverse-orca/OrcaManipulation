@@ -18,20 +18,22 @@ import csv
 import json
 import sys
 from pathlib import Path
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+from paths import CLOTH_3D_DIR, LOGS_DIR, MANIP_SRC_DIR, TELE_DIR, find_latest_debug_dir, find_latest_xpbd_log
 
 import numpy as np
 
-_SCRIPT_DIR = Path(__file__).resolve().parent
-_LOGS = _SCRIPT_DIR / "logs"
-_CLOTH_3D = _SCRIPT_DIR.parents[3] / "OrcaPlayground" / "examples" / "cloth_3d"
 
-sys.path.insert(0, str(_CLOTH_3D))
-sys.path.insert(0, str(_SCRIPT_DIR))
+sys.path.insert(0, str(CLOTH_3D_DIR))
+if str(TELE_DIR) not in sys.path:
+    sys.path.insert(0, str(TELE_DIR))
 
 from cloth_replay_paths import resolve_replay_json, resolve_replay_meta_json
 from modules.cloth_robot_scene_layout import (  # noqa: E402
-    OPENLOONG_TELE_ARM_JOINT_VALUES,
     prepare_mjcf_model_data,
+    tele_joint_values_for_session,
     _site_xpos,
 )
 import mujoco
@@ -45,12 +47,6 @@ def mjc_to_yup(p: np.ndarray) -> np.ndarray:
 def unity_to_B(pos: dict) -> np.ndarray:
     return np.array([pos["z"], -pos["x"], pos["y"]], dtype=np.float64)
 
-
-def _find_latest_debug_dir() -> Path | None:
-    if not _LOGS.is_dir():
-        return None
-    cands = sorted(_LOGS.glob("cloth_debug_*"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return cands[0] if cands else None
 
 
 def load_mjc_palm_at_mf(units_csv: Path, logical_name: str, mf: int) -> np.ndarray | None:
@@ -71,7 +67,7 @@ def planned_palm_yup_at_mf(
     mf: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """由 replay JSON delta_B + tele neutral 反推左右规划掌位（Y-up）。"""
-    replay_path = resolve_replay_json(_SCRIPT_DIR, meta)
+    replay_path = resolve_replay_json(TELE_DIR, meta)
     if replay_path is None:
         raise FileNotFoundError(
             "replay JSON not found; run generate_cloth_robot_replay_data.py or set CLOTH_REPLAY_JSON"
@@ -85,9 +81,8 @@ def planned_palm_yup_at_mf(
         sess.setdefault("mujoco", {})["model_path"] = mjcf
         sess.setdefault("_cloth_robot_session_meta", {})["source_mjcf"] = mjcf
 
-    model, data, layout = prepare_mjcf_model_data(
-        sess, default_joint_values=meta.get("default_joint_values") or OPENLOONG_TELE_ARM_JOINT_VALUES
-    )
+    neutral = meta.get("default_joint_values") or tele_joint_values_for_session(sess)
+    model, data, layout = prepare_mjcf_model_data(sess, default_joint_values=neutral)
     base_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, layout.base_link)
     bp, bq = data.xpos[base_bid], data.xquat[base_bid]
     rot = R.from_quat(bq[[1, 2, 3, 0]])
@@ -108,11 +103,13 @@ def run_verify(debug_dir: Path, *, plan_mf_offset: int = -1) -> int:
     debug_dir = debug_dir.resolve()
     ptr = json.loads((debug_dir / "cloth_sim_session.json").read_text(encoding="utf-8"))
     session = json.loads(Path(ptr["session_config"]).read_text(encoding="utf-8"))
-    meta_path = resolve_replay_meta_json(_SCRIPT_DIR)
+    meta_path = resolve_replay_meta_json(TELE_DIR)
     meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path is not None else {}
 
-    left_ln = "openloong_gripper_2f85_fix_base_usda_zbll_base_link"
-    right_ln = "openloong_gripper_2f85_fix_base_usda_zbr_base_link"
+    sys.path.insert(0, str(MANIP_SRC_DIR))
+    from envs.cloth.mjcf_tele_layout import resolve_palm_logical_names
+
+    left_ln, right_ln = resolve_palm_logical_names(session)
     units = debug_dir / "mujoco_orcalink_units.csv"
     if not units.is_file():
         print(f"FAIL: 缺少 {units}")
@@ -171,7 +168,7 @@ def main() -> int:
         help="规划帧偏移：默认 -1 表示 actual@mf 对比 plan@(mf-1)",
     )
     args = ap.parse_args()
-    debug_dir = args.debug_dir or (_find_latest_debug_dir() if args.watch_latest else None)
+    debug_dir = args.debug_dir or (find_latest_debug_dir() if args.watch_latest else None)
     if debug_dir is None or not debug_dir.is_dir():
         print("No cloth_debug_* directory.", file=sys.stderr)
         return 1

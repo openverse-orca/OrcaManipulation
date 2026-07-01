@@ -257,8 +257,15 @@ class DataCollectionManager:
         self._skip_ctrl = skip
 
     def set_skip_render(self, skip: bool) -> None:
-        """纯 SPH 基线：跳过 env.render()，不向 Studio 推送视口渲染。"""
+        """跳过 env.render()；同时避免 reset()/历史 render 留下的 override_ctrls 覆盖遥操 ctrl。"""
         self._skip_render = skip
+        if hasattr(self.env, "_skip_studio_render_on_reset"):
+            self.env._skip_studio_render_on_reset = bool(skip)
+        self._clear_studio_override_ctrls()
+
+    def _clear_studio_override_ctrls(self) -> None:
+        if hasattr(self.env, "clear_studio_override_ctrls"):
+            self.env.clear_studio_override_ctrls()
 
     def set_realtime_sync(self, enabled: bool) -> None:
         """为 False 时不按 macro_dt sleep，尽快跑满宏步（release 压测）。"""
@@ -266,10 +273,46 @@ class DataCollectionManager:
 
     def _push_studio_visual(self) -> None:
         """skip_render 时可选：仅推送 qpos 到 Studio 视口，不应用 override_ctrls。"""
+        import grpc
+
         gym = self.env.gym
-        self.env.loop.run_until_complete(
-            gym.push_visual_state(self.env.data.qpos, gym._mjData.time)
-        )
+        qpos = self.env.data.qpos
+        sim_time = gym._mjData.time
+        try:
+            max_retries = max(1, int(os.environ.get("CLOTH_GRPC_PUSH_RETRIES", "3")))
+        except ValueError:
+            max_retries = 3
+        try:
+            retry_sleep_s = max(0.05, float(os.environ.get("CLOTH_GRPC_PUSH_RETRY_SLEEP", "0.25")))
+        except ValueError:
+            retry_sleep_s = 0.25
+
+        last_err = None
+        for attempt in range(max_retries):
+            try:
+                self.env.loop.run_until_complete(gym.push_visual_state(qpos, sim_time))
+                return
+            except grpc.aio.AioRpcError as err:
+                last_err = err
+                if err.code() != grpc.StatusCode.UNAVAILABLE:
+                    raise
+                orca_logger.warning(
+                    f"Studio gRPC push_visual UNAVAILABLE (attempt {attempt + 1}/{max_retries}): {err.details()}"
+                )
+            except Exception as err:
+                last_err = err
+                orca_logger.warning(
+                    f"Studio gRPC push_visual failed (attempt {attempt + 1}/{max_retries}): {err}"
+                )
+            if attempt + 1 < max_retries:
+                time.sleep(retry_sleep_s)
+                try:
+                    self.env.reconnect_grpc()
+                    orca_logger.info("Studio gRPC reconnected after push_visual failure")
+                except Exception as reconnect_err:
+                    orca_logger.warning(f"Studio gRPC reconnect failed: {reconnect_err}")
+        if last_err is not None:
+            raise last_err
 
     def _save_bench_data(self):
         if not self._bench_enabled or not self._bench_steps:
@@ -484,6 +527,8 @@ class DataCollectionManager:
     def run_episode(self):
 
         self.set_init_ctrl()
+        if self._skip_render:
+            self._clear_studio_override_ctrls()
         self.env.set_ctrl(self.ctrl)
         self.env.mj_forward()
 
@@ -502,6 +547,8 @@ class DataCollectionManager:
             if self._skip_ctrl:
                 action = self.ctrl
             else:
+                if self._skip_render:
+                    self._clear_studio_override_ctrls()
                 self._run_pre_fluid_step_hooks()
                 action = self.run_controllers()
             t1 = time.perf_counter()

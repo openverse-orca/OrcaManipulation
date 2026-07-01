@@ -1,6 +1,7 @@
 """从 OrcaGymLocalEnv 取得原生 MuJoCo model/data。"""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Tuple
 
 import mujoco
@@ -32,8 +33,6 @@ def get_mujoco_xml_path(env: Any) -> Path:
 
     用于写出 XPBD session 的 ``mujoco.model_path``；须先 ``reset()`` / ``mj_forward()``。
     """
-    from pathlib import Path
-
     base = env
     if hasattr(base, "unwrapped"):
         base = base.unwrapped

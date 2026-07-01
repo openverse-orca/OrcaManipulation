@@ -109,15 +109,59 @@ def find_editor_log_paths() -> list[Path]:
     return paths
 
 
+def find_latest_studio_mjcf_path() -> Path | None:
+    """
+    返回 Studio / OrcaGym 缓存里最新的 MJCF（排除 ``out.xml``）。
+
+    优先 ``~/Orca/OrcaStudio/*/tmp``（可关联 ``Editor.log`` 解析关卡）；
+    仅无 Studio 导出时再回退 ``~/.orcagym/tmp``。
+    """
+    studio_candidates: list[Path] = []
+    for folder in orca_studio_user_data_root().glob("*/tmp"):
+        if folder.is_dir():
+            studio_candidates.extend(p for p in folder.glob("*.xml") if p.name != "out.xml")
+    if studio_candidates:
+        return max(studio_candidates, key=lambda p: p.stat().st_mtime)
+    orca_gym_tmp = Path.home() / ".orcagym" / "tmp"
+    if orca_gym_tmp.is_dir():
+        gym_candidates = [p for p in orca_gym_tmp.glob("*.xml") if p.name != "out.xml"]
+        if gym_candidates:
+            return max(gym_candidates, key=lambda p: p.stat().st_mtime)
+    return None
+
+
+def editor_log_for_mjcf(mjcf_path: Path) -> Path | None:
+    """由 MJCF 路径反推同工程 ``user/log/Editor.log``。"""
+    parts = mjcf_path.parts
+    for i, part in enumerate(parts):
+        if part == "OrcaStudio" and i + 1 < len(parts):
+            log = (
+                Path(*parts[: i + 2])
+                / "user"
+                / "log"
+                / "Editor.log"
+            )
+            return log if log.is_file() else None
+    return None
+
+
 def detect_studio_play_level() -> str | None:
     """
     自动读取 Studio 当前/最近 Play 的关卡目录名。
 
-  1. ``lastLoadPath.preset``（按 mtime 取最新工程）
-  2. ``Editor.log`` 中最后一次 ``Loading map .../Levels/<name>``
+    1. 最新 MJCF 所在工程的 ``Editor.log``（与当前 Play 的 OrcaGym 模型一致，优先于陈旧 preset）
+    2. ``lastLoadPath.preset``（按 mtime 取最新工程）
+    3. 任意 ``Editor.log`` 中最后一次 ``Loading map .../Levels/<name>``
 
     失败返回 ``None``（由 :func:`resolve_cloth_level` 回退默认关卡）。
     """
+    mjcf = find_latest_studio_mjcf_path()
+    if mjcf is not None:
+        proj_log = editor_log_for_mjcf(mjcf)
+        if proj_log is not None:
+            level = parse_level_from_editor_log(proj_log)
+            if level:
+                return level
     for preset in find_last_load_path_presets():
         level = parse_level_from_preset(preset)
         if level:

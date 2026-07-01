@@ -15,10 +15,12 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+from paths import CLOTH_3D_DIR, LOGS_DIR, MANIP_SRC_DIR, TELE_DIR, find_latest_debug_dir, find_latest_xpbd_log
 from statistics import mean
 
-_SCRIPT_DIR = Path(__file__).resolve().parent
-_LOGS = _SCRIPT_DIR / "logs"
 
 _RE_BODY_TRACK = re.compile(
     r"body_track ACCEPTANCE.*macro=(\d+).*pos_err=([\d.]+) m.*quat_err=([\d.]+) deg.*(PASS|FAIL)"
@@ -27,12 +29,6 @@ _RE_BODY_TRACK_COM = re.compile(
     r"body_track ACCEPTANCE.*macro=(\d+) COM pos_err=([\d.]+) m quat_err=([\d.]+) deg (PASS|FAIL)"
 )
 
-
-def _find_latest_debug_dir() -> Path | None:
-    if not _LOGS.is_dir():
-        return None
-    cands = sorted(_LOGS.glob("cloth_debug_*"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return cands[0] if cands else None
 
 
 def _load_csv(path: Path) -> list[dict[str, str]]:
@@ -198,6 +194,18 @@ def analyze_units(path: Path, bodies_per_frame: int = 6) -> dict[str, object]:
         "mf_min": min(mfs) if mfs else -1,
         "mf_max": max(mfs) if mfs else -1,
     }
+
+
+def _read_session_meta(debug_dir: Path) -> dict[str, str]:
+    meta = debug_dir / "session_meta.txt"
+    out: dict[str, str] = {}
+    if not meta.is_file():
+        return out
+    for line in meta.read_text(encoding="utf-8").splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            out[k.strip()] = v.strip()
+    return out
 
 
 def analyze_xpbd_log(path: Path) -> dict[str, object]:
@@ -421,6 +429,31 @@ def print_report(debug_dir: Path, xpbd_log: Path | None, *, target_mf: int = 200
         print(f"\nWARN: body_track com_to_target max {snap['global_com_to_tgt_max_mm']:.2f} mm > 2 mm")
     if cloth.get("rows", 0) and cloth.get("max_speed_mps", 0) < 0.001:
         print("\nWARN: cloth barely moved (max_speed < 1 mm/s)")
+
+    meta = _read_session_meta(debug_dir)
+    if meta.get("pbd_grpc_self_check") == "1":
+        print("\n[2b] PBD_GRPC self-check (session pbd_grpc_self_check=1)")
+        xl_sc = analyze_xpbd_log(xpbd_log) if xpbd_log else {}
+        pg = xl_sc.get("pbd_grpc")
+        n_up = int(xl_sc.get("pbd_grpc_update_count", 0) or 0)
+        n_ok = int(xl_sc.get("pbd_grpc_ok_count", 0) or 0)
+        if pg == "enabled" and n_ok > 0:
+            print(f"  PASS: enabled UpdateMesh ok={n_ok}/{n_up}")
+        elif pg == "enabled" and int(xl_sc.get("recv_count", 0) or 0) > 0:
+            print(
+                "  PASS: PBD_GRPC enabled（init + 仿真已跑；短跑可能无 UpdateMesh 采样行，"
+                "见 XPBD 日志 [PBD_GRPC] enabled）"
+            )
+        elif pg == "enabled" and n_up == 0:
+            print("  FAIL: PBD_GRPC enabled but no UpdateMesh in XPBD log")
+            ok = False
+        elif pg == "enabled" and n_ok == 0:
+            print(f"  FAIL: UpdateMesh ok=0/{n_up}")
+            ok = False
+        else:
+            print(f"  FAIL: PBD_GRPC unhealthy (status={pg!r})")
+            ok = False
+
     if ok and mf_cov >= target_mf * 0.9:
         print(f"\nPASS: >=90% of {target_mf} macro frames with CSV data")
     print("=" * 72)
@@ -437,14 +470,14 @@ def main() -> int:
 
     debug_dir = args.debug_dir
     if args.watch_latest or debug_dir is None:
-        debug_dir = _find_latest_debug_dir()
+        debug_dir = find_latest_debug_dir()
     if debug_dir is None or not debug_dir.is_dir():
         print("No debug dir found.", file=sys.stderr)
         return 1
 
     xpbd_log = args.xpbd_log
-    if xpbd_log is None and _LOGS.is_dir():
-        cands = sorted(_LOGS.glob("xpbd_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if xpbd_log is None and LOGS_DIR.is_dir():
+        cands = sorted(LOGS_DIR.glob("xpbd_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
         xpbd_log = cands[0] if cands else None
 
     return print_report(debug_dir, xpbd_log, target_mf=args.target_macro_frames)

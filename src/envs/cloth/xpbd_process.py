@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -17,6 +16,7 @@ from .debug_session import (
     apply_xpbd_debug_environment,
     is_cloth_debug_enabled,
     is_cloth_init_compare_enabled,
+    is_pbd_grpc_self_check_enabled,
     resolve_session_debug_dir,
 )
 from .paths import CLOTH_3D_DIR, ORCA_REPO_ROOT, XPBD_BUILD_DIR, XPBD_ROOT
@@ -109,14 +109,17 @@ def start_xpbd_if_configured(
     mjc_pbd_config = _resolve_mjc_pbd_config(config, config_path)
 
     env = os.environ.copy()
+    # 全链联调须 JoinSession；勿继承 shell 冒烟遗留的 MJC_PBD_NO_ORCALINK=1
+    env.pop("MJC_PBD_NO_ORCALINK", None)
+    env.pop("MJC_PBD_LOCAL_PHYS_SMOKE", None)
     env["MJC_PBD_CONFIG"] = str(mjc_pbd_config)
+    env["MJC_PBD_TRY_CONNECT_SEC"] = str(xpbd_cfg.get("try_connect_sec", 3))
     sim_cfg = config.get("simulation", {})
     max_sim = float(sim_cfg.get("max_sim_time", 0) or 0)
     discover_only = bool(xpbd_cfg.get("cloth_discover_only", True))
-    # 全链联调须 JoinSession；勿继承 shell 冒烟遗留的 MJC_PBD_NO_ORCALINK=1
     if not discover_only:
-        env.pop("MJC_PBD_NO_ORCALINK", None)
-        env.pop("MJC_PBD_LOCAL_PHYS_SMOKE", None)
+        # 全链路：由 cloth_mujoco 宏步驱动 sync；body_track 在 C 端 unpause poll
+        env["MJC_PBD_UI_SIM"] = "0"
     disable_base_phys = bool(xpbd_cfg.get("disable_base_phys", False)) or not discover_only
     if disable_base_phys:
         env["MJC_PBD_DISABLE_BASE_PHYS"] = "1"
@@ -189,8 +192,8 @@ def start_xpbd_if_configured(
     if pbd_grpc_env in ("0", "false", "no"):
         env["PBD_GRPC"] = "0"
         logger.info("XPBD PBD_GRPC=0（跳过 Studio 布料 gRPC UpdateMesh）")
-    elif pr.get("enabled", False):
-        env["PBD_GRPC"] = "1"
+    elif pr.get("enabled", False) or is_pbd_grpc_self_check_enabled(config) or is_cloth_debug_enabled(config):
+        env.setdefault("PBD_GRPC", "1")
         # 环境变量优先（test20260508 PBDRender 常为 :50261；JSON 基配置可能仍为 50251）
         grpc_addr = os.environ.get("PBD_GRPC_ADDRESS", "").strip()
         if not grpc_addr:
@@ -202,6 +205,12 @@ def start_xpbd_if_configured(
         if mesh_id is not None and str(mesh_id).strip() != "":
             env["PBD_GRPC_MESH_ID"] = str(int(mesh_id))
             logger.info("XPBD PBD_GRPC_MESH_ID=%s", env["PBD_GRPC_MESH_ID"])
+        sbt_rot = os.environ.get("PBD_GRPC_SBT_ROTATION", "").strip()
+        if not sbt_rot:
+            sbt_rot = str(pr.get("sbt_rotation", "from_quat")).strip()
+        if sbt_rot:
+            env["PBD_GRPC_SBT_ROTATION"] = sbt_rot
+            logger.info("XPBD PBD_GRPC_SBT_ROTATION=%s", sbt_rot)
         logger.info("XPBD PBD_GRPC=1 -> Studio PBDRender %s", grpc_addr)
 
     if is_cloth_debug_enabled(config):
@@ -220,37 +229,45 @@ def start_xpbd_if_configured(
             )
         apply_cloth_init_compare_environment(config, env, cmp_dir)
 
-    cloth_root = str(CLOTH_3D_DIR)
-    if cloth_root not in sys.path:
-        sys.path.insert(0, cloth_root)
-    from modules.cloth_phy_para import apply_phy_world_particle_env  # noqa: WPS433
+    cloth_cfg = config.get("cloth", {})
+    finger_close_ratio = cloth_cfg.get("finger_close_ratio")
+    if finger_close_ratio is not None:
+        env["DG_FINGER_CLOSE_RATIO"] = str(finger_close_ratio)
+        logger.info("XPBD DG_FINGER_CLOSE_RATIO=%s", env["DG_FINGER_CLOSE_RATIO"])
+    trigger_close_thresh = cloth_cfg.get("trigger_close_thresh")
+    if trigger_close_thresh is not None:
+        env["DG_TRIGGER_CLOSE_THRESH"] = str(trigger_close_thresh)
+        logger.info("XPBD DG_TRIGGER_CLOSE_THRESH=%s", env["DG_TRIGGER_CLOSE_THRESH"])
 
-    apply_phy_world_particle_env(config, env)
-    if env.get("PARTICLE_FRICTION"):
-        logger.info(
-            "XPBD PARTICLE_FRICTION=%s PARTICLE_RESTITUTION=%s（来自 cloth.phy_world）",
-            env.get("PARTICLE_FRICTION"),
-            env.get("PARTICLE_RESTITUTION", "(default)"),
-        )
+    particle_friction = os.environ.get("PARTICLE_FRICTION", "").strip()
+    if not particle_friction:
+        pf_cfg = cloth_cfg.get("particle_friction")
+        if pf_cfg is not None:
+            env["PARTICLE_FRICTION"] = str(pf_cfg)
+            logger.info("XPBD PARTICLE_FRICTION=%s", env["PARTICLE_FRICTION"])
 
     args: list[str] = []
     for arg in xpbd_cfg.get("args", []):
         args.append(str(arg).replace("{config_path}", str(mjc_pbd_config)))
 
-    cmd = wrap_cmd_with_taskset([str(exe)] + args, cpu_affinity)
+    # C 端 stdout 重定向到文件时为全缓冲；stdbuf 保证联调日志实时可见。
+    cmd = wrap_cmd_with_taskset(["stdbuf", "-oL", "-eL", str(exe)] + args, cpu_affinity)
     if cpu_affinity:
         logger.info("📌 XPBD CPU 亲和性: 核心 %s", cpu_affinity)
     logger.info("启动 XPBD: %s", " ".join(cmd))
     logger.info("MJC_PBD_CONFIG=%s", mjc_pbd_config)
+    cloth_blk = config.get("cloth") or {}
+    if cloth_blk.get("asset_dir"):
+        logger.info("cloth.asset_dir=%s level=%s", cloth_blk.get("asset_dir"), cloth_blk.get("level"))
 
     log_file = None
     if log_dir is not None:
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / f"xpbd_{session_timestamp}.log"
 
-    # dual_gripper_cross_mjc 从 session cloth.mesh 加载布；须在 XPBD 根目录运行（见 README_dual_gripper_cross_v4.md）
+    # dual_gripper_cross_mjc 从 session cloth.asset_dir 加载掩码布；须在 XPBD 根目录运行
     xpbd_cwd = XPBD_ROOT if XPBD_ROOT.is_dir() else exe.parent.parent
-    logger.info("XPBD cwd=%s (cloth.mesh from MJC_PBD_CONFIG session)", xpbd_cwd)
+    logger.info("XPBD cwd=%s", xpbd_cwd)
 
     if log_file:
         log_handle = open(log_file, "w", buffering=1)

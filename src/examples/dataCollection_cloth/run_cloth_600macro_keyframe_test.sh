@@ -58,7 +58,7 @@ wait_pbd_meshes() {
   return 1
 }
 
-CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.dual_gripper_cross_shortchain.debug.json"
+CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.debug.json"
 LOG_TAG="keyframe_macro${MAX_MACRO_FRAMES}_$(date +%Y%m%d_%H%M%S)"
 mkdir -p logs
 
@@ -77,7 +77,7 @@ $PYTHON run_cloth_keyframe_shortchain.py \
 
 echo ""
 echo "[KF600] 分析最新 cloth_debug_* CSV..."
-$PYTHON analyze_cloth_debug_session.py --watch-latest --target-macro-frames "$MAX_MACRO_FRAMES" \
+$PYTHON analyze/analyze_cloth_debug_session.py --watch-latest --target-macro-frames "$MAX_MACRO_FRAMES" \
   | tee "logs/${LOG_TAG}_analysis.txt"
 
 echo "[KF600] 完成。见 logs/${LOG_TAG}_* 与 logs/cloth_debug_*/"

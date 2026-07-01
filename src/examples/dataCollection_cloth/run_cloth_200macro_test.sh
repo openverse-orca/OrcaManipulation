@@ -52,9 +52,9 @@ if [[ ! -f "./dual_gripper_cross_v4_replay.json" ]]; then
   $PYTHON generate_pico_replay_data.py
 fi
 
-CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.test20260508_openloong.debug.json"
+CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.debug.json"
 if [[ ! -f "$CFG" ]]; then
-  CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.test20260508_openloong.json"
+  CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.json"
 fi
 
 LOG_TAG="macro${MAX_MACRO_FRAMES}_$(date +%Y%m%d_%H%M%S)"
@@ -84,7 +84,7 @@ $PYTHON data_collection_cloth_tele.py \
 
 echo ""
 echo "[200MF] 分析最新 cloth_debug_* CSV..."
-$PYTHON analyze_cloth_debug_session.py --watch-latest --target-macro-frames "$MAX_MACRO_FRAMES" \
+$PYTHON analyze/analyze_cloth_debug_session.py --watch-latest --target-macro-frames "$MAX_MACRO_FRAMES" \
   | tee "logs/${LOG_TAG}_analysis.txt"
 
 echo "[200MF] 完成。见 logs/${LOG_TAG}_* 与 logs/cloth_debug_*/analysis_rigid_cloth.png"

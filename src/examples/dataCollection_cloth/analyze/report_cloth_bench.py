@@ -7,6 +7,10 @@ import json
 import os
 import sys
 from pathlib import Path
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+from paths import CLOTH_3D_DIR, LOGS_DIR, MANIP_SRC_DIR, TELE_DIR, find_latest_debug_dir, find_latest_xpbd_log
 from typing import Any
 
 
@@ -155,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
 
     path = args.bench_json
     if args.watch_latest or path is None:
-        log_dir = Path(__file__).resolve().parent / "logs"
+        log_dir = LOGS_DIR
         candidates = sorted(log_dir.glob("cloth_bench_*.json"), key=lambda p: p.stat().st_mtime)
         if not candidates:
             print(f"ERROR: no cloth_bench_*.json under {log_dir}", file=sys.stderr)

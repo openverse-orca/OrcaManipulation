@@ -13,9 +13,11 @@ import re
 import sys
 import time
 from pathlib import Path
-
 _SCRIPT_DIR = Path(__file__).resolve().parent
-_LOGS = _SCRIPT_DIR / "logs"
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+from paths import CLOTH_3D_DIR, LOGS_DIR, MANIP_SRC_DIR, TELE_DIR, find_latest_debug_dir, find_latest_xpbd_log
+
 
 _RE_RECV = re.compile(r"RECV macro_frame=(\d+)")
 _RE_FORCE = re.compile(r"PUBLISH FORCE macro_frame=(\d+)")
@@ -76,18 +78,6 @@ def _tail_xpbd_stats(xpbd_log: Path) -> dict[str, str]:
     return out
 
 
-def _find_latest_debug_dir() -> Path | None:
-    if not _LOGS.is_dir():
-        return None
-    cands = sorted(_LOGS.glob("cloth_debug_*"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return cands[0] if cands else None
-
-
-def _find_latest_xpbd_log() -> Path | None:
-    if not _LOGS.is_dir():
-        return None
-    cands = sorted(_LOGS.glob("xpbd_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return cands[0] if cands else None
 
 
 def _collect_snapshot(debug_dir: Path, xpbd_log: Path | None) -> dict[str, str]:
@@ -164,12 +154,12 @@ def main() -> int:
 
     debug_dir = args.debug_dir
     if args.watch_latest or debug_dir is None:
-        debug_dir = _find_latest_debug_dir()
+        debug_dir = find_latest_debug_dir()
     if debug_dir is None or not debug_dir.is_dir():
         print("No debug dir. Start tele with --cloth-debug first.", file=sys.stderr)
         return 1
 
-    xpbd_log = args.xpbd_log or _find_latest_xpbd_log()
+    xpbd_log = args.xpbd_log or find_latest_xpbd_log()
     print(f"Monitoring debug_dir={debug_dir}")
     if xpbd_log:
         print(f"XPBD log={xpbd_log}")
