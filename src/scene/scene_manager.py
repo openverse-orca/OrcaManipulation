@@ -496,7 +496,10 @@ class SceneManager:
                                     ''')
                     raise ValueError("light.random.color is invalid, must be [[r_min, r_max], [g_min, g_max], [b_min, b_max]]")
 
-        else:
+        elif light_config:
+            # 仅在提供了 light 配置但缺少 random 时报错；
+            # 配置为空（如未传 --task_config 的纯遥操采集）不强制要求 light.random。
+        # else:
             orca_log.error("light.random is not set")
             orca_log.error('''example:
                             light:
