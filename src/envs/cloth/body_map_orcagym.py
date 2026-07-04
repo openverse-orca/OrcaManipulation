@@ -151,12 +151,17 @@ def adapt_config_for_orcagym(
         rows_in = []
         for row in scanned_rows:
             mjc = str(row["mjc_body_name"])
+            merged = None
             if mjc in overrides_by_mjc:
                 merged = dict(row)
                 merged.update(overrides_by_mjc[mjc])
-                rows_in.append(merged)
             else:
-                rows_in.append(row)
+                for key, ov in overrides_by_mjc.items():
+                    if mjc == key or mjc.endswith(f"_{key}"):
+                        merged = dict(row)
+                        merged.update(ov)
+                        break
+            rows_in.append(merged if merged is not None else row)
         scanned_set = {str(r["mjc_body_name"]) for r in rows_in}
         for row in cfg.get(map_key) or []:
             mjc = str(row.get("mjc_body_name", ""))
@@ -187,11 +192,20 @@ def adapt_config_for_orcagym(
         name = str(row.get("mjc_body_name", ""))
         if not name:
             continue
-        bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
+        try:
+            from modules.mjcf_body_resolve import resolve_mjcf_body_name  # noqa: WPS433
+        except ImportError:
+            resolve_mjcf_body_name = None  # type: ignore[assignment,misc]
+        resolved = resolve_mjcf_body_name(model, name) if resolve_mjcf_body_name else name
+        if resolved is None:
+            logger.warning("Studio MJCF 无 body %s，跳过 OrcaLink 发布", name)
+            continue
+        bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, resolved)
         if bid < 0:
             logger.warning("Studio MJCF 无 body %s，跳过 OrcaLink 发布", name)
             continue
         row_copy = dict(row)
+        row_copy["mjc_body_name"] = resolved
         row_copy.pop("anchor_sites", None)
         if row_copy.get("box_half_extents") is None and pce_fn is not None:
             half = pce_fn(model, bid, pce_data)

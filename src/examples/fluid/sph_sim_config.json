@@ -1,5 +1,5 @@
 {
-  "description": "SPlisHSPlasH 配置模板：force_position 耦合（position_follow + external 刚体动力学）。全链路由 fluid_sim_config_auto_force_position.json + generate_orcasph_config 选用；短链仍可用固定 orcasph_config.json。",
+  "description": "SPlisHSPlasH 全链路 SPH 模板（force_position + external 刚体动力学）。由 OrcaPlayground fluid_sim_config_studio*.json 或本仓 fluid_sim_config.json 引用。",
 
   "orcalink_client": {
     "enabled": true,
