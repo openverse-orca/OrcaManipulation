@@ -44,6 +44,47 @@ def _resolve_xpbd_executable(xpbd_cfg: Dict[str, Any]) -> Path:
     )
 
 
+def _resolve_xpbd_executable_from_pip(target: str) -> Optional[Path]:
+    """借鉴 orcaxpbd run CLI 的思想：用 orcaxpbd_client.binary_runner.get_binary_path()
+    从 pip 包定位二进制路径，但保留联调原有的 Popen 启动方式（cwd=XPBD_ROOT、
+    30+ 环境变量、stdout 重定向到 log_file、ProcessManager 进程管理）。
+
+    不直接用 `orcaxpbd run` CLI 是因为：
+    1. CLI 用 subprocess.run 阻塞，联调需 Popen 异步
+    2. CLI 的 cwd=PACKAGE_DIR 会破坏相对路径资源加载
+    3. CLI 不传 30+ 个 MJC_PBD_* / PBD_* / PBDX_* 环境变量
+    4. CLI 不支持 stdout 重定向到 log_file
+    5. CLI 不支持 ProcessManager 注册
+
+    默认启用 pip 包二进制（无需环境变量）。
+    通过 ORCAXPBD_USE_PIP_PACKAGE=0 显式禁用，回退源码编译模式。
+    pip 包未安装或目标不存在时自动回退源码编译模式。
+    """
+    env_val = os.environ.get("ORCAXPBD_USE_PIP_PACKAGE", "1").strip().lower()
+    logger.info("[pip_diag] _resolve_xpbd_executable_from_pip called: target=%r, ORCAXPBD_USE_PIP_PACKAGE=%r", target, env_val)
+    if env_val in ("0", "false", "no", "off"):
+        logger.info("[pip_diag] ORCAXPBD_USE_PIP_PACKAGE=%r 显式禁用，回退源码编译模式", env_val)
+        return None
+    logger.info("[pip_diag] pip 包模式启用，尝试从 orcaxpbd_client 解析二进制路径")
+    try:
+        from orcaxpbd_client.binary_runner import get_binary_path
+        logger.info("[pip_diag] orcaxpbd_client.binary_runner 导入成功")
+    except ImportError as exc:
+        logger.info("[pip_diag] orcaxpbd_client 未安装（import 失败: %s），回退源码编译模式", exc)
+        return None
+    name = Path(target).name
+    logger.info("[pip_diag] 查询 pip 包内二进制: name=%r", name)
+    try:
+        path = get_binary_path(name)
+        logger.info("[pip_diag] get_binary_path 返回: %s (exists=%s, exec=%s)",
+                    path, path.is_file(), os.access(path, os.X_OK) if path.is_file() else False)
+    except (FileNotFoundError, ValueError) as exc:
+        logger.info("[pip_diag] pip 包内未找到目标 %s: %s，回退源码编译模式", name, exc)
+        return None
+    logger.info("XPBD 使用 pip 包二进制: %s", path)
+    return path
+
+
 def _resolve_mjc_pbd_config(config: Dict[str, Any], config_path: Path) -> Path:
     """
     MJC_PBD_CONFIG 路径。
@@ -98,14 +139,15 @@ def start_xpbd_if_configured(
         return False
 
     target = str(xpbd_cfg.get("executable", "dual_gripper_cross_mjc"))
+    pip_exe = _resolve_xpbd_executable_from_pip(target)
     auto_build = xpbd_cfg.get("auto_build")
     if auto_build is None:
         auto_build = True
-    if auto_build:
+    if auto_build and pip_exe is None:
         force_build = bool(xpbd_cfg.get("force_rebuild", False))
         ensure_xpbd_executable_built(Path(target).name, force=force_build or None)
 
-    exe = _resolve_xpbd_executable(xpbd_cfg)
+    exe = pip_exe if pip_exe is not None else _resolve_xpbd_executable(xpbd_cfg)
     mjc_pbd_config = _resolve_mjc_pbd_config(config, config_path)
 
     env = os.environ.copy()
