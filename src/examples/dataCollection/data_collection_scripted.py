@@ -629,3 +629,9 @@ if __name__ == "__main__":
     finally:
         orca_logger.info("Exiting program")
         os._exit(0)
+
+
+# 公共包装，供 data_collection_scripted_lerobot.py 调用（避免 SLF001 访问 _resolve_trajectory_args）
+def resolve_trajectory_args(args, spec: dict):
+    """合并命令行与 pose 文件，返回轨迹参数（公共入口，委托给内部实现）。"""
+    return _resolve_trajectory_args(args, spec)

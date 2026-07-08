@@ -51,26 +51,15 @@ actor:
     #   bound: [-1, 1]
 
 
-# light是场景中的灯光
-# 参数和actor含义类似
-light:
-  names: ["spotlight1", "spotlight2", "spotlight3", "spotlight4", "spotlight5", "spotlight6"]
-  spawnable: ["assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
-              "assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
-              "assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
-              "assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
-              "assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
-              "assets/e071469a36d3c8aa/default_project/prefabs/spotlight"]
-  random:
-    position: true
-    rotation: true
-    center: [-6.35, 2.56, 2.32]
-    bound_position: [[-0.1, 0.5], [-0.5, 0.5], [0, 0.5]]
-    bound_rotation: [[2.8, 3.5], [-0.3, 0.3], [2.8, 3.5]]
-    intensity: [50, 100]
-    color: [[0.5, 1.0], [0.5, 1.0], [0.5, 1.0]]
-    nums: [4, 6]
-    cycle: 1
+# light 配置已移除：当前 OrcaStudio 工程（shop 场景）不含 spotlight prefab，
+# 保留该配置会导致 spawn_lights() 报 "Spawnable name not found" 崩溃。
+# 若后续工程中补充了 spotlight prefab，可按如下格式重新启用：
+# light:
+#   names: ["spotlight1", ...]
+#   spawnable: ["assets/<project_id>/<path>/spotlight", ...]
+#   random:
+#     position: true
+#     ...
 
 # task是任务的配置，参数根据任务类型不同而不同
 task:

@@ -207,3 +207,12 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# 采集数据目录（体积大，不入库）
+lerobot_data/
+src/examples/dataCollection/dataset/
+src/examples/dataCollection/_lerobot_scratch/
+
+# 临时调试文件
+_probe4.txt
+src/examples/dataCollection/_sync_probe.py

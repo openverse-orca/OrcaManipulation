@@ -1,0 +1,49 @@
+# LeRobot 数采 / 回放 / 评估依赖
+# 版本对齐本机 orcalab_lerobot 环境（Python 3.12.13，2026-03 实测）
+#
+# 安装顺序（在 OrcaManipulation 仓库根目录）：
+#   conda activate orcalab_lerobot
+#   pip install -r requirements.txt
+#   pip install -e <你的 OrcaGym 仓库>/lerobot    # 本机：/home/dht/OrcaGym/lerobot → 0.3.4
+#                                                 # 同时安装 torch/datasets/huggingface-hub 等传递依赖
+#   pip install -r src/examples/dataCollection/requirements-lerobot.txt
+#
+# 或一键创建环境：
+#   conda env create -f src/examples/dataCollection/environment.yml
+#   conda activate orcalab_lerobot
+#   pip install -e <你的 OrcaGym 仓库>/lerobot
+
+# ── OrcaGym（覆盖根目录 requirements.txt 中的宽松版本）──
+orca-gym==26.6.3
+
+# ── LeRobot 数采链路直接用到（lerobot 本体不声明或未锁定版本）──
+pyarrow==24.0.0
+websockets==16.0
+
+# ── 图像 / 视频处理（与 orcalab_lerobot 实测一致）──
+# 注：环境中安装的是 headless 版（lerobot 依赖要求），与 opencv-python 二选一安装。
+av==17.0.1
+opencv-python-headless==4.13.0.92
+
+# ── OrcaGym / 仿真通信（与 orcalab_lerobot 实测一致）──
+grpcio==1.66.1
+grpcio-tools==1.66.1
+gymnasium==1.2.1
+numpy==2.2.6
+h5py==3.16.0
+PyYAML==6.0.3
+termcolor==3.3.0
+numba==0.65.1
+pillow==12.0.0
+pandas==3.0.3
+
+# ── orcalab_lerobot 实测关键版本（供核对，主要由 lerobot editable 带入）──
+# lerobot==0.3.4          → pip install -e <OrcaGym>/lerobot
+# torch==2.7.1+cpu        → 随 lerobot 安装（CPU 版，勿单独 pin）
+# datasets==3.6.0         → 随 lerobot 安装
+# huggingface-hub==0.34.4 → 随 lerobot 安装
+# opencv-python-headless==4.13.0.92 → 随 lerobot 安装（与上方 headless 版一致）
+
+# ── eval_lerobot.py 可选（本机 orcalab_lerobot 未预装）──
+# openpi-client 来自仓库 third_party，需单独安装：
+#   pip install -e third_party/openpi/packages/openpi-client

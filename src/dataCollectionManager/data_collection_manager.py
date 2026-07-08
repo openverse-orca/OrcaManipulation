@@ -233,7 +233,12 @@ class DataCollectionManager:
         avg_total = sum(s["total_ms"] for s in steps) / n
         avg_sleep = sum(s["sleep_ms"] for s in steps) / n
         total_phy = steps[-1].get("phy_time", 0) - steps[0].get("phy_time", 0)
-        total_sim = steps[-1].get("sim_time", 0) - steps[0].get("sim_time", 0)
+        # env.data.time 在每次 reset 时归零；用逐差求和、跳过负跳变（reset 处）
+        # 避免 total_sim 只反映最后一集的仿真时钟而严重低估真实比值
+        total_sim = sum(
+            max(0.0, b.get("sim_time", 0) - a.get("sim_time", 0))
+            for a, b in zip(steps[:-1], steps[1:])
+        )
         has_fluid = any(s["fluid_ms"] > 0.01 for s in steps)
         fluid_steps = [s for s in steps if s["fluid_ms"] > 0.01]
         avg_fluid_active = sum(s["fluid_ms"] for s in fluid_steps) / len(fluid_steps) if fluid_steps else 0

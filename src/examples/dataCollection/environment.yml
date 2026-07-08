@@ -1,0 +1,15 @@
+# orcalab_lerobot — LeRobot 数采专用 conda 环境
+# 创建：conda env create -f src/examples/dataCollection/environment.yml
+# 激活：conda activate orcalab_lerobot
+# 完成后还需 editable 安装 lerobot：
+#   pip install -e <你的 OrcaGym 仓库>/lerobot
+
+name: orcalab_lerobot
+channels:
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - -r ../../../requirements.txt
+      - -r requirements-lerobot.txt
