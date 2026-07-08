@@ -22,8 +22,16 @@ def _find_orcalink_binary() -> Path:
         candidate = (ORCA_REPO_ROOT / rel).resolve()
         if candidate.is_file():
             return candidate
+    try:
+        import orcalink_client
+        candidate = (Path(orcalink_client.__file__).parent / "bin" / "orcalink").resolve()
+        if candidate.is_file():
+            return candidate
+    except ImportError:
+        pass
     raise FileNotFoundError(
-        f"OrcaLink server binary not found under {ORCA_REPO_ROOT / 'OrcaLink'}"
+        f"OrcaLink server binary not found under {ORCA_REPO_ROOT / 'OrcaLink'} "
+        f"or in installed orcalink_client package"
     )
 
 
