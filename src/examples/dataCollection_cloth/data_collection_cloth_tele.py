@@ -300,7 +300,7 @@ def main():
     orca_logger.info("Creating data collection manager")
     mjc_prefix = (args.mjc_agent_prefix or "").strip() or None
     if mjc_prefix is None and agent_name == "g1_omnipicker":
-        mjc_prefix = "g1_omnipicker_usda"
+        mjc_prefix = "g1_omnipicker"
         orca_logger.info(f"Auto mjc-agent-prefix for g1_omnipicker: {mjc_prefix}")
     elif mjc_prefix is None and level == "test20260508" and agent_name == "openloong":
         mjc_prefix = "openloong_gripper_2f85_fix_base_usda"
@@ -428,22 +428,24 @@ def main():
         )
 
     if agent_name == "g1_omnipicker":
-        from envs.cloth.g1_omnipicker_gripper_actuators import setup_g1_dual_gripper_actuators
-
-        def _bind_g1_gripper_actuators() -> None:
-            setup_g1_dual_gripper_actuators(env, agent_conf.gripper_l, agent_conf.gripper_r)
-
-        _bind_g1_gripper_actuators()
-        data_collection_manager.add_physics_reinit_callback(_bind_g1_gripper_actuators)
-        orca_logger.info("Creating left Omnipicker gripper controller")
-        controllers.add_gripper_omnipicker_pico_controller(
-            data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body,
-            pico_joystick_device, [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
+        # 使用 dev_g1 的 reverse + joint2；不再做 joint1 从动断开
+        orca_logger.info("Creating left G1 reverse gripper controller")
+        controllers.add_gripper_2f85_reverse_pico_controller(
+            data_collection_manager,
+            env,
+            agent_conf.gripper_l,
+            agent_conf.base_body,
+            pico_joystick_device,
+            [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
         )
-        orca_logger.info("Creating right Omnipicker gripper controller")
-        controllers.add_gripper_omnipicker_pico_controller(
-            data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body,
-            pico_joystick_device, [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
+        orca_logger.info("Creating right G1 reverse gripper controller")
+        controllers.add_gripper_2f85_reverse_pico_controller(
+            data_collection_manager,
+            env,
+            agent_conf.gripper_r,
+            agent_conf.base_body,
+            pico_joystick_device,
+            [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
         )
     else:
         orca_logger.info("Creating left gripper controller")
@@ -539,21 +541,8 @@ def main():
         "yes",
     )
     if gripper_trace and agent_name == "g1_omnipicker" and not args.replay:
-        from envs.cloth.gripper_closure_trace import attach_gripper_closure_tracer
-
-        trace_csv = Path(log_dir) / "gripper_closure_trace.csv"
-        attach_gripper_closure_tracer(
-            data_collection_manager,
-            env,
-            agent_conf.gripper_l,
-            agent_conf.gripper_r,
-            pico_joystick,
-            trace_csv,
-            gripper_controllers=data_collection_manager.controllers,
-        )
-        orca_logger.info(
-            f"Gripper trace ON → {trace_csv} | "
-            f"plot: python analyze/plot_gripper_closure_trace.py --csv {trace_csv}"
+        orca_logger.warning(
+            "G1 已改用 Controller2F85Reverse，gripper-trace 仍依赖 ControllerOmnipicker，本轮跳过"
         )
 
     pico_delta_trace = args.pico_delta_trace or os.environ.get(

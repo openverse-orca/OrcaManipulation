@@ -10,7 +10,7 @@ l_arm = {
         "idx26_arm_l_joint6",
         "idx27_arm_l_joint7",
     ],
-    "neutral_joint_values": [0.0, 0.0, 0.0, -0.87, 0.0, 0.0, 0.0],
+    "neutral_joint_values": [-1.42, 0.88, 1.54, -1.48, 0, 0, 0],
     "motors_names": [
         "idx21_arm_l_joint1_mctrl",
         "idx22_arm_l_joint2_mctrl",
@@ -43,7 +43,7 @@ r_arm = {
         "idx66_arm_r_joint6",
         "idx67_arm_r_joint7",
     ],
-    "neutral_joint_values": [0.0, 0.0, 0.0, 0.87, 0.0, 0.0, 0.0],
+    "neutral_joint_values": [1.42, -0.88, -1.54, 1.48, 0, 0, 0],
     "motors_names": [
         "idx61_arm_r_joint1_mctrl",
         "idx62_arm_r_joint2_mctrl",
@@ -68,58 +68,27 @@ r_arm = {
 
 # 仅 joint1 主驱动；张开取 ctrl 上界，闭合取下界（MuJoCo 隔离仿真标定）
 gripper_l = {
-    "joint_names": [
-        "idx31_gripper_l_inner_joint1",
-        "idx41_gripper_l_outer_joint1",
-    ],
+    "joint_names": ["idx31_gripper_l_inner_joint1", 
+                    "idx41_gripper_l_outer_joint1"],
     "actuator_names": [
-        "idx31_gripper_l_inner_joint1_pctrl",
-        "idx41_gripper_l_outer_joint1_pctrl",
-    ],
-    "follower_actuator_names": [
-        "idx32_gripper_l_inner_joint3_pctrl",
-        "idx33_gripper_l_inner_joint4_pctrl",
         "idx39_gripper_l_inner_joint2_pctrl",
-        "idx42_gripper_l_outer_joint3_pctrl",
-        "idx43_gripper_l_outer_joint4_pctrl",
         "idx49_gripper_l_outer_joint2_pctrl",
     ],
-    "actuator_ranges": [
-        (-0.785398, 0.7),
-        (-0.7, 0.785398),
-    ],
-    "open_ctrl": [0.7, 0.785398],
-    "close_ctrl": [-0.785398, -0.7],
-    "init_ctrl": [0.7, 0.785398],
+    "actuator_ranges": [(-1.0, 2), (-1.0, 2)],
+    "init_ctrl": [0, 0],
 }
 
 gripper_r = {
-    "joint_names": [
-        "idx71_gripper_r_inner_joint1",
-        "idx81_gripper_r_outer_joint1",
-    ],
+    "joint_names": ["idx71_gripper_r_inner_joint1", "idx81_gripper_r_outer_joint1"],
     "actuator_names": [
-        "idx71_gripper_r_inner_joint1_pctrl",
-        "idx81_gripper_r_outer_joint1_pctrl",
-    ],
-    "follower_actuator_names": [
-        "idx72_gripper_r_inner_joint3_pctrl",
-        "idx73_gripper_r_inner_joint4_pctrl",
         "idx79_gripper_r_inner_joint2_pctrl",
-        "idx82_gripper_r_outer_joint3_pctrl",
-        "idx83_gripper_r_outer_joint4_pctrl",
         "idx89_gripper_r_outer_joint2_pctrl",
     ],
-    "actuator_ranges": [
-        (-0.785398, 0.7),
-        (-0.7, 0.785398),
-    ],
-    "open_ctrl": [0.7, 0.785398],
-    "close_ctrl": [-0.785398, -0.7],
-    "init_ctrl": [0.7, 0.785398],
+    "actuator_ranges": [(-1.0, 2), (-1.0, 2)],
+    "init_ctrl": [0, 0],
 }
 
 motors_group = 0
 positions_group = 2
 
-base_body = "robot_holder1"
+base_body = "body_link1"
