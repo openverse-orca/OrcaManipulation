@@ -74,14 +74,14 @@ export OPENPI_CLIENT_SRC=~/openpi/packages/openpi-client/src
 
 ### 1. 加载场景
 
-1. 启动 OrcaLab 6.3，打开 OrcaStudio。
+1. 启动 OrcaLab 6.3。
 2. 加载 `src/examples/dataCollection/g1_button.json`。
 3. 确认 G1 OmniPicker 和带四色按钮的电柜均已正确加载。
 4. 确认场景名称与 `example.yaml` 中的 `level_name: "example"` 一致。
 
 ### 2. 手动配置三路相机
 
-打开场景布局后，必须在 OrcaStudio 中重新配置相机。三路相机的配置如下：
+打开场景布局后，必须在 OrcaLab 中重新配置相机。三路相机的配置如下：
 
 | 相机 | 代码中的相机名称 | Color Port |
 |------|------------------|------------|
@@ -98,13 +98,13 @@ export OPENPI_CLIENT_SRC=~/openpi/packages/openpi-client/src
 
 > [!CAUTION]
 > - 必须先修改完三路相机的全部配置，最后再勾选 **Recording**。
-> - 勾选 **Recording** 后不要再取消勾选，取消时容易导致 OrcaStudio 崩溃。
+> - 勾选 **Recording** 后不要再取消勾选，取消时容易导致 OrcaLab 崩溃。
 > - 相机配置完成后，**不要保存到场景布局 `.json` 文件中**。
 > - 每次重新打开布局文件，都需要再次手动配置 UseNvEnc、Color Camera、Color Port 和 Recording。
 
 ### 3. 启动仿真
 
-完成相机配置后，点击 OrcaStudio 的运行按钮启动仿真，并等待 OrcaGym gRPC 服务就绪。默认地址为：
+完成相机配置后，点击 OrcaLab 的运行按钮启动仿真，并等待 OrcaGym gRPC 服务就绪。默认地址为：
 
 ```text
 localhost:50051
@@ -143,7 +143,7 @@ python g1_omnipicker_collection_tele_lerobot.py \
 - 在已有数据集后继续采集时增加 `--resume`。
 - 默认采集头部、左腕和右腕三路相机；可用 `--cameras head,wrist_l,wrist_r` 调整。
 
-也可以使用 OrcaStudio 服务端 MP4 模式：
+也可以使用 OrcaLab 服务端 MP4 模式：
 
 ```bash
 python g1_omnipicker_collection_tele_lerobot.py \
@@ -296,7 +296,7 @@ python g1_omnipicker_replay_lerobot.py \
 | 文件 | 说明 |
 |------|------|
 | `example.yaml` | 采集、回放和推理共用的任务配置，`level_name: "example"` |
-| `g1_button.json` | OrcaStudio 场景布局，包含已标定的 G1 底盘位姿 |
+| `g1_button.json` | OrcaLab 场景布局，包含已标定的 G1 底盘位姿 |
 | `g1_electric.json` | 电柜场景布局，备用 |
 | `pose_g1_button_candidates.yaml` | 四色按钮候选接触位姿，脚本化采集使用 |
 | `pose_g1_button_targets.yaml` | 四色按钮聚合目标位姿，参考使用 |
@@ -347,7 +347,7 @@ norm = (motor_val + 1) / 3
 ## 启动前检查
 
 - OrcaLab 版本为 6.3，OrcaGym Python 包与其版本匹配。
-- `example.yaml` 中的 `level_name` 与 OrcaStudio 当前场景名称一致。
+- `example.yaml` 中的 `level_name` 与 OrcaLab 当前场景名称一致。
 - OrcaGym gRPC 服务已在 `localhost:50051` 启动。
 - 三路相机已按 7070、7080、7090 配置，且端口未被其他程序占用。
 - UseNvEnc、Color Camera 和 Recording 已按要求启用。
