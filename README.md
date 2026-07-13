@@ -47,8 +47,6 @@ OrcaManipulation/
 | `g1_omnipicker_collection_scripted_button_lerobot.py` | 四色按钮脚本化自动采集 |
 | `g1_omnipicker_replay_lerobot.py` | LeRobot Parquet 数据集回放 |
 | `eval_g1_omnipicker_lerobot.py` | 连接 OpenPI 策略服务器进行在线推理 |
-| `record_g1_waypoints.py` | 路点录制工具，输出 YAML |
-| `g1_button_highlight.py` | 高亮按钮并打印按钮在 base 坐标系下的位置 |
 | `data_collection_scripted.py` | 脚本轨迹插值工具库 |
 
 ## 环境安装
@@ -123,7 +121,16 @@ cd src/examples/dataCollection
 
 ## 运行方式一：Pico VR 遥操作采集
 
+在运行采集脚本前，新开一个终端，执行以下命令，将主机的 `8001` 端口反向映射到 Pico 设备：
+
 ```bash
+adb reverse tcp:8001 tcp:8001
+```
+
+然后在项目终端中启动遥操作采集：
+
+```bash
+conda activate orca_lerobot
 python g1_omnipicker_collection_tele_lerobot.py \
     --task_config example.yaml \
     --lerobot_out ~/datasets/g1_button_tele \
@@ -135,7 +142,7 @@ python g1_omnipicker_collection_tele_lerobot.py \
 ```
 
 常用操作：
-
+- 同时按下左右摇杆，触发手柄连接
 - 左 Grip 单击：开始当前 episode；再次单击：结束并保存。
 - 右 Grip 单击：放弃当前 episode 并重置。
 - 左右 Grip 同时按下：结束全部采集。
@@ -143,16 +150,15 @@ python g1_omnipicker_collection_tele_lerobot.py \
 - 在已有数据集后继续采集时增加 `--resume`。
 - 默认采集头部、左腕和右腕三路相机；可用 `--cameras head,wrist_l,wrist_r` 调整。
 
-也可以使用 OrcaLab 服务端 MP4 模式：
-
-```bash
-python g1_omnipicker_collection_tele_lerobot.py \
-    --task_config example.yaml \
-    --lerobot_out ~/datasets/g1_button_tele_mp4 \
-    --task "按绿色按钮" \
-    --fps 20 \
-    --camera_source mp4
-```
+操作流程：
+1.终端运行命令g1_omnipicker_collection_tele_lerobot.py 
+2.修改prompt按回车键确认
+3.同时按下左右摇杆连接手柄（可能需要多次尝试直到控制台输出已连接客户端）
+4.按下左grip键开始录制
+5.丢弃数据按右grip
+6.左grip保存当前数据
+7.下一条数据采集签需要执行步骤2
+8.同时按下左右grip结束所有数据录制
 
 ## 运行方式二：脚本化自动采集
 
@@ -168,7 +174,7 @@ python g1_omnipicker_collection_scripted_button_lerobot.py \
 
 说明：
 
-- `--counts` 顺序为红、绿、黄、蓝，例如 `25,25,25,25` 表示每种颜色采集 25 个 episode。
+- `--counts` 顺序为红、绿、黄、蓝，例如 `25,25,25,25` 表示每种颜色采集 25 个 episode。可以在终端重新修改
 - 在交互式终端中，程序启动后会询问各颜色采集数量；非交互环境使用 `--counts`。
 - 默认候选位姿文件为 `pose_g1_button_candidates.yaml`。
 - 可用 `--pose_candidates /path/to/candidates.yaml` 指定其他候选位姿。
@@ -300,7 +306,6 @@ python g1_omnipicker_replay_lerobot.py \
 | `g1_electric.json` | 电柜场景布局，备用 |
 | `pose_g1_button_candidates.yaml` | 四色按钮候选接触位姿，脚本化采集使用 |
 | `pose_g1_button_targets.yaml` | 四色按钮聚合目标位姿，参考使用 |
-| `my_waypoints1.yaml` | 实测路点原始数据 |
 
 ## 数据集格式
 
@@ -355,4 +360,4 @@ norm = (motor_val + 1) / 3
 - 推理时策略服务器已启动，主机、端口和 prompt 配置正确。
 - 输出目录具有写权限和足够磁盘空间。
 
-更详细的 Pico 按键映射、参数解释和路点录制方式见 [`USAGE.md`](USAGE.md)。
+更详细的 Pico 按键映射和参数解释见 [`USAGE.md`](USAGE.md)。
