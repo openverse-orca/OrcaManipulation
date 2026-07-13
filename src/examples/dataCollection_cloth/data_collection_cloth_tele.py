@@ -29,6 +29,15 @@ from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
 from controllers.auto_task_status import AutoStartTaskStatusController
 from envs.cpu_affinity import apply_current_process_cpu_affinity, resolve_cpu_affinity
+from controllers import controllers
+from controllers.g1_arm_pico_remap import (
+    G1_ARM_POSITION_REMAP,
+    G1_L_ARM_POSITION_FLIP,
+    G1_L_ARM_ROTATION_OFFSET,
+    G1_R_ARM_POSITION_FLIP,
+    G1_R_ARM_ROTATION_OFFSET,
+    add_g1_arm_osc_pico_controller,
+)
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
 
@@ -458,16 +467,45 @@ def main():
             data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body,
             pico_joystick_device, [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
         )
-    orca_logger.info("Creating left arm controller")
-    controllers.add_arm_osc_pico_controller(
-        data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body,
-        pico_joystick_device, PicoJoystickKey.L_TRANSFORM,
-    )
-    orca_logger.info("Creating right arm controller")
-    controllers.add_arm_osc_pico_controller(
-        data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body,
-        pico_joystick_device, PicoJoystickKey.R_TRANSFORM,
-    )
+
+
+    if agent_name == "g1_omnipicker":
+        orca_logger.info("Creating left G1 arm controller (Pico remap)")
+        add_g1_arm_osc_pico_controller(
+            data_collection_manager,
+            env,
+            agent_conf.l_arm,
+            agent_conf.base_body,
+            pico_joystick_device,
+            PicoJoystickKey.L_TRANSFORM,
+            G1_L_ARM_ROTATION_OFFSET,
+            G1_ARM_POSITION_REMAP,
+            G1_L_ARM_POSITION_FLIP,
+        )
+        orca_logger.info("Creating right G1 arm controller (Pico remap)")
+        add_g1_arm_osc_pico_controller(
+            data_collection_manager,
+            env,
+            agent_conf.r_arm,
+            agent_conf.base_body,
+            pico_joystick_device,
+            PicoJoystickKey.R_TRANSFORM,
+            G1_R_ARM_ROTATION_OFFSET,
+            G1_ARM_POSITION_REMAP,
+            G1_R_ARM_POSITION_FLIP,
+        )
+    else:
+        orca_logger.info("Creating left arm controller")
+        controllers.add_arm_osc_pico_controller(
+            data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body,
+            pico_joystick_device, PicoJoystickKey.L_TRANSFORM,
+        )
+        orca_logger.info("Creating right arm controller")
+        controllers.add_arm_osc_pico_controller(
+            data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body,
+            pico_joystick_device, PicoJoystickKey.R_TRANSFORM,
+        )
+
 
     if should_use_empty_task(config, task_config):
         orca_logger.info("Collect-only mode: using EmptyTask (no success check).")
