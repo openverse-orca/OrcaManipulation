@@ -1,0 +1,36 @@
+# 由 record_g1_waypoints.py 自动生成  2026-07-13 16:37:25
+# 坐标系：G1 OmniPicker base_body（g1_omnipicker_body_link1）
+# steps / gripper_r 为占位值，请根据实际需求调整。
+
+gripper_open: -0.8561
+gripper_close: 2.0
+
+segments:
+
+  # 路点 1  时间: 16:37:09
+  - steps: 300        # 占位，请按需调整
+    l_hold: true
+    r_target_b: [0.5642, -0.2174, 0.1750]
+    r_quat_b: [-0.5395, 0.5459, 0.4157, 0.4881]
+    gripper_r: open   # 记录时夹爪状态 norm=0.000
+
+  # 路点 2  时间: 16:37:11
+  - steps: 300        # 占位，请按需调整
+    l_hold: true
+    r_target_b: [0.5631, -0.2162, 0.1791]
+    r_quat_b: [-0.5254, 0.5459, 0.4481, 0.4745]
+    gripper_r: close   # 记录时夹爪状态 norm=1.000
+
+  # 路点 3  时间: 16:37:18
+  - steps: 300        # 占位，请按需调整
+    l_hold: true
+    r_target_b: [0.5656, 0.2780, 0.4010]
+    r_quat_b: [-0.0941, -0.0315, 0.6672, 0.7383]
+    gripper_r: close   # 记录时夹爪状态 norm=1.000
+
+  # 路点 4  时间: 16:37:22
+  - steps: 300        # 占位，请按需调整
+    l_hold: true
+    r_target_b: [0.5672, 0.2817, 0.3915]
+    r_quat_b: [-0.0773, -0.0036, 0.6612, 0.7462]
+    gripper_r: open   # 记录时夹爪状态 norm=0.000
