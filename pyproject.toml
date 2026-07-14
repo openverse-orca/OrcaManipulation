@@ -10,7 +10,8 @@ requires-python = ">=3.10"
 dependencies = ["orca-gym", "typing-extensions"]
 
 [tool.setuptools.packages.find]
-include = ["envs*", "examples*"]
+where = ["src"]
+include = ["envs*", "examples*", "scene*", "conf*", "controllers*", "dataCollectionManager*", "dataStorage*", "devices*", "task*"]
 
 [tool.ruff]
 line-length = 120

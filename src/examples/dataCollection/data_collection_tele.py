@@ -13,8 +13,7 @@ if project_root not in sys.path:
 
 
 from scene.scene_manager import SceneManager
-from task.abstract_task import EmptyTask
-from task.pick_place_task import PickPlaceTask
+from scene.scene_config_util import create_task, load_scene_config, should_use_empty_task
 from devices.abstract_device import PicoJoystickDevice
 from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
 from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
@@ -22,8 +21,6 @@ from orca_gym.log.orca_log import get_orca_logger, OrcaLog
 import numpy as np
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
-from yaml import load, Loader
-
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
@@ -46,13 +43,28 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--level", type=str, required=True, help="场景的名称")
     parser.add_argument("--agent_name", type=str, required=True, choices=["openloong", "tiangong2"], help="机器人型号")
-    parser.add_argument("--task_config", type=str, required=True, help="任务配置文件")
+    parser.add_argument(
+        "--task_config",
+        type=str,
+        default=None,
+        help="场景/任务 YAML（相对本目录）；省略或空字符串表示不加载配置，仅遥操采集（EmptyTask）",
+    )
+    parser.add_argument(
+        "--mjc-agent-prefix",
+        type=str,
+        default=None,
+        help="MuJoCo agent_names 前缀（robot_name_space 时与预制体名一致，如 openloong_gripper_2f85_fix_base_usda）",
+    )
 
     args = parser.parse_args()
 
     level = args.level
     agent_name = args.agent_name
-    task_config = args.task_config
+    task_config = (args.task_config or "").strip() or None
+    mjc_prefix = (args.mjc_agent_prefix or "").strip() or None
+    if mjc_prefix is None and level == "test20260508" and agent_name == "openloong":
+        mjc_prefix = "openloong_gripper_2f85_fix_base_usda"
+        orca_logger.info(f"Auto mjc-agent-prefix for test20260508: {mjc_prefix}")
 
     orca_logger.info(f"log file: {log_file}")
     orca_logger.info(f"log dir: {log_dir}")
@@ -82,8 +94,7 @@ def main():
     pico_joystick_device = PicoJoystickDevice(PicoJoystick())
 
     orca_logger.info("Creating scene manager")
-    with open(os.path.join(base_dir, task_config), "r", encoding="utf-8") as f:
-        config = load(f, Loader=Loader)
+    config = load_scene_config(base_dir, task_config)
     scene_manager = SceneManager(orcagym_addr, config=config)
 
     script_name = os.path.basename(sys.argv[0]) if sys.argv else os.path.basename(__file__)
@@ -106,6 +117,8 @@ def main():
         scene_manager=scene_manager,
         data_storage=data_storage,
         frame_skip=5,
+        time_step=0.005,
+        mjc_agent_prefix=mjc_prefix,
     )
     env = data_collection_manager.env
     env.reset()
@@ -125,8 +138,11 @@ def main():
     orca_logger.info("Creating right arm controller")
     controllers.add_arm_osc_pico_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, pico_joystick_device, PicoJoystickKey.R_TRANSFORM)
     
-    orca_logger.info("Creating pick place task")
-    data_collection_manager.set_task(PickPlaceTask(env))
+    if should_use_empty_task(config, task_config):
+        orca_logger.info("Collect-only mode: using EmptyTask (no success check).")
+    else:
+        orca_logger.info("Creating pick place task")
+    data_collection_manager.set_task(create_task(env, config, task_config))
     controllers.add_task_status_pico_controller(data_collection_manager, env, pico_joystick_device, agent_conf.base_body)
 
     data_collection_manager.save_video = True

@@ -411,6 +411,9 @@ class SceneManager:
             orca_log.error(f'''Has {len(light_names)} lights and {len(light_spawnable)} spawnables, 
             The number of light names and spawnable must be the same.''')
             raise ValueError("The number of light names and spawnable must be the same.")
+
+        if len(light_names) == 0:
+            return
         
         if light_random is not None:
             is_random_position = light_random.get("position", False)

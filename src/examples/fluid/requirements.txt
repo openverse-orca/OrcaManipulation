@@ -1,0 +1,10 @@
+# 在仓库根目录先安装基础依赖：
+# pip install -r requirements.txt
+#
+# 本文件仅保留 fluid 示例的额外依赖。
+orca-sph==26.6.2
+
+# record 模式：matplotlib 录制统计子窗口（tail ~/.orcagym/tmp/orcasph_*.log 中的 [PARTICLE_RECORD_STATS]）
+# packaging：matplotlib 在部分环境下会 import packaging，最小环境需显式安装
+matplotlib>=3.7.0
+packaging>=21.0

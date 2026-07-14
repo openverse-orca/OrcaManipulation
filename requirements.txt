@@ -5,3 +5,9 @@ pyyaml
 h5py
 av
 opencv-python
+gymnasium
+
+# 流体仿真（SPH-MuJoCo 耦合），详见 src/examples/fluid/requirements.txt
+orca-sph==26.3.1; sys_platform == "linux"
+matplotlib>=3.7.0
+packaging>=21.0
