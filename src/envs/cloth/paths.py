@@ -211,6 +211,34 @@ def resolve_cloth_config_path(
     )
 
 
+def resolve_mjc_agent_prefix_from_cloth_config(
+    level: str | None = None,
+    agent: str | None = None,
+    *,
+    debug: bool = False,
+    explicit: str | None = None,
+) -> str:
+    """
+    从 cloth_sim_config（含 extends 链）读取 ``orcagym.mjc_agent_prefix``。
+
+    作为 MJC_PREFIX 的权威来源，避免壳层环境变量或分支硬编码不一致。
+    """
+    from .attach_coupling import load_cloth_config
+
+    level_name = resolve_cloth_level(level)
+    path = resolve_cloth_config_path(
+        level=level_name,
+        agent=agent,
+        debug=debug,
+        explicit=explicit,
+    )
+    cfg = load_cloth_config(path)
+    prefix = str(cfg.get("orcagym", {}).get("mjc_agent_prefix", "")).strip()
+    if not prefix:
+        raise ValueError(f"mjc_agent_prefix missing in cloth config chain: {path}")
+    return prefix
+
+
 def apply_runtime_orcagym_level(config: dict[str, Any], level: str) -> dict[str, Any]:
     """将运行时关卡名写入 ``orcagym.level``（深拷贝，不改原 dict）。"""
     return apply_runtime_cloth_overrides(config, level=level)

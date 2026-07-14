@@ -308,12 +308,21 @@ def main():
 
     orca_logger.info("Creating data collection manager")
     mjc_prefix = (args.mjc_agent_prefix or "").strip() or None
-    if mjc_prefix is None and agent_name == "g1_omnipicker":
-        mjc_prefix = "g1_omnipicker"
-        orca_logger.info(f"Auto mjc-agent-prefix for g1_omnipicker: {mjc_prefix}")
-    elif mjc_prefix is None and level == "test20260508" and agent_name == "openloong":
+    if mjc_prefix is None:
+        from envs.cloth.paths import resolve_mjc_agent_prefix_from_cloth_config
+
+        try:
+            mjc_prefix = resolve_mjc_agent_prefix_from_cloth_config(
+                level=level,
+                agent=agent_name,
+                explicit=(args.cloth_config or "").strip() or None,
+            )
+            orca_logger.info(f"mjc-agent-prefix from cloth config: {mjc_prefix}")
+        except (FileNotFoundError, ValueError) as exc:
+            orca_logger.warning(f"cloth config mjc prefix unresolved: {exc}")
+    if mjc_prefix is None and level == "test20260508" and agent_name == "openloong":
         mjc_prefix = "openloong_gripper_2f85_fix_base_usda"
-        orca_logger.info(f"Auto mjc-agent-prefix for test20260508: {mjc_prefix}")
+        orca_logger.info(f"Fallback mjc-agent-prefix for test20260508: {mjc_prefix}")
 
     data_collection_manager = DataCollectionManager(
         agent_name=agent_name,

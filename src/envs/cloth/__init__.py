@@ -9,6 +9,7 @@ from .paths import (
     detect_studio_play_level,
     resolve_cloth_config_path,
     resolve_cloth_level,
+    resolve_mjc_agent_prefix_from_cloth_config,
     studio_cloth_assets_dir,
     studio_project_dir,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "print_masked_vtk_prefab_report",
     "resolve_cloth_config_path",
     "resolve_cloth_level",
+    "resolve_mjc_agent_prefix_from_cloth_config",
     "run_masked_vtk_prefab_check_at_startup",
     "start_cloth_coupling",
     "studio_cloth_assets_dir",
