@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,16 @@ CLOTH_3D_DIR: Path = ORCA_REPO_ROOT / "OrcaPlayground" / "examples" / "cloth_3d"
 XPBD_ROOT: Path = ORCA_REPO_ROOT / "XPBD"
 XPBD_BUILD_DIR: Path = XPBD_ROOT / "build"
 ORCALINK_CLIENT_PYTHON: Path = ORCA_REPO_ROOT / "OrcaLink" / "Client" / "Python"
+
+# 让 pip 包（site-packages/orcalink_client）优先于源码版（OrcaLink/Client/Python）。
+# 源码版未运行 build_package.sh 时缺少 bin/orcalink 与 protos/orcalink_pb2.py，
+# 会被 PYTHONPATH 优先加载从而屏蔽 pip 包，导致 FileNotFoundError / ImportError。
+# paths.py 是最早被加载的模块（在 attach_coupling/orcalink_server 顶部 import），
+# 在任何 import orcalink_client 之前把源码路径移到 sys.path 末尾即可让 pip 包优先。
+_ol_py_str = str(ORCALINK_CLIENT_PYTHON)
+while _ol_py_str in sys.path:
+    sys.path.remove(_ol_py_str)
+sys.path.append(_ol_py_str)
 
 CLOTH_CONFIG_BASENAME = "cloth_sim_config.json"
 CLOTH_SCENE_ASSETS_BASENAME = "cloth_scene_assets.json"
