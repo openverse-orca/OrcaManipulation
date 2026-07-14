@@ -3,7 +3,7 @@
 所有脚本均在 `src/examples/dataCollection/` 目录下运行，`sys.path` 会自动将 `src/` 加入搜索路径。
 
 ```bash
-conda activate orca_lerobot
+conda activate orcalab_lerobot
 cd src/examples/dataCollection
 ```
 
@@ -53,7 +53,7 @@ cd src/examples/dataCollection
 - 仅 **左 Grip** 有效（用于开始 / 保存）。
 - 进入 `RUNNING` 后，除左臂外的全部按键生效；左臂仍锁定。
 
-**UI 提示**（OrcaStudio 场景内）：`左Grip×1=开始 左Grip×2=保存 右Grip=丢弃重置 左右Grip同按=退出`
+**UI 提示**（OrcaLab 场景内）：`左Grip×1=开始 左Grip×2=保存 右Grip=丢弃重置 左右Grip同按=退出`
 
 ### 脚本 B：路点录制（`record_g1_waypoints.py`）
 
@@ -134,6 +134,27 @@ python g1_omnipicker_replay_lerobot.py \
 
 ---
 
+## 4b. 工具整理脚本化采集
+
+```bash
+python g1_omnipicker_collection_scripted_tool_lerobot.py \
+    --task_config example.yaml \
+    --lerobot_out /path/to/out_dataset \
+    --repo_id local/g1_omnipicker_tool \
+    --num_episodes 1 \
+    --fps 20 \
+    --clock wall
+```
+
+- 右臂依次抓取 5 个工具放入工具箱，全程单条 episode，左臂全程锁定。
+- 每个工具的路点文件默认为 `my_waypoint_tool1.yaml` … `my_waypoint_tool5.yaml`，可用 `--waypoint_files` 指定（逗号分隔）。
+- `--safe_z`：高位过渡安全高度（base 系 z，单位米，默认 0.50）。
+- `--kp`：OSC 阻抗刚度（默认 220，范围 0～300），越大末端跟踪越紧。
+- 各段步数可通过 `--steps_transit/descend/grasp/settle/lift/to_box/release/release_settle/lift_after` 单独调整。
+- 路点文件使用 `record_g1_waypoints.py` 遥操录制生成（每个工具录 4 个路点：接近位 / 闭爪抓取位 / 箱上方 / 箱上松开位）。
+
+---
+
 ## 5. 推理评估
 
 先在另一终端启动策略服务器（端口 8010）：
@@ -162,20 +183,20 @@ python eval_g1_omnipicker_lerobot.py \
 
 ## 6. 场景与配置说明
 
-### OrcaStudio 场景加载顺序
+### OrcaLab 场景加载顺序
 
-1. 使用 **OrcaLab 6.3** 打开 OrcaStudio，并加载 `g1_button.json`（此文件含已标定的 G1 底盘世界位姿）。
+1. 启动 **OrcaLab 6.3**，加载对应场景布局（按钮场景 `g1_button.json`，工具整理场景 `g1_tool.json`；文件含已标定的 G1 底盘世界位姿）。
 2. 手动配置三路相机：Left Arm=`7070`、Right Arm=`7080`、Head=`7090`。
 3. 每路相机勾选 **UseNvEnc** 和 **Color Camera**，完成全部端口及其他配置后，再勾选 **Recording**。
-4. 勾选 Recording 后不要取消勾选，取消时容易导致 OrcaStudio 崩溃。
+4. 勾选 Recording 后不要取消勾选，取消时容易导致 OrcaLab 崩溃。
 5. 不要把相机配置保存到布局 `.json`；每次重新打开布局都需要重新配置。
-6. 确认 G1 机器人和电柜就位后点击「运行」。
+6. 确认 G1 机器人和场景物体就位后点击「运行」。
 7. 所有脚本统一使用 `--task_config example.yaml`（`level_name: "example"`）。
 
 ### example.yaml 关键字段
 
 ```yaml
-level_name: "example"          # 与 OrcaStudio 中场景 level 名称对应
+level_name: "example"          # 与 OrcaLab 中场景 level 名称对应
 type: "pick_and_place"         # 任务类型（按按钮场景沿用此类型）
 data_collection:
   agent_joint_prefix: "g1_omnipicker_"   # 只记录机器人关节，忽略随机 GUID 场景 actor

@@ -1,5 +1,18 @@
-orca-gym>=26.4.2.1
+# 核心运行依赖
+orca-gym>=26.6.0
+numpy
+scipy
+gymnasium
+opencv-python
+av
+pyarrow
+lerobot>=0.3.0
+mujoco
 numba
 termcolor>=2.4.0
 pyyaml
 h5py
+
+# 可选：在线推理需要 openpi_client
+# 安装方式一：pip install openpi_client
+# 安装方式二：export OPENPI_CLIENT_SRC=~/openpi/packages/openpi-client/src

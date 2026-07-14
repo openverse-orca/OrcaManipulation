@@ -7,20 +7,22 @@
 输入：5 个路点 YAML（默认 my_waypoint_tool1.yaml … my_waypoint_tool5.yaml），
       每个 4 点位（接近位 / 抓取闭爪 / 工具箱上方 / 箱上松开）。
 
-每个工具生成 7 段轨迹：
-  1. 高位过渡到工具正上方（safe_z）
-  2. 垂直下降到接近位
-  3. 原地闭爪抓取
-  4. 抬升到 safe_z
-  5. 高位移动到工具箱上方（wp3）
-  6. 下降并松开（wp4）
-  7. 抬升到 safe_z（为下一工具准备）
+每个工具生成 9 段轨迹：
+  S1. 高位过渡到工具正上方（safe_z）
+  S2. 垂直下降到接近位（wp0，张开）
+  S3. 移到抓取点（wp1，仍张开）
+  S4. 沉降驻留 + 闭爪（保持 wp1 不动，等末端收敛后夹）
+  S5. 抬升到 safe_z（夹住工具垂直上升）
+  S6. 高位移动到工具箱上方（wp2，保持闭合）
+  S7. 闭爪逼近松开位（wp3，仍夹着工具）
+  S8. 沉降驻留 + 张开（保持 wp3 不动，等末端收敛后松爪）
+  S9. 松开后抬升到 safe_z（为下一工具准备）
 
 用法：
   cd src/examples/dataCollection
   python g1_omnipicker_collection_scripted_tool_lerobot.py \\
       --task_config example.yaml \\
-      --lerobot_out /home/dht/orca_m/OrcaManipulation/L_dataset/g1_tool \\
+      --lerobot_out /path/to/out_dataset \\
       --repo_id local/g1_omnipicker_tool \\
       --num_episodes 1 --fps 20
 """
@@ -206,8 +208,6 @@ def _load_waypoint_yaml(path: str) -> dict:
 def _build_tool_segments(
     wps,
     safe_z: float,
-    g_open: float,
-    g_close: float,
     steps_transit: int = 120,
     steps_descend: int = 120,
     steps_grasp: int = 60,
@@ -225,7 +225,10 @@ def _build_tool_segments(
       wp1 = 抓取闭爪位（闭合）
       wp2 = 工具箱上方（闭合）
       wp3 = 箱上松开位（张开）
-    safe_z: base 系安全高度（米），过渡时始终在此高度水平移动
+    safe_z: base 系安全高度（米），过渡时始终在此高度水平移动。
+
+    段内夹爪状态以 "open"/"close" 字符串驱动，由 build_segmented_trajectory
+    负责将字符串映射到实际电机值。
 
     关键：S4 在 wp1 处保持位姿不动、原地闭合夹爪，给阻抗控制器时间把
     位置误差收敛到几毫米再夹，避免"下不到底、在工具上方闭合抓空"。
@@ -591,8 +594,6 @@ def main() -> None:
                     tool_segs = _build_tool_segments(
                         wps=td["waypoints"],
                         safe_z=args.safe_z,
-                        g_open=g_open_global,
-                        g_close=g_close_global,
                         steps_transit=args.steps_transit,
                         steps_descend=args.steps_descend,
                         steps_grasp=args.steps_grasp,

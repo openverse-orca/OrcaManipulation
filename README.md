@@ -45,6 +45,7 @@ OrcaManipulation/
 |------|------|
 | `g1_omnipicker_collection_tele_lerobot.py` | Pico VR 遥操作采集，左臂锁定，控制右臂和双夹爪 |
 | `g1_omnipicker_collection_scripted_button_lerobot.py` | 四色按钮脚本化自动采集 |
+| `g1_omnipicker_collection_scripted_tool_lerobot.py` | 工具整理脚本化自动采集（右臂依次抓取 5 个工具放入工具箱） |
 | `g1_omnipicker_replay_lerobot.py` | LeRobot Parquet 数据集回放 |
 | `eval_g1_omnipicker_lerobot.py` | 连接 OpenPI 策略服务器进行在线推理 |
 | `data_collection_scripted.py` | 脚本轨迹插值工具库 |
@@ -52,7 +53,7 @@ OrcaManipulation/
 ## 环境安装
 
 ```bash
-conda activate orca_lerobot
+conda activate orcalab_lerobot
 pip install -r requirements.txt
 ```
 
@@ -115,7 +116,7 @@ localhost:50051
 以下命令默认从入口脚本目录执行：
 
 ```bash
-conda activate orca_lerobot
+conda activate orcalab_lerobot
 cd src/examples/dataCollection
 ```
 
@@ -130,7 +131,7 @@ adb reverse tcp:8001 tcp:8001
 然后在项目终端中启动遥操作采集：
 
 ```bash
-conda activate orca_lerobot
+conda activate orcalab_lerobot
 python g1_omnipicker_collection_tele_lerobot.py \
     --task_config example.yaml \
     --lerobot_out ~/datasets/g1_button_tele \
@@ -179,6 +180,28 @@ python g1_omnipicker_collection_scripted_button_lerobot.py \
 - 默认候选位姿文件为 `pose_g1_button_candidates.yaml`。
 - 可用 `--pose_candidates /path/to/candidates.yaml` 指定其他候选位姿。
 - 使用 `--shuffle_seed` 可固定颜色序列的随机打乱结果。
+- 在已有数据集后继续采集时增加 `--resume`。
+
+## 运行方式三：工具整理脚本化采集
+
+```bash
+python g1_omnipicker_collection_scripted_tool_lerobot.py \
+    --task_config example.yaml \
+    --lerobot_out /path/to/out_dataset \
+    --repo_id local/g1_omnipicker_tool \
+    --num_episodes 1 \
+    --fps 20 \
+    --clock wall
+```
+
+说明：
+
+- 右臂从左到右依次抓取 5 个工具放入工具箱，全程单条 episode，左臂全程锁定。
+- 每个工具的路点由独立 YAML 文件指定，默认读取同目录 `my_waypoint_tool1.yaml` … `my_waypoint_tool5.yaml`。
+- 可用 `--waypoint_files` 指定自定义路点文件（逗号分隔，顺序即抓取顺序）。
+- `--safe_z` 控制高位过渡安全高度（base 系 z，单位米，默认 0.50）。
+- `--kp` 调整 OSC 阻抗刚度（默认 220，范围 0～300），越大末端跟踪越紧。
+- 路点文件可使用 `record_g1_waypoints.py` 遥操记录生成。
 - 在已有数据集后继续采集时增加 `--resume`。
 
 ## 示例 VR 自采数据与 PI0.5 训练
@@ -302,10 +325,11 @@ python g1_omnipicker_replay_lerobot.py \
 | 文件 | 说明 |
 |------|------|
 | `example.yaml` | 采集、回放和推理共用的任务配置，`level_name: "example"` |
-| `g1_button.json` | OrcaLab 场景布局，包含已标定的 G1 底盘位姿 |
-| `g1_electric.json` | 电柜场景布局，备用 |
-| `pose_g1_button_candidates.yaml` | 四色按钮候选接触位姿，脚本化采集使用 |
+| `g1_button.json` | OrcaLab 按钮场景布局，包含已标定的 G1 底盘位姿 |
+| `g1_tool.json` | OrcaLab 工具整理场景布局 |
+| `pose_g1_button_candidates.yaml` | 四色按钮候选接触位姿，按钮脚本化采集使用 |
 | `pose_g1_button_targets.yaml` | 四色按钮聚合目标位姿，参考使用 |
+| `my_waypoint_tool1.yaml` … `my_waypoint_tool5.yaml` | 5 个工具的 4 点位路点（接近位 / 抓取闭爪 / 箱上方 / 箱上松开），工具整理采集使用 |
 
 ## 数据集格式
 
