@@ -5,6 +5,10 @@ pyyaml
 h5py
 av
 opencv-python
+# LeRobot 数据格式支持（可选，仅在 LeRobot 采集模式下需要）
+lerobot>=0.3.0
+pyarrow>=14.0.0
+typing_extensions>=4.7.0
 gymnasium
 
 # 流体仿真（SPH-MuJoCo 耦合），详见 src/examples/fluid/requirements.txt

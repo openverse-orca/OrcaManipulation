@@ -4,7 +4,6 @@ import sys
 import time
 import traceback
 
-from orca_gym.sensor.rgbd_camera import Monitor
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if project_root not in sys.path:
@@ -147,10 +146,10 @@ def main():
 
     data_collection_manager.save_video = True
     
-    data_collection_manager.add_monitor_port(7080)
-    data_collection_manager.add_monitor_port(7081)
-    data_collection_manager.add_monitor_port(7090)
-    data_collection_manager.add_monitor_port(7091)
+    data_collection_manager.add_monitor_port(7070)
+    # data_collection_manager.add_monitor_port(7081)
+    # data_collection_manager.add_monitor_port(7090)
+    # data_collection_manager.add_monitor_port(7091)
 
     data_collection_manager.run()
 
