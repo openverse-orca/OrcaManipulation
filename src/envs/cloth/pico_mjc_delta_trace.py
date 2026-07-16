@@ -276,12 +276,14 @@ def attach_pico_mjc_delta_tracer(
     palm_l_body: str | None = None,
     palm_r_body: str | None = None,
     record_all_steps: bool = True,
+    cloth_callback,
 ) -> PicoMjcDeltaTracer:
     """
     注册宏步后回调，将 PICO 与 MuJoCo 位姿增量写入 CSV。
 
     ``arm_controllers`` 为 ``data_collection_manager.controllers`` 中的 ``ControllerArm``（先左后右排序）。
     ``palm_*_body`` 为短名（如 G1 ``arm_l_end_link``）；不传则只对比 ee site。
+    ``cloth_callback`` 为 ``ClothLifecycleCallback``，用于宏步后/运行结束钩子。
     """
     import os
 
@@ -305,17 +307,10 @@ def attach_pico_mjc_delta_tracer(
         output_path,
         record_all_steps=record_all,
     )
-    manager.add_post_step_callback(lambda _env: tracer.on_macro_step())
-
-    orig_run = manager.run
-
-    def _run_wrapped(*args, **kwargs):
-        try:
-            return orig_run(*args, **kwargs)
-        finally:
-            tracer.close()
-
-    manager.run = _run_wrapped  # type: ignore[method-assign]
+    if cloth_callback is None:
+        raise ValueError("cloth_callback 必填（ClothLifecycleCallback）")
+    cloth_callback.add_post_step_hook(tracer.on_macro_step)
+    cloth_callback.add_run_end_hook(tracer.close)
     orca_logger.info(
         f"CLOTH_PICO_DELTA_TRACE: {output_path} "
         f"(B-frame dpico vs dee_site; palm={palm_l_body}/{palm_r_body}; "

@@ -49,6 +49,20 @@ class EpisodeLifecycleCallback(Protocol):
         """每步循环开始时调用（控制器执行前）。"""
         ...
 
+
+    def on_before_physics_step(self) -> bool:
+        """run_controllers() 之后、env.step() 之前。
+
+        用于耦合 step()（OrcaSPH / XPBD）。返回 False 时本宏步跳过 env.step。
+        未实现时视为 True。
+        """
+        ...
+
+    def on_scene_updated(self) -> None:
+        """update_scene() 完成后；场景/物理重建后通知回调。"""
+        ...
+
+
     def on_step_end(self, obs: dict, info: dict) -> None:
         """每步循环结束时调用（渲染后，任务状态处理前）。
 
@@ -90,6 +104,7 @@ class DataCollectionManager:
                 frame_skip: int = 20,
                 time_step: float = 0.001, 
                 orcagym_addr: str = "localhost:50051",
+                mjc_agent_prefix: str | None = None,
                 task: AbstractTask = None,
                 device: AbstractDevice = None,
                 task_status_controller: TaskStatusController = None,
@@ -97,6 +112,7 @@ class DataCollectionManager:
                 data_storage: AbstractDataStorage = None,
                 episode_callbacks: list[EpisodeLifecycleCallback] | None = None,
                 **kwargs):
+        self._mjc_agent_prefix = mjc_agent_prefix
         self.device = device
         self.time_step = time_step
         self.frame_skip = frame_skip
@@ -192,7 +208,7 @@ class DataCollectionManager:
 
         orcagym_addr_str = orcagym_addr.replace(":", "-")
         env_id = env_name + "-OrcaGym-" + orcagym_addr_str + f"-{env_index:03d}"
-        agent_names = [f"{agent_name}"]
+        agent_names = [f"{self._mjc_agent_prefix or agent_name}"]
         kwargs = {'frame_skip': frame_skip,   
                     'orcagym_addr': orcagym_addr, 
                     'agent_names': agent_names, 
@@ -246,6 +262,22 @@ class DataCollectionManager:
         """
         self._episode_callbacks.append(callback)
 
+
+    def _query_physics_step_allowed(self) -> bool:
+        """任一回调 on_before_physics_step 返回 False 则跳过 env.step。"""
+        allowed = True
+        for cb in self._episode_callbacks:
+            method = getattr(cb, "on_before_physics_step", None)
+            if method is None:
+                continue
+            try:
+                if method() is False:
+                    allowed = False
+            except Exception as e:
+                orca_logger.warning(f"Episode callback on_before_physics_step failed: {e}")
+        return allowed
+
+
     def _notify_callbacks(self, method_name: str, *args, **kwargs) -> None:
         """安全地通知所有回调，异常不中断主循环。
 
@@ -286,10 +318,11 @@ class DataCollectionManager:
         self._shutdown_requested = True
         orca_logger.info("Shutdown requested, finishing current operation...")
 
-    def run(self):
+    def run(self, max_episodes: int | None = None):
         self._shutdown_requested = False
         self.env.disable_actuator(self.disable_actuator_group)
         self.start_monitors()
+        episode_count = 0
         if self.touch_sensor_names:
             self.touch_sensor = TouchSensorVisualizer()
         self._notify_callbacks("on_run_start")
@@ -303,6 +336,10 @@ class DataCollectionManager:
                     orca_logger.info("Can't update scene, End")
                     break
                 task_is_success = self.run_episode()
+                episode_count += 1
+                if max_episodes is not None and episode_count >= max_episodes:
+                    orca_logger.info(f"Reached max_episodes={max_episodes}, exiting run loop")
+                    break
                 if self._shutdown_requested:
                     break
                 if self.data_storage is not None:
@@ -368,6 +405,7 @@ class DataCollectionManager:
                 self.task.get_task(self.scene_manager, task_info=task_info)
 
             self.env.disable_actuator(self.disable_actuator_group)
+            self._notify_callbacks("on_scene_updated")
         return True
 
     def run_episode(self) -> bool:
@@ -389,9 +427,19 @@ class DataCollectionManager:
             self._notify_callbacks("on_step_begin")
 
             action = self.run_controllers()
-            obs, reward, terminated, truncated, info = self.env.step(action)
+            should_step = self._query_physics_step_allowed()
+            if should_step:
+                obs, reward, terminated, truncated, info = self.env.step(action)
+            else:
+                obs = self.env._get_obs().copy() if hasattr(self.env, "_get_obs") else {}
+                reward, terminated, truncated, info = 0.0, False, False, {}
+
             self._update_touch_sensors()
-            self.env.render()
+            if not self._any_callback_skip_render():
+                self.env.render()
+            else:
+                self._notify_callbacks("on_after_render_skipped")
+                self._any_callback_push_studio_vis()
 
             self._notify_callbacks("on_step_end", obs, info)
 
@@ -406,6 +454,29 @@ class DataCollectionManager:
 
         self._notify_callbacks("on_episode_end", False)
         return False
+
+    def _any_callback_skip_render(self) -> bool:
+        for cb in self._episode_callbacks:
+            if getattr(cb, "skip_render", False):
+                return True
+        return False
+
+    def _any_callback_push_studio_vis(self) -> None:
+        for cb in self._episode_callbacks:
+            if getattr(cb, "push_studio_visual", False):
+                method = getattr(cb, "push_studio_visual_now", None)
+                if method:
+                    try:
+                        method(self.env)
+                    except Exception as e:
+                        orca_logger.warning(f"push_studio_visual failed: {e}")
+
+    def _any_callback_wants_realtime_sync(self) -> bool:
+        """任一回调 realtime_sync=False 时跳过墙钟 sleep（压测 / --no-realtime）。"""
+        for cb in self._episode_callbacks:
+            if getattr(cb, "realtime_sync", True) is False:
+                return False
+        return True
 
     def _initialize_episode(self) -> None:
         """初始化 episode：设置初始控制量、重置控制器和任务状态控制器。"""
@@ -516,6 +587,8 @@ class DataCollectionManager:
             start_time: 循环开始时间（time.perf_counter() 返回值）
         """
         elapsed_time = time.perf_counter() - start_time
+        if not self._any_callback_wants_realtime_sync():
+            return
         if elapsed_time < self.real_time_step:
             time.sleep(self.real_time_step - elapsed_time)
 

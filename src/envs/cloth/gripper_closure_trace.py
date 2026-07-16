@@ -208,11 +208,13 @@ def attach_gripper_closure_tracer(
     output_path: Path,
     *,
     gripper_controllers: list[Any] | None = None,
+    cloth_callback,
 ) -> GripperClosureTracer:
     """
     注册宏步后回调，记录扳机与夹爪闭合全程。
 
     ``gripper_controllers`` 为 data_collection_manager.controllers 中 Omnipicker 实例（先左后右）。
+    ``cloth_callback`` 为 ``ClothLifecycleCallback``，用于宏步后/运行结束钩子。
     """
     import os
 
@@ -247,17 +249,10 @@ def attach_gripper_closure_tracer(
         gripper_r_ctrl=ctrl_r,
         record_all_steps=record_all,
     )
-    manager.add_post_step_callback(lambda _env: tracer.on_macro_step())
-
-    orig_run = manager.run
-
-    def _run_wrapped(*args, **kwargs):
-        try:
-            return orig_run(*args, **kwargs)
-        finally:
-            tracer.close()
-
-    manager.run = _run_wrapped  # type: ignore[method-assign]
+    if cloth_callback is None:
+        raise ValueError("cloth_callback 必填（ClothLifecycleCallback）")
+    cloth_callback.add_post_step_hook(tracer.on_macro_step)
+    cloth_callback.add_run_end_hook(tracer.close)
     orca_logger.info(
         f"CLOTH_GRIPPER_TRACE: {output_path} (trigger>{_TRACE_TRIGGER_ON:.2f} 起记，"
         f"松开后尾记 {_TRACE_TAIL_STEPS} 宏步；FULL={record_all})"

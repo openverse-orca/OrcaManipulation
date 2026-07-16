@@ -65,7 +65,7 @@ class ClothCouplingHandle:
     """
     布料耦合句柄：每宏步向 OrcaLink 发布 POSITION，sync 模式下等待 XPBD FORCE。
 
-    接口与 FluidCouplingHandle 一致，可挂到 DataCollectionManager.set_fluid_coupling()。
+    接口与 FluidCouplingHandle 一致；由入口脚本的 ClothLifecycleCallback 在 on_before_physics_step 中调用 step()。
     """
 
     config: Dict[str, Any]

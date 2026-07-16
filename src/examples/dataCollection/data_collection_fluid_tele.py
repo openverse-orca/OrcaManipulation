@@ -5,8 +5,10 @@
 运行前请在 OrcaLab / OrcaStudio 中加载含 SPH 标记的流体场景（如 water_example）。
 """
 import argparse
+import json
 import os
 import sys
+import time
 import traceback
 
 import numpy as np
@@ -53,6 +55,144 @@ def _resolve_cpu_affinity(use_all_cpu: bool):
     if n is not None and n <= 4:
         orca_logger.warning("逻辑 CPU ≤4，无法为 Orca Studio 保留 0-3 核，本次不设置 CPU 亲和")
     return None
+
+
+class FluidLifecycleCallback:
+    """流体遥操生命周期回调（SPH step/cleanup、bench）。详见 ~/OrcaApr24/docs/CHANGELOG_fluid_cloth_callback.md 阶段 2。"""
+
+    def __init__(
+        self,
+        manager: DataCollectionManager,
+        fluid_coupling,
+        *,
+        bench_output_path: str | None = None,
+        skip_cleanup: bool = False,
+    ) -> None:
+        self._manager = manager
+        self._fluid_coupling = fluid_coupling
+        self._bench_output_path = bench_output_path
+        self._skip_cleanup = skip_cleanup
+        self._bench_steps: list[dict] = []
+        self._bench_t0: float | None = None
+        self._bench_t1: float | None = None
+        self._bench_t2: float | None = None
+        self._last_should_step = True
+
+    def on_step_begin(self) -> None:
+        if self._bench_output_path is None:
+            return
+        self._bench_t0 = time.perf_counter()
+
+    def on_before_physics_step(self) -> bool:
+        if self._bench_output_path is not None and self._bench_t0 is not None:
+            self._bench_t1 = time.perf_counter()
+        should_step = True
+        if self._fluid_coupling is not None:
+            should_step = bool(self._fluid_coupling.step())
+        self._last_should_step = should_step
+        if self._bench_output_path is not None:
+            self._bench_t2 = time.perf_counter()
+        return should_step
+
+    def on_scene_updated(self) -> None:
+        if self._fluid_coupling is None:
+            return
+        reinit = getattr(self._fluid_coupling, "on_physics_reinitialized", None)
+        if reinit is not None:
+            reinit()
+
+    def on_step_end(self, obs: dict, info: dict) -> None:
+        if self._bench_output_path is None or self._bench_t0 is None:
+            return
+        t4 = time.perf_counter()
+        t1 = self._bench_t1 if self._bench_t1 is not None else self._bench_t0
+        t2 = self._bench_t2 if self._bench_t2 is not None else t1
+        env = self._manager.env
+        sim_t = float(env.data.time) if hasattr(env, "data") and hasattr(env.data, "time") else 0.0
+        self._bench_steps.append({
+            "step": len(self._bench_steps),
+            "sim_time": round(sim_t, 6),
+            "phy_time": round(time.time(), 6),
+            "ctrl_ms": round((t1 - self._bench_t0) * 1000, 3),
+            "fluid_ms": round((t2 - t1) * 1000, 3),
+            "step_ms": round((t4 - t2) * 1000, 3),
+            "render_ms": 0.0,
+            "total_ms": round((t4 - self._bench_t0) * 1000, 3),
+            "sleep_ms": 0.0,
+            "should_step": self._last_should_step,
+        })
+
+    def on_run_end(self) -> None:
+        self._save_bench_data()
+        if self._fluid_coupling is None or self._skip_cleanup:
+            return
+        try:
+            self._fluid_coupling.cleanup()
+        except Exception as e:
+            orca_logger.warning(f"Fluid coupling cleanup: {e}")
+
+    def _save_bench_data(self) -> None:
+        if self._bench_output_path is None or not self._bench_steps:
+            return
+        steps = self._bench_steps
+        n = len(steps)
+        avg_ctrl = sum(s["ctrl_ms"] for s in steps) / n
+        avg_fluid = sum(s["fluid_ms"] for s in steps) / n
+        avg_step = sum(s["step_ms"] for s in steps) / n
+        avg_render = sum(s["render_ms"] for s in steps) / n
+        avg_total = sum(s["total_ms"] for s in steps) / n
+        avg_sleep = sum(s["sleep_ms"] for s in steps) / n
+        total_phy = steps[-1].get("phy_time", 0) - steps[0].get("phy_time", 0)
+        total_sim = steps[-1].get("sim_time", 0) - steps[0].get("sim_time", 0)
+        has_fluid = any(s["fluid_ms"] > 0.01 for s in steps)
+        fluid_steps = [s for s in steps if s["fluid_ms"] > 0.01]
+        avg_fluid_active = sum(s["fluid_ms"] for s in fluid_steps) / len(fluid_steps) if fluid_steps else 0
+        fluid_block_pct = len(fluid_steps) / n * 100 if n > 0 else 0
+        ctrl_steps = [s for s in steps if s["ctrl_ms"] > 1.0]
+        avg_ctrl_active = sum(s["ctrl_ms"] for s in ctrl_steps) / len(ctrl_steps) if ctrl_steps else 0
+        ctrl_block_pct = len(ctrl_steps) / n * 100 if n > 0 else 0
+        effective_steps = [s for s in steps if s.get("should_step", True)]
+        effective_count = len(effective_steps)
+        pause_count = n - effective_count
+        pause_rate = pause_count / n * 100 if n > 0 else 0
+        report = {
+            "num_steps": n,
+            "loop_count": n,
+            "effective_step_count": effective_count,
+            "pause_count": pause_count,
+            "pause_rate_pct": round(pause_rate, 2),
+            "total_sim_time_s": round(total_sim, 4),
+            "total_phy_time_s": round(total_phy, 4),
+            "sim_over_real_ratio": round(total_sim / total_phy, 4) if total_phy > 0 else 0,
+            "avg_step_ms": round(avg_total, 2),
+            "avg_fps": round(1000.0 / avg_total, 2) if avg_total > 0 else 0,
+            "avg_ctrl_ms": round(avg_ctrl, 2),
+            "avg_fluid_ms": round(avg_fluid, 2),
+            "avg_step_compute_ms": round(avg_step, 2),
+            "avg_render_ms": round(avg_render, 2),
+            "avg_sleep_ms": round(avg_sleep, 2),
+            "pct_ctrl": round(avg_ctrl / avg_total * 100, 1) if avg_total > 0 else 0,
+            "pct_fluid": round(avg_fluid / avg_total * 100, 1) if avg_total > 0 else 0,
+            "pct_step": round(avg_step / avg_total * 100, 1) if avg_total > 0 else 0,
+            "pct_render": round(avg_render / avg_total * 100, 1) if avg_total > 0 else 0,
+            "pct_sleep": round(avg_sleep / avg_total * 100, 1) if avg_total > 0 else 0,
+            "has_fluid_coupling": has_fluid,
+            "fluid_active_avg_ms": round(avg_fluid_active, 2),
+            "fluid_block_pct": round(fluid_block_pct, 1),
+            "ctrl_active_avg_ms": round(avg_ctrl_active, 2),
+            "ctrl_block_pct": round(ctrl_block_pct, 1),
+        }
+        output = {"summary": report, "steps": steps}
+        os.makedirs(os.path.dirname(self._bench_output_path) or ".", exist_ok=True)
+        with open(self._bench_output_path, "w", encoding="utf-8") as f:
+            json.dump(output, f, indent=2)
+        orca_logger.info(f"Bench data saved to {self._bench_output_path}")
+        orca_logger.info(
+            f"Bench summary: loops={report['loop_count']}, effective={report['effective_step_count']}, "
+            f"pause_rate={report['pause_rate_pct']}%, fps={report['avg_fps']}, "
+            f"ctrl={report['pct_ctrl']}%, fluid={report['pct_fluid']}%, "
+            f"step={report['pct_step']}%, render={report['pct_render']}%"
+        )
 
 
 def main():
@@ -192,8 +332,6 @@ def main():
         frame_skip=frame_skip,
         time_step=time_step,
     )
-    if args.bench:
-        data_collection_manager.enable_bench(args.bench)
     env = data_collection_manager.env
     env.reset()
 
@@ -213,7 +351,12 @@ def main():
     cpu_affinity = _resolve_cpu_affinity(args.use_all_cpu)
     orca_logger.info("Starting fluid coupling (OrcaLink + OrcaSPH)")
     fluid_coupling = start_fluid_coupling(env, fluid_config, cpu_affinity=cpu_affinity)
-    data_collection_manager.set_fluid_coupling(fluid_coupling)
+    fluid_callback = FluidLifecycleCallback(
+        data_collection_manager,
+        fluid_coupling,
+        bench_output_path=args.bench,
+    )
+    data_collection_manager.register_episode_callback(fluid_callback)
 
     orca_logger.info("Disabling position controller")
     data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])

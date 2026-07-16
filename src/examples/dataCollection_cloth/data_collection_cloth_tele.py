@@ -9,8 +9,10 @@
 不依赖 envs.fluid / OrcaSPH；MuJoCo 经 OrcaGym 驱动，下游控制器与 data_collection_tele 相同。
 """
 import argparse
+import json
 import os
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -56,6 +58,211 @@ orca_logger = get_orca_logger(
     use_colors=True,
     force_reinit=True,
 )
+
+
+class ClothLifecycleCallback:
+    """布料遥操生命周期回调（XPBD 耦合、skip_render、bench）。详见 ~/OrcaApr24/docs/CHANGELOG_fluid_cloth_callback.md 阶段 3。"""
+
+    skip_render: bool = False
+    push_studio_visual: bool = False
+    realtime_sync: bool = True
+
+    def __init__(
+        self,
+        manager: DataCollectionManager,
+        *,
+        bench_output_path: str | None = None,
+        realtime_sync: bool = True,
+    ) -> None:
+        self._manager = manager
+        self._cloth_coupling = None
+        self._bench_output_path = bench_output_path
+        self.realtime_sync = realtime_sync
+        self._physics_reinit_hooks: list = []
+        self._post_step_hooks: list = []
+        self._run_end_hooks: list = []
+        self._bench_steps: list[dict] = []
+        self._bench_t0: float | None = None
+        self._bench_t1: float | None = None
+        self._bench_t2: float | None = None
+        self._last_should_step = True
+
+    def set_cloth_coupling(self, cloth_coupling) -> None:
+        self._cloth_coupling = cloth_coupling
+
+    def add_physics_reinit_hook(self, hook) -> None:
+        self._physics_reinit_hooks.append(hook)
+
+    def add_post_step_hook(self, hook) -> None:
+        self._post_step_hooks.append(hook)
+
+    def add_run_end_hook(self, hook) -> None:
+        self._run_end_hooks.append(hook)
+
+    def configure_skip_render(self, skip: bool, *, sync_studio_vis: bool = False) -> None:
+        """布料/replay 模式：跳过 env.render，可选推送 qpos 到 Studio 视口。"""
+        self.skip_render = skip
+        self.push_studio_visual = bool(skip and sync_studio_vis)
+        env = self._manager.env
+        if skip and hasattr(env, "_skip_studio_render_on_reset"):
+            env._skip_studio_render_on_reset = True
+        if skip:
+            self._clear_studio_override_ctrls()
+
+    def _clear_studio_override_ctrls(self) -> None:
+        env = self._manager.env
+        if hasattr(env, "clear_studio_override_ctrls"):
+            env.clear_studio_override_ctrls()
+
+    def on_episode_start(self) -> None:
+        if self.skip_render:
+            self._clear_studio_override_ctrls()
+
+    def on_step_begin(self) -> None:
+        if self.skip_render:
+            self._clear_studio_override_ctrls()
+        if self._bench_output_path is not None:
+            self._bench_t0 = time.perf_counter()
+
+    def on_before_physics_step(self) -> bool:
+        if self._bench_output_path is not None and self._bench_t0 is not None:
+            self._bench_t1 = time.perf_counter()
+        should_step = True
+        if self._cloth_coupling is not None:
+            should_step = bool(self._cloth_coupling.step())
+        self._last_should_step = should_step
+        if self._bench_output_path is not None:
+            self._bench_t2 = time.perf_counter()
+        return should_step
+
+    def on_scene_updated(self) -> None:
+        for hook in self._physics_reinit_hooks:
+            try:
+                hook()
+            except Exception as e:
+                orca_logger.warning(f"Cloth physics reinit hook failed: {e}")
+        if self._cloth_coupling is not None:
+            reinit = getattr(self._cloth_coupling, "on_physics_reinitialized", None)
+            if reinit is not None:
+                reinit()
+
+    def on_step_end(self, obs: dict, info: dict) -> None:
+        for hook in self._post_step_hooks:
+            try:
+                hook()
+            except Exception as e:
+                orca_logger.warning(f"Cloth post-step hook failed: {e}")
+        if self._bench_output_path is None or self._bench_t0 is None:
+            return
+        t4 = time.perf_counter()
+        t1 = self._bench_t1 if self._bench_t1 is not None else self._bench_t0
+        t2 = self._bench_t2 if self._bench_t2 is not None else t1
+        env = self._manager.env
+        sim_t = float(env.data.time) if hasattr(env, "data") and hasattr(env.data, "time") else 0.0
+        self._bench_steps.append({
+            "step": len(self._bench_steps),
+            "sim_time": round(sim_t, 6),
+            "phy_time": round(time.time(), 6),
+            "ctrl_ms": round((t1 - self._bench_t0) * 1000, 3),
+            "fluid_ms": round((t2 - t1) * 1000, 3),
+            "step_ms": round((t4 - t2) * 1000, 3),
+            "render_ms": 0.0,
+            "total_ms": round((t4 - self._bench_t0) * 1000, 3),
+            "sleep_ms": 0.0,
+            "should_step": self._last_should_step,
+        })
+
+    def on_run_end(self) -> None:
+        self._save_bench_data()
+        for hook in self._run_end_hooks:
+            try:
+                hook()
+            except Exception as e:
+                orca_logger.warning(f"Cloth run-end hook failed: {e}")
+        if self._cloth_coupling is not None:
+            try:
+                self._cloth_coupling.cleanup()
+            except Exception as e:
+                orca_logger.warning(f"Cloth coupling cleanup: {e}")
+
+    def push_studio_visual_now(self, env) -> None:
+        """skip_render 时仅推送 qpos 到 Studio，不读 override_ctrls。"""
+        import grpc
+
+        gym = env.gym
+        qpos = env.data.qpos
+        sim_time = gym._mjData.time
+        try:
+            max_retries = max(1, int(os.environ.get("CLOTH_GRPC_PUSH_RETRIES", "3")))
+        except ValueError:
+            max_retries = 3
+        try:
+            retry_sleep_s = max(0.05, float(os.environ.get("CLOTH_GRPC_PUSH_RETRY_SLEEP", "0.25")))
+        except ValueError:
+            retry_sleep_s = 0.25
+        last_err = None
+        for attempt in range(max_retries):
+            try:
+                env.loop.run_until_complete(gym.push_visual_state(qpos, sim_time))
+                return
+            except grpc.aio.AioRpcError as err:
+                last_err = err
+                if err.code() != grpc.StatusCode.UNAVAILABLE:
+                    raise
+                orca_logger.warning(
+                    f"Studio gRPC push_visual UNAVAILABLE (attempt {attempt + 1}/{max_retries}): {err.details()}"
+                )
+            except Exception as err:
+                last_err = err
+                orca_logger.warning(
+                    f"Studio gRPC push_visual failed (attempt {attempt + 1}/{max_retries}): {err}"
+                )
+            if attempt + 1 < max_retries:
+                time.sleep(retry_sleep_s)
+                try:
+                    env.reconnect_grpc()
+                except Exception as reconnect_err:
+                    orca_logger.warning(f"Studio gRPC reconnect failed: {reconnect_err}")
+        if last_err is not None:
+            raise last_err
+
+    def _save_bench_data(self) -> None:
+        if self._bench_output_path is None or not self._bench_steps:
+            return
+        steps = self._bench_steps
+        n = len(steps)
+        avg_ctrl = sum(s["ctrl_ms"] for s in steps) / n
+        avg_fluid = sum(s["fluid_ms"] for s in steps) / n
+        avg_step = sum(s["step_ms"] for s in steps) / n
+        avg_render = sum(s["render_ms"] for s in steps) / n
+        avg_total = sum(s["total_ms"] for s in steps) / n
+        avg_sleep = sum(s["sleep_ms"] for s in steps) / n
+        total_phy = steps[-1].get("phy_time", 0) - steps[0].get("phy_time", 0)
+        total_sim = steps[-1].get("sim_time", 0) - steps[0].get("sim_time", 0)
+        report = {
+            "num_steps": n,
+            "loop_count": n,
+            "effective_step_count": sum(1 for s in steps if s.get("should_step", True)),
+            "total_sim_time_s": round(total_sim, 4),
+            "total_phy_time_s": round(total_phy, 4),
+            "avg_step_ms": round(avg_total, 2),
+            "avg_fps": round(1000.0 / avg_total, 2) if avg_total > 0 else 0,
+            "avg_ctrl_ms": round(avg_ctrl, 2),
+            "avg_fluid_ms": round(avg_fluid, 2),
+            "avg_step_compute_ms": round(avg_step, 2),
+            "avg_render_ms": round(avg_render, 2),
+            "avg_sleep_ms": round(avg_sleep, 2),
+            "pct_ctrl": round(avg_ctrl / avg_total * 100, 1) if avg_total > 0 else 0,
+            "pct_fluid": round(avg_fluid / avg_total * 100, 1) if avg_total > 0 else 0,
+            "pct_step": round(avg_step / avg_total * 100, 1) if avg_total > 0 else 0,
+            "pct_render": round(avg_render / avg_total * 100, 1) if avg_total > 0 else 0,
+            "has_fluid_coupling": any(s["fluid_ms"] > 0.01 for s in steps),
+        }
+        output = {"summary": report, "steps": steps}
+        os.makedirs(os.path.dirname(self._bench_output_path) or ".", exist_ok=True)
+        with open(self._bench_output_path, "w", encoding="utf-8") as f:
+            json.dump(output, f, indent=2)
+        orca_logger.info(f"Bench data saved to {self._bench_output_path}")
 
 
 def main():
@@ -339,6 +546,14 @@ def main():
         time_step=time_step,
         mjc_agent_prefix=mjc_prefix,
     )
+    cloth_callback = ClothLifecycleCallback(
+        data_collection_manager,
+        bench_output_path=args.bench,
+        realtime_sync=not args.no_realtime,
+    )
+    data_collection_manager.register_episode_callback(cloth_callback)
+    if args.bench:
+        orca_logger.info(f"Bench enabled: {args.bench}")
     env = data_collection_manager.env
     env.reset()
 
@@ -400,7 +615,7 @@ def main():
             auto_start_xpbd=True if args.cloth_auto_start_xpbd else None,
             cpu_affinity=cpu_affinity,
         )
-        data_collection_manager.set_cloth_coupling(cloth_handle)
+        cloth_callback.set_cloth_coupling(cloth_handle)
         if not args.replay:
             trigger_path = Path(log_dir) / "grip_triggers.txt"
 
@@ -424,10 +639,6 @@ def main():
                 f"monitor: python analyze/run_cloth_debug_monitor.py --debug-dir {dbg_dir} | "
                 f"analyze: python analyze/analyze_gripper_cloth_distance.py --debug-dir {dbg_dir} --plot"
             )
-
-    if args.bench:
-        data_collection_manager.enable_bench(args.bench)
-        orca_logger.info(f"Bench enabled: {args.bench}")
 
     if agent_name == "openloong":
         from envs.cloth.openloong_osc_actuators import setup_openloong_dual_arm_osc_actuators
@@ -550,13 +761,16 @@ def main():
 
     data_collection_manager.save_video = not args.replay and not args.no_collect
     if args.no_realtime:
-        data_collection_manager.set_realtime_sync(False)
+        cloth_callback.realtime_sync = False
         orca_logger.info("No-realtime mode: skip wall-clock sleep between macro steps")
     if args.cloth_coupling:
-        # render() 会从 Studio 读 override_ctrls 并在下次 set_ctrl 覆盖本地输出，
-        # 导致 PICO 扳机无法驱动夹爪 pctrl（及手臂 OSC 力矩）。
-        data_collection_manager.set_skip_render(True)
-        if os.environ.get("CLOTH_SYNC_STUDIO_VIS", "").strip().lower() in ("1", "true", "yes"):
+        sync_studio_vis = os.environ.get("CLOTH_SYNC_STUDIO_VIS", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        cloth_callback.configure_skip_render(True, sync_studio_vis=sync_studio_vis)
+        if sync_studio_vis:
             orca_logger.info(
                 "Cloth coupling: skip_render=True + CLOTH_SYNC_STUDIO_VIS=1 "
                 "（推送 qpos 到 Studio，不读 override_ctrls）"
@@ -567,7 +781,7 @@ def main():
                 "设 CLOTH_SYNC_STUDIO_VIS=1 可同步 Studio 视口姿态）"
             )
     elif args.replay:
-        data_collection_manager.set_skip_render(True)
+        cloth_callback.configure_skip_render(True)
         orca_logger.info(
             "Replay mode: skip_render=True（禁止 Studio override_ctrls 覆盖手臂电机）"
         )
@@ -613,6 +827,7 @@ def main():
             arm_controllers=data_collection_manager.controllers,
             palm_l_body=palm_l,
             palm_r_body=palm_r,
+            cloth_callback=cloth_callback,
         )
 
     data_collection_manager.run(
