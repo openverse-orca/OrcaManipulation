@@ -92,8 +92,8 @@ export OPENPI_CLIENT_SRC=~/openpi/packages/openpi-client/src
 > [!CAUTION]
 > - 必须先修改完三路相机的全部配置，最后再勾选 **Recording**。
 > - 勾选 **Recording** 后不要再取消勾选，取消时容易导致 OrcaLab 崩溃。
-> - 相机配置完成后，**不要保存到场景布局 `.json` 文件中**。
-> - 每次重新打开布局文件，都需要再次手动配置 UseNvEnc、Color Camera、Color Port 和 Recording。
+> - 相机配置完成后，**Recording =True不要保存到场景布局 `.json` 文件中**。
+> - 每次重新打开布局文件， Recording。
 
 ### 3. 启动仿真
 
