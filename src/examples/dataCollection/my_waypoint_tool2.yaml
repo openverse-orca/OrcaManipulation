@@ -1,36 +1,52 @@
-# 由 record_g1_waypoints.py 自动生成  2026-07-13 16:10:08
-# 坐标系：G1 OmniPicker base_body（g1_omnipicker_body_link1）
-# steps / gripper_r 为占位值，请根据实际需求调整。
+# 6 点路点  2026-07-18 16:53:41
+# 坐标系：G1 OmniPicker base_body（body_link1）
+# 底座右移补偿：delta_b=[0.0, -0.014278, 0.0]；pos'=pos-delta_b（y += 0.014278）
+# 累计 reloc Y：-0.141338 -0.068396 +0.014278 = -0.195456（相对最初）
+# 语义：接近 / 抓取 / 经由1 / 经由2 / 箱上方 / 松开
 
 gripper_open: -0.8561
 gripper_close: 2.0
 
 segments:
 
-  # 路点 1  时间: 16:09:47
-  - steps: 300        # 占位，请按需调整
+  # 路点 1  接近（抓取）
+  - steps: 300
     l_hold: true
-    r_target_b: [0.5528, 0.0165, 0.1935]
+    r_target_b: [0.5528, -0.1789, 0.1935]
     r_quat_b: [-0.5341, 0.3298, 0.4766, 0.6155]
-    gripper_r: open   # 记录时夹爪状态 norm=0.000
+    gripper_r: open
 
-  # 路点 2  时间: 16:09:50
-  - steps: 300        # 占位，请按需调整
+  # 路点 2  抓取闭爪
+  - steps: 300
     l_hold: true
-    r_target_b: [0.5567, 0.0050, 0.1930]
+    r_target_b: [0.5567, -0.1904, 0.1930]
     r_quat_b: [-0.5151, 0.3948, 0.4696, 0.5986]
-    gripper_r: close   # 记录时夹爪状态 norm=1.000
+    gripper_r: close
 
-  # 路点 3  时间: 16:09:58
-  - steps: 300        # 占位，请按需调整
+  # 路点 3  放箱经由1
+  - steps: 300
     l_hold: true
-    r_target_b: [0.6019, 0.2853, 0.3605]
-    r_quat_b: [-0.2072, -0.0537, 0.5873, 0.7805]
-    gripper_r: close   # 记录时夹爪状态 norm=1.000
+    r_target_b: [0.6788, -0.0182, 0.4808]
+    r_quat_b: [-0.5427, -0.2961, 0.4458, 0.6473]
+    gripper_r: close
 
-  # 路点 4  时间: 16:10:03
-  - steps: 300        # 占位，请按需调整
+  # 路点 4  放箱经由2
+  - steps: 300
     l_hold: true
-    r_target_b: [0.5989, 0.2901, 0.3967]
-    r_quat_b: [-0.1339, -0.0653, 0.5785, 0.8020]
-    gripper_r: open   # 记录时夹爪状态 norm=0.000
+    r_target_b: [0.6690, 0.1026, 0.4191]
+    r_quat_b: [-0.4673, -0.3541, 0.4946, 0.6415]
+    gripper_r: close
+
+  # 路点 5  工具箱上方 / 入箱前位
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.5867, 0.1902, 0.2037]
+    r_quat_b: [-0.6557, -0.2457, 0.6428, 0.3107]
+    gripper_r: close
+
+  # 路点 6  箱上松开位
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.5864, 0.1904, 0.2046]
+    r_quat_b: [-0.6526, -0.2458, 0.6444, 0.3138]
+    gripper_r: open

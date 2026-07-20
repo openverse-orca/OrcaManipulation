@@ -1,8 +1,8 @@
 # G1 OmniPicker 四色按钮候选接触位姿
 # 坐标系：G1 OmniPicker base_body（g1_omnipicker_body_link1）
-# 四元数约定：xyzw（与 record_g1_waypoints.py / build_segmented_trajectory 一致）
+# 四元数约定：xyzw（与 build_segmented_trajectory 一致）
 #
-# 数据来源：my_waypoints1.yaml 的 16 个遥操实测接触帧
+# 数据来源：按钮接触位姿候选
 #   红色 → 路点 1-4   绿色 → 路点 5-8
 #   黄色 → 路点 9-12  蓝色 → 路点 13-16
 #

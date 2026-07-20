@@ -1,3 +1,0 @@
-{
-    "python.defaultInterpreterPath": "${env:HOME}/miniconda3/envs/orcalab_lerobot/bin/python"
-}

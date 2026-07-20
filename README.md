@@ -184,25 +184,15 @@ python g1_omnipicker_collection_scripted_button_lerobot.py \
 
 ## 运行方式三：工具整理脚本化采集
 
+先在 OrcaLab 加载工具整理场景布局 `g1_tool.json`，再运行：
+
 ```bash
 python g1_omnipicker_collection_scripted_tool_lerobot.py \
-    --task_config example.yaml \
     --lerobot_out /path/to/out_dataset \
-    --repo_id local/g1_omnipicker_tool \
-    --num_episodes 1 \
-    --fps 20 \
-    --clock wall
+    --num_episodes 20
 ```
 
-说明：
-
-- 右臂从左到右依次抓取 5 个工具放入工具箱，全程单条 episode，左臂全程锁定。
-- 每个工具的路点由独立 YAML 文件指定，默认读取同目录 `my_waypoint_tool1.yaml` … `my_waypoint_tool5.yaml`。
-- 可用 `--waypoint_files` 指定自定义路点文件（逗号分隔，顺序即抓取顺序）。
-- `--safe_z` 控制高位过渡安全高度（base 系 z，单位米，默认 0.50）。
-- `--kp` 调整 OSC 阻抗刚度（默认 220，范围 0～300），越大末端跟踪越紧。
-- 路点文件可使用 `record_g1_waypoints.py` 遥操记录生成。
-- 在已有数据集后继续采集时增加 `--resume`。
+断点续采时追加 `--resume`。
 
 ## 示例 VR 自采数据与 PI0.5 训练
 
@@ -328,8 +318,8 @@ python g1_omnipicker_replay_lerobot.py \
 | `g1_button.json` | OrcaLab 按钮场景布局，包含已标定的 G1 底盘位姿 |
 | `g1_tool.json` | OrcaLab 工具整理场景布局 |
 | `pose_g1_button_candidates.yaml` | 四色按钮候选接触位姿，按钮脚本化采集使用 |
-| `pose_g1_button_targets.yaml` | 四色按钮聚合目标位姿，参考使用 |
-| `my_waypoint_tool1.yaml` … `my_waypoint_tool5.yaml` | 5 个工具的 4 点位路点（接近位 / 抓取闭爪 / 箱上方 / 箱上松开），工具整理采集使用 |
+| `my_waypoint_tool1.yaml` … `my_waypoint_tool5.yaml` | 工具整理采集路点 |
+| `my_slot_waypoints.yaml` | 工具整理采集辅助路点 |
 
 ## 数据集格式
 

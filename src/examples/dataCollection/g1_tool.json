@@ -2,15 +2,15 @@
     "version": "3.0",
     "viewport_camera_transform": {
         "position": [
-            17.806917190551758,
-            -24.080339431762695,
-            4.405424118041992
+            19.719144821166992,
+            -23.975278854370117,
+            2.0386416912078857
         ],
         "rotation": [
-            0.6454837283121425,
-            -0.27783527801957175,
-            0.28127854892041404,
-            -0.6534835060575513
+            0.6520467901325544,
+            -0.2840388077719305,
+            0.28073861784822635,
+            -0.644470920683005
         ]
     },
     "actors": [
@@ -279,8 +279,8 @@
                             "type": "AssetActor",
                             "transform": {
                                 "position": [
-                                    20.36104393005371,
-                                    -23.693527221679688,
+                                    20.352521896362305,
+                                    -23.677690505981445,
                                     0.9681190252304077
                                 ],
                                 "rotation": [
@@ -324,7 +324,7 @@
             "transform": {
                 "position": [
                     19.70798110961914,
-                    -24.152870178222656,
+                    -23.94313621520996,
                     0.2026619017124176
                 ],
                 "rotation": [
@@ -394,6 +394,11 @@
                             "type_index": 0,
                             "property_overrides": [
                                 {
+                                    "name": "NearClipDistance",
+                                    "value": 0.05000000074505806,
+                                    "type": "float"
+                                },
+                                {
                                     "name": "ColorCamera",
                                     "value": true,
                                     "type": "bool"
@@ -401,11 +406,6 @@
                                 {
                                     "name": "UseNvEnc",
                                     "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "IsRecording",
-                                    "value": false,
                                     "type": "bool"
                                 },
                                 {
@@ -514,11 +514,6 @@
                                     "type": "bool"
                                 },
                                 {
-                                    "name": "IsRecording",
-                                    "value": false,
-                                    "type": "bool"
-                                },
-                                {
                                     "name": "ColorPort",
                                     "value": 7080,
                                     "type": "int"
@@ -614,6 +609,11 @@
                             "type_index": 0,
                             "property_overrides": [
                                 {
+                                    "name": "NearClipDistance",
+                                    "value": 0.05000000074505806,
+                                    "type": "float"
+                                },
+                                {
                                     "name": "ColorCamera",
                                     "value": true,
                                     "type": "bool"
@@ -621,11 +621,6 @@
                                 {
                                     "name": "UseNvEnc",
                                     "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "IsRecording",
-                                    "value": false,
                                     "type": "bool"
                                 },
                                 {

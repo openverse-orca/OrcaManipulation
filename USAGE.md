@@ -25,7 +25,7 @@ cd src/examples/dataCollection
 | 副键 | **Y** | **B** | `Y` / `B` | `secondaryButtonPressed` |
 | 摇杆 | ✓ | ✓ | `L_JOYSTICK_POSITION` / `R_JOYSTICK_POSITION` | `joystickPosition` [x, y] |
 
-### 机器人控制（两脚本共用部分）
+### 机器人控制（遥操作采集）
 
 | 功能 | 按键 | 说明 |
 |------|------|------|
@@ -37,7 +37,7 @@ cd src/examples/dataCollection
 
 > 夹爪逻辑见 `controller_2f85_reverse.py`：主键（X/A）增大开度，副键（Y/B）减小开度，扳机按指数曲线连续闭合。
 
-### 脚本 A：VR 遥操作采集（`g1_omnipicker_collection_tele_lerobot.py`）
+### VR 遥操作采集（`g1_omnipicker_collection_tele_lerobot.py`）
 
 | 功能 | 按键 | 状态 / 备注 |
 |------|------|-------------|
@@ -55,15 +55,6 @@ cd src/examples/dataCollection
 
 **UI 提示**（OrcaLab 场景内）：`左Grip×1=开始 左Grip×2=保存 右Grip=丢弃重置 左右Grip同按=退出`
 
-### 脚本 B：路点录制（`record_g1_waypoints.py`）
-
-| 功能 | 按键 | 备注 |
-|------|------|------|
-| 记录路点 | **左 + 右 Grip 同时**（边沿触发） | 记录右臂 base 系位姿 + 右夹爪状态；默认防抖 0.5 s |
-| 退出并写 YAML | 终端 `Ctrl+C` | 自动输出 `--output` 指定文件 |
-
-路点模式下：仅绑定右臂 + 右夹爪；左夹爪不绑按键；左臂锁死。
-
 ### 预留（代码支持，G1 按按钮场景未启用）
 
 | 功能 | 按键 | 代码位置 |
@@ -73,19 +64,7 @@ cd src/examples/dataCollection
 
 ---
 
-## 1. 路点录制（首次部署或场景变更后）
-
-遥操右臂靠近按钮，同时按下左右 Grip 键触发记录，Ctrl+C 写出文件：
-
-```bash
-python record_g1_waypoints.py \
-    --task_config example.yaml \
-    --output my_waypoints_new.yaml
-```
-
----
-
-## 2. VR 遥操作采集
+## 1. VR 遥操作采集
 
 ```bash
 python g1_omnipicker_collection_tele_lerobot.py \
@@ -101,7 +80,7 @@ python g1_omnipicker_collection_tele_lerobot.py \
 
 ---
 
-## 3. 脚本化自动采集
+## 2. 脚本化自动采集（四色按钮）
 
 ```bash
 python g1_omnipicker_collection_scripted_button_lerobot.py \
@@ -114,6 +93,20 @@ python g1_omnipicker_collection_scripted_button_lerobot.py \
 启动后终端会交互式询问四色各采集集数，或通过 `--counts 25,25,25,25` 非交互传入。
 
 候选位姿文件默认为同目录 `pose_g1_button_candidates.yaml`，可通过 `--pose_candidates` 覆盖。
+
+---
+
+## 3. 工具整理脚本化采集
+
+先在 OrcaLab 加载工具整理场景布局 `g1_tool.json`，再运行：
+
+```bash
+python g1_omnipicker_collection_scripted_tool_lerobot.py \
+    --lerobot_out /path/to/out_dataset \
+    --num_episodes 20
+```
+
+- 断点续采：追加 `--resume`。
 
 ---
 
@@ -131,27 +124,6 @@ python g1_omnipicker_replay_lerobot.py \
 - `--episode`：指定集号（1-indexed），省略则顺序播完全部
 - `--steps_per_frame`：每帧保持步数，越小速度越快（默认 3）
 - `--loop`：循环回放（Ctrl+C 退出）
-
----
-
-## 4b. 工具整理脚本化采集
-
-```bash
-python g1_omnipicker_collection_scripted_tool_lerobot.py \
-    --task_config example.yaml \
-    --lerobot_out /path/to/out_dataset \
-    --repo_id local/g1_omnipicker_tool \
-    --num_episodes 1 \
-    --fps 20 \
-    --clock wall
-```
-
-- 右臂依次抓取 5 个工具放入工具箱，全程单条 episode，左臂全程锁定。
-- 每个工具的路点文件默认为 `my_waypoint_tool1.yaml` … `my_waypoint_tool5.yaml`，可用 `--waypoint_files` 指定（逗号分隔）。
-- `--safe_z`：高位过渡安全高度（base 系 z，单位米，默认 0.50）。
-- `--kp`：OSC 阻抗刚度（默认 220，范围 0～300），越大末端跟踪越紧。
-- 各段步数可通过 `--steps_transit/descend/grasp/settle/lift/to_box/release/release_settle/lift_after` 单独调整。
-- 路点文件使用 `record_g1_waypoints.py` 遥操录制生成（每个工具录 4 个路点：接近位 / 闭爪抓取位 / 箱上方 / 箱上松开位）。
 
 ---
 
@@ -182,6 +154,7 @@ python eval_g1_omnipicker_lerobot.py \
 ---
 
 ## 6. 场景与配置说明
+
 
 ### OrcaLab 场景加载顺序
 
