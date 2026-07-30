@@ -8,7 +8,6 @@ import traceback
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-# sys.path.append(os.path.join("/home/orca/Projects/", "OrcaGym"))
 
 
 from scene.scene_manager import SceneManager
@@ -115,8 +114,8 @@ def main():
         device=pico_joystick_device,
         scene_manager=scene_manager,
         data_storage=data_storage,
-        frame_skip=5,
-        time_step=0.005,
+        frame_skip=20,
+        time_step=0.001,
         mjc_agent_prefix=mjc_prefix,
     )
     env = data_collection_manager.env
@@ -147,9 +146,9 @@ def main():
     data_collection_manager.save_video = True
     
     data_collection_manager.add_monitor_port(7070)
-    # data_collection_manager.add_monitor_port(7081)
-    # data_collection_manager.add_monitor_port(7090)
-    # data_collection_manager.add_monitor_port(7091)
+    data_collection_manager.add_monitor_port(7081)
+    data_collection_manager.add_monitor_port(7090)
+    data_collection_manager.add_monitor_port(7091)
 
     data_collection_manager.run()
 

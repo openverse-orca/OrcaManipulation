@@ -21,11 +21,11 @@ type: "pick_and_place"
 # actor.random.nums: 随机生成的数量范围
 actor:
   names: ["bottle_red", "jar_01", "bottle_blue", "salt", "can"]
-  spawnable: ["assets/e071469a36d3c8aa/shopscene_scaning/shop_scene/prefabs/goods/bottle_red", 
-    "assets/e071469a36d3c8aa/shopscene_scaning/shop_scene/prefabs/goods/jar_01", 
-    "assets/e071469a36d3c8aa/shopscene_scaning/shop_scene/prefabs/goods/bottle_blue", 
-    "assets/e071469a36d3c8aa/shopscene_scaning/shop_scene/prefabs/goods/salt", 
-    "assets/e071469a36d3c8aa/shopscene_scaning/shop_scene/prefabs/goods/can"]
+  spawnable: ["assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/bottle_red", 
+    "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/jar_01", 
+    "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/bottle_blue", 
+    "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/salt", 
+    "assets/e071469a36d3c8aa/default_project/shop_scene/prefabs/goods/can"]
   joints: ["bottle_red_joint", "jar_01_joint", "bottle_blue_joint", "salt_joint", "can_joint"]
   # 关节的自由度，值为1, 3, 6
   joints_dof: [6, 6, 6, 6, 6]
@@ -55,12 +55,12 @@ actor:
 # 参数和actor含义类似
 light:
   names: ["spotlight1", "spotlight2", "spotlight3", "spotlight4", "spotlight5", "spotlight6"]
-  spawnable: ["assets/cb9b36b102080fdd/default_project/prefabs/spotlight",
-              "assets/cb9b36b102080fdd/default_project/prefabs/spotlight",
-              "assets/cb9b36b102080fdd/default_project/prefabs/spotlight",
-              "assets/cb9b36b102080fdd/default_project/prefabs/spotlight",
-              "assets/cb9b36b102080fdd/default_project/prefabs/spotlight",
-              "assets/cb9b36b102080fdd/default_project/prefabs/spotlight"]
+  spawnable: ["assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
+              "assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
+              "assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
+              "assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
+              "assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
+              "assets/e071469a36d3c8aa/default_project/prefabs/spotlight"]
   random:
     position: true
     rotation: true
