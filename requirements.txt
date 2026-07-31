@@ -2,11 +2,13 @@
 orca-gym>=26.6.0
 numpy
 scipy
-gymnasium
+# 以 orca-gym 为准锁定；覆盖 lerobot 声明的 gymnasium<1.0.0（本项目仅用 lerobot 数据集 API）
+gymnasium==1.2.1
 opencv-python
 av
 pyarrow
-lerobot>=0.3.0
+# 0.3.4 起提供 save_episode_data_only；0.3.0–0.3.3 无此 API
+lerobot==0.3.4
 mujoco
 numba
 termcolor>=2.4.0

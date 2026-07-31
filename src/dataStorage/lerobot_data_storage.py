@@ -287,13 +287,23 @@ class LeRobotDatasetWriter:
         cams = camera_keys(camera_map)
 
         if resume and Path(root).exists():
-            dataset = LeRobotDataset(
-                repo_id=repo_id,
-                root=root,
-                download_videos=False,
-                tolerance_s=0.0001,
-            )
-            dataset.episode_buffer = dataset.create_episode_buffer()
+            try:
+                dataset = LeRobotDataset(
+                    repo_id=repo_id,
+                    root=root,
+                    download_videos=False,
+                    tolerance_s=0.0001,
+                )
+                dataset.episode_buffer = dataset.create_episode_buffer()
+            except Exception as e:
+                msg = (
+                    f"[resume] 加载已有数据集失败 (root={root})：{e}\n"
+                    "  常见原因：上次采集异常退出导致 meta / parquet / mp4 不一致。\n"
+                    "  处理建议：用备份覆盖该目录后重试 --resume；"
+                    "或去掉 --resume 以覆写模式重新采集。"
+                )
+                print(msg, flush=True)
+                raise RuntimeError(msg) from e
             print(
                 f"[resume] 已加载 {dataset.num_episodes} 集 / "
                 f"{dataset.num_frames} 帧 (root={root})"

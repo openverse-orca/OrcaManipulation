@@ -9,7 +9,8 @@
 | OrcaLab | **6.3** |
 | Python | **3.12 及以上** |
 | `orca-gym` | 推荐使用与 OrcaLab 6.3 配套的 **26.6.x** |
-| `lerobot` | **0.3.x**，数据集格式为 LeRobot v2.1 |
+| `lerobot` | **0.3.4+**（精确推荐 `==0.3.4`），数据集格式为 LeRobot v2.1；0.3.4 以下缺少 `save_episode_data_only` API |
+| `gymnasium` | **1.2.1**（与 `orca-gym` 一致；见下方依赖说明） |
 | GPU 视频编码 | NVIDIA GPU；驱动及 PyAV/FFmpeg 需要支持 `av1_nvenc` |
 
 > 依赖见 `requirements.txt`。在线推理还需 `openpi_client`（或通过 `OPENPI_CLIENT_SRC` 指定源码路径）。
@@ -54,6 +55,15 @@ OrcaManipulation/
 conda activate orcalab_lerobot
 pip install -r requirements.txt
 ```
+
+**关于依赖冲突 Warning：**
+
+`pip install` / `pip check` 可能报出例如：
+
+- `lerobot 0.3.4 requires gymnasium<1.0.0,>=0.29.1, but you have gymnasium 1.2.1`
+- `orca-gym` / 其他包与 `numpy` 版本不完全一致
+
+**可以忽略。** 本项目仅使用 lerobot 的数据集读写 API，不依赖其 gymnasium 集成；运行时以 `orca-gym` 所需版本为准。`requirements.txt` 已显式锁定 `gymnasium==1.2.1` 与 `lerobot==0.3.4`，避免 pip 把 gymnasium 降级到 `<1.0`。若个别环境仍被降级，可对 lerobot 使用 `pip install lerobot==0.3.4 --no-deps`，再确认 `gymnasium==1.2.1`。
 
 推理脚本如需 `openpi_client`：
 
@@ -179,11 +189,18 @@ python g1_omnipicker_collection_tele_lerobot.py \
 常用操作：
 
 - 同时按下左右摇杆，触发手柄连接
+- **连接成功后机器人仍保持静止**：须再按一次**左 Grip** 进入 `RUNNING` 后，右臂/夹爪才响应手柄（采集前门控，属正常设计）
 - 左 Grip 单击：开始当前 episode；再次单击：结束并保存
 - 右 Grip 单击：放弃当前 episode 并重置
-- 左右 Grip 同时按下：结束全部采集
+- 左右 Grip 同时按下：结束全部采集（易误触，握持时请避免左右侧握同时按下）
 - 左臂锁定，右手柄 6DOF 控制右臂末端
 - 续采时增加 `--resume`
+
+**`--resume` 续采注意：**
+
+- 续采启动后同样需要左 Grip 开始采集；仅看到「手柄已连接」并不等于已开始遥操作。
+- 终端应出现 `[resume] 已加载 N 集 / M 帧` 以及周期性 `========== 正在采集第 … 集 ==========`；若没有这些日志而只有连接提示，说明数据集加载失败，请查看终端错误输出，勿继续采集。
+- 异常退出可能导致 meta / parquet / mp4 不一致；此时可用备份覆盖数据集后再 `--resume`，或不用 `--resume` 覆写重采。
 
 更详细的按键映射见 [`USAGE.md`](USAGE.md)。
 
