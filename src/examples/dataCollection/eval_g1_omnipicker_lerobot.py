@@ -404,6 +404,7 @@ def main():
     env = manager.env
     manager.set_disable_actuator_group([agent_conf.positions_group])
     manager.set_task(EmptyTask(env))
+    manager.mode = DataCollectionManager.DataCollectionMode.INFERENCE
 
     l_arm  = create_arm(env, agent_conf.l_arm)
     r_arm  = create_arm(env, agent_conf.r_arm)

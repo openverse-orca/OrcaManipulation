@@ -23,6 +23,7 @@ class DataCollectionManager:
     class DataCollectionMode(enum.Enum):
         TELECONTROL = 0
         AUGMENTATION = 1
+        INFERENCE = 2
 
     def __init__(
         self,
@@ -319,7 +320,17 @@ class DataCollectionManager:
                     self.scene_manager.show_ui_message(
                         1, "按 GripButton 开始采集", "0xffff00", showtime=10
                     )
-                    
+
+            elif self.mode == self.DataCollectionMode.INFERENCE:
+                if self.task is not None:
+                    self.scene_manager.update_actor_qpos()
+                    self.task.get_task(self.scene_manager)
+                    orca_logger.info(
+                        f"Task description: {self.task.get_task_description()}"
+                    )
+                    self.scene_manager.show_ui_message(
+                        1, "推理中...", "0x00bfff", showtime=0
+                    )
 
             elif self.mode == self.DataCollectionMode.AUGMENTATION:
                 from devices.data_device import DataDevice
