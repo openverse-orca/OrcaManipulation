@@ -2,9 +2,9 @@
     "version": "3.0",
     "viewport_camera_transform": {
         "position": [
-            19.719144821166992,
-            -23.975278854370117,
-            2.0386416912078857
+            18.686729431152344,
+            -23.987340927124023,
+            3.148833751678467
         ],
         "rotation": [
             0.6520467901325544,
@@ -503,6 +503,11 @@
                             "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
                             "type_index": 0,
                             "property_overrides": [
+                                {
+                                    "name": "NearClipDistance",
+                                    "value": 0.10000000149011612,
+                                    "type": "float"
+                                },
                                 {
                                     "name": "ColorCamera",
                                     "value": true,

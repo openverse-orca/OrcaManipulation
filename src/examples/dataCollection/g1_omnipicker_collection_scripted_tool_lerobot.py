@@ -1,8 +1,33 @@
-"""G1 OmniPicker 工具整理脚本化自动采集 → LeRobot v2.1。
+"""G1 OmniPicker 工具整理脚本化自动采集 → LeRobot v2.1 格式。
+
+右臂从左到右依次抓取 5 个工具放入工具箱，全程单条 episode，
+自动插入安全过渡（抬升 → 高位水平移动 → 垂直下降）避免碰到相邻工具。
+左臂全程锁死。
+
+输入：5 个路点 YAML（默认 my_waypoint_tool1.yaml … my_waypoint_tool5.yaml），
+      每个支持 4 或 6 点位：
+        4 点：接近 / 抓取闭爪 / 箱上方 / 箱上松开
+        6 点：接近 / 抓取闭爪 / 放箱经由1 / 经由2 / 箱上方 / 箱上松开
+随机化（--randomize）流水线：
+  1) RNG 均匀排列 assignment[slot]=tool（拒绝采样：手电筒禁止 slot4）
+  2) _place_tools：工具只改槽位 y，保留自身 x/z/姿态
+  3) wp0/wp1 = 原 YAML 平移 delta；若存在合法补录 slotX_toolY 则用绝对位姿覆盖
+  4) 抓取顺序 = 槽位从左到右（slot0→slot4），因此「谁先被抓」随排列变化
+  5) 放箱路点（4点:wp2/wp3；6点:wp2..wp5）始终用该工具原 YAML（不随槽位变）
+
+控制：离线预构建轨迹（build_segmented_trajectory）。
+
+入箱检测（默认开）：每件工具全部路点结束后，待 EE 的 xy 投影已不在整箱矩形内，
+再检查该工具接触白名单——仅允许「箱子内表面」或「已入箱工具」；
+与机器人/货架工具/其它物体接触，或超时无接触 → 失败并换 seed 重采。
 
 用法：
+  cd src/examples/dataCollection
   python g1_omnipicker_collection_scripted_tool_lerobot.py \\
-      --lerobot_out /path/to/out_dataset --num_episodes 20
+      --task_config example.yaml \\
+      --lerobot_out /path/to/out_dataset \\
+      --repo_id local/g1_omnipicker_tool \\
+      --randomize --num_episodes 1 --fps 20
 """
 import argparse
 import os
@@ -61,7 +86,7 @@ orca_logger = get_orca_logger(
     force_reinit=True,
 )
 
-# 左臂初始关节角（与 tele_linit 一致）
+# 左臂初始关节角（与 record_g1_waypoints.py / tele_linit 一致）
 _L_INIT_JOINT_VALUES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
 # 工具名称（按抓取顺序）
@@ -119,30 +144,6 @@ _ROBOT_BODY_KEYWORDS = (
     "finger",
     "hand",
 )
-
-_CFG_TASK_CONFIG = "example.yaml"
-_CFG_REPO_ID = "local/gt_tool"
-_CFG_FPS = 20
-_CFG_ORCAGYM_ADDR = "localhost:50051"
-_CFG_LEVEL = "default"
-_CFG_TASK = "整理工具"
-_CFG_RANDOMIZE = True
-_CFG_SEED = None
-_CFG_SAFE_Z = 0.50
-_CFG_STEPS_TRANSIT = 90
-_CFG_STEPS_DESCEND = 110
-_CFG_STEPS_GRASP = 55
-_CFG_STEPS_SETTLE = 75
-_CFG_STEPS_LIFT = 70
-_CFG_STEPS_PLACE_VIA = 35
-_CFG_STEPS_TO_BOX = 70
-_CFG_STEPS_RELEASE = 40
-_CFG_STEPS_RELEASE_SETTLE = 55
-_CFG_STEPS_LIFT_AFTER = 55
-_CFG_KP = 220.0
-_CFG_CHECK_BOX_BOTTOM = True
-_CFG_MAX_PLACE_RETRIES = 999999
-_CFG_CLOCK = "wall"
 
 
 # ---------------------------------------------------------------------------
@@ -277,8 +278,12 @@ def _calibrate_box_bottom_inner(env, base_body: str) -> dict:
         pad = 0.03
         xy_min = np.minimum(xy_min, xys.min(axis=0) - pad)
         xy_max = np.maximum(xy_max, xys.max(axis=0) + pad)
+        orca_logger.info(
+            f"[箱底标定] 用 {len(contact_tools_z)} 件已入箱工具收紧底面 "
+            f"z≈{z_surface:.4f}"
+        )
 
-    box_xy_min, box_xy_max, _n_box_geoms = _calibrate_toolbox_xy_aabb(env, base_body)
+    box_xy_min, box_xy_max, n_box_geoms = _calibrate_toolbox_xy_aabb(env, base_body)
 
     xs = np.linspace(xy_min[0], xy_max[0], 3)
     ys = np.linspace(xy_min[1], xy_max[1], 3)
@@ -286,7 +291,7 @@ def _calibrate_box_bottom_inner(env, base_body: str) -> dict:
         [[x, y, z_surface] for x in xs for y in ys], dtype=np.float64
     )
 
-    return {
+    info = {
         "xy_min": xy_min.astype(np.float64),
         "xy_max": xy_max.astype(np.float64),
         "box_xy_min": box_xy_min,
@@ -295,6 +300,25 @@ def _calibrate_box_bottom_inner(env, base_body: str) -> dict:
         "sample_points": sample_points,
         "geom_name": gname,
     }
+    orca_logger.info(
+        f"[箱底标定] geom={gname} | "
+        f"底面xy=[{xy_min[0]:.3f},{xy_max[0]:.3f}]×[{xy_min[1]:.3f},{xy_max[1]:.3f}] "
+        f"z_surface={z_surface:.4f} | "
+        f"整箱xy=[{box_xy_min[0]:.3f},{box_xy_max[0]:.3f}]×"
+        f"[{box_xy_min[1]:.3f},{box_xy_max[1]:.3f}] ({n_box_geoms} geoms)"
+    )
+    print(
+        f"  箱底内侧: z={z_surface:.3f}  "
+        f"xy=[{xy_min[0]:.2f},{xy_max[0]:.2f}]×[{xy_min[1]:.2f},{xy_max[1]:.2f}]",
+        flush=True,
+    )
+    print(
+        f"  整箱xy(EE判定): "
+        f"[{box_xy_min[0]:.2f},{box_xy_max[0]:.2f}]×"
+        f"[{box_xy_min[1]:.2f},{box_xy_max[1]:.2f}]",
+        flush=True,
+    )
+    return info
 
 
 def _body_name_matches(contact_body: str, target: str) -> bool:
@@ -360,8 +384,8 @@ def _tool_resting_on_box_bottom(
                 on_tool = any(_body_name_matches(b, tool_body) for b in bodies)
                 if on_tool and any(_is_toolbox_body(b) for b in bodies):
                     return True, "contact_toolbox", pos_b
-        except Exception:
-            pass
+        except Exception as e:
+            orca_logger.warning(f"[入箱检测] query_contact_simple 失败: {e}")
 
     if use_geom and xy_min is not None and xy_max is not None and z_surface is not None:
         xy_min = np.asarray(xy_min, dtype=np.float64)
@@ -521,6 +545,7 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
         r_quat_xyzw: np.ndarray,
         l_grip_motor: np.ndarray,
         r_grip_motor: np.ndarray,
+        seg_bounds=None,
         place_arm_at=None,
         box_bottom=None,
         base_body_query: str | None = None,
@@ -547,6 +572,8 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
         self.l_grip_motor = l_grip_motor
         self.r_grip_motor = r_grip_motor
         self.t = 0
+        # 段边界诊断：{step_index: (label, commanded_r_target_b)}
+        self.seg_bounds = seg_bounds or {}
         # 入箱监视：该工具全部路点结束步 → tool_idx
         self.place_arm_at = place_arm_at or {}  # {step: tool_idx}
         self.box_bottom = box_bottom
@@ -577,7 +604,8 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
             )
             pos = np.asarray(ee_b[self.r_arm.ee_name]["xpos"], dtype=np.float64)
             return pos[:2]
-        except Exception:
+        except Exception as e:
+            orca_logger.warning(f"[入箱检测] 查询 EE 失败: {e}")
             return None
 
     def _ee_in_box_xy(self, ee_xy) -> bool:
@@ -601,9 +629,18 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
         )
 
     def _fail_one_tool(self, tool_idx: int, when_label: str, detail: str, pos_b) -> None:
+        tool_name = _TOOL_NAMES[tool_idx]
+        pos_str = (
+            f"pos={np.asarray(pos_b).round(4).tolist()}"
+            if pos_b is not None
+            else "pos=?"
+        )
         self.place_failed = True
-        self.place_fail_reason = "放置未成功"
-        print("  ✗ 放置未成功", flush=True)
+        self.place_fail_reason = (
+            f"{when_label}: 工具 {tool_name} 入箱失败 ({detail}) {pos_str}"
+        )
+        orca_logger.warning(f"[入箱检测] ✗ {self.place_fail_reason} → 放弃本集")
+        print(f"  ✗ 入箱失败: {self.place_fail_reason}", flush=True)
         self._force_task_end()
 
     def _tick_place_monitors(self):
@@ -625,6 +662,18 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
                     "since_outside": 0,
                 }
             )
+            ee_xy0 = self._query_ee_xy_b()
+            ee_str = (
+                f"ee_xy={np.asarray(ee_xy0).round(4).tolist()}"
+                if ee_xy0 is not None
+                else "ee_xy=?"
+            )
+            orca_logger.info(
+                f"[入箱检测] 启动监视 {_TOOL_NAMES[tool_idx]} "
+                f"（该工具路点结束@step{self.t}；{ee_str}；"
+                f"待 EE xy 出整箱矩形后再等接触，"
+                f"超时 {self.place_timeout_steps} 步）"
+            )
 
         if not self._place_watchers:
             return
@@ -634,12 +683,22 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
         still_active: list[dict] = []
         for w in self._place_watchers:
             tool_idx = int(w["tool_idx"])
+            name = _TOOL_NAMES[tool_idx]
             tool_body = _TOOL_BODY_JOINT_NAMES[tool_idx]
             phase = w["phase"]
             if phase == "wait_ee_outside":
                 if not ee_in_box:
                     w["phase"] = "wait_contact"
                     w["since_outside"] = 0
+                    ee_str = (
+                        f"ee_xy={np.asarray(ee_xy).round(4).tolist()}"
+                        if ee_xy is not None
+                        else "ee_xy=?"
+                    )
+                    orca_logger.info(
+                        f"[入箱检测] {name}: EE xy 已出整箱矩形（{ee_str}），"
+                        f"等待工具产生接触"
+                    )
                 still_active.append(w)
             elif phase == "wait_contact":
                 w["since_outside"] = int(w.get("since_outside", 0)) + 1
@@ -649,6 +708,11 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
                     self.base_body_query,
                     self._placed_inbox_tools,
                     self.box_bottom,
+                )
+                pos_str = (
+                    f"pos={np.asarray(pos_b).round(4).tolist()}"
+                    if pos_b is not None
+                    else "pos=?"
                 )
                 if status == "waiting":
                     if w["since_outside"] >= self.place_timeout_steps:
@@ -670,9 +734,33 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
                     )
                     return
                 self._placed_inbox_tools.add(tool_body)
+                orca_logger.info(
+                    f"[入箱检测] ✓ {name} | {detail} | {pos_str} "
+                    f"(EE出箱后 {w['since_outside']} 步) | "
+                    f"已入箱={len(self._placed_inbox_tools)}"
+                )
             else:
                 still_active.append(w)
         self._place_watchers = still_active
+
+    def _log_tracking(self, step_idx):
+        """查询右臂末端实际 base 系位置，与命令目标对比，打印跟踪误差。"""
+        label, cmd = self.seg_bounds[step_idx]
+        try:
+            ee_b = self.r_arm.env.query_site_pos_and_quat_B(
+                [self.r_arm.ee_name], [self.r_arm.base_link]
+            )
+            actual = np.asarray(ee_b[self.r_arm.ee_name]["xpos"], dtype=np.float64)
+            cmd = np.asarray(cmd, dtype=np.float64)
+            err = actual - cmd
+            err_norm = float(np.linalg.norm(err))
+            orca_logger.info(
+                f"[跟踪诊断] {label} @step{step_idx} | "
+                f"命令={cmd.round(4).tolist()} 实际={actual.round(4).tolist()} "
+                f"误差={err.round(4).tolist()} |误差|={err_norm * 1000:.1f}mm"
+            )
+        except Exception as e:
+            orca_logger.warning(f"[跟踪诊断] {label} 查询失败: {e}")
 
     def update(self):
         if self.t >= len(self.l_pos):
@@ -688,6 +776,8 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
         if self.place_failed:
             self.t = len(self.l_pos)
             return
+        if self.t in self.seg_bounds:
+            self._log_tracking(self.t)
         self.l_arm.update_action_position(self.l_pos[self.t])
         self.l_arm.update_action_axisangle(self.l_quat_xyzw[self.t])
         self.r_arm.update_action_position(self.r_pos[self.t])
@@ -730,7 +820,7 @@ def _load_waypoint_yaml(path: str) -> dict:
 
 
 def _load_extra_slot_waypoints(path: str) -> dict:
-    """加载槽位补录 YAML（slotX_toolY → wp0/wp1）。
+    """加载槽位补录 YAML（record_slot_waypoints.py 输出）。
 
     返回 dict[key] = {"wp0": {"pos", "quat", "grip"}, "wp1": {...}}
     key 形如 "slot0_tool1"。
@@ -782,6 +872,11 @@ def _apply_extra_slot_waypoints(
     for wp_name in ("wp0", "wp1"):
         y = float(override[wp_name]["pos"][1])
         if abs(y - slot_y) > _EXTRA_SLOT_Y_TOL:
+            orca_logger.warning(
+                f"[槽位补录] 拒绝 {key}：{wp_name}.y={y:.4f} 与 slot{slot_idx} "
+                f"参考y={slot_y:.4f} 偏差 {abs(y - slot_y)*1000:.0f}mm > "
+                f"{_EXTRA_SLOT_Y_TOL*1000:.0f}mm，回退平移"
+            )
             return warped, False
 
     for wp_idx, wp_name in enumerate(("wp0", "wp1")):
@@ -1050,29 +1145,107 @@ def _build_tool_segments(
 # main
 # ---------------------------------------------------------------------------
 
-
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="G1 OmniPicker 工具整理脚本化自动采集 → LeRobot v2.1"
+        description="G1 OmniPicker 工具整理脚本化自动采集 → LeRobot v2.1 格式"
     )
-    parser.add_argument("--lerobot_out", type=str, required=True, help="数据集输出目录")
-    parser.add_argument("--num_episodes", type=int, default=1, help="采集轮数")
-    parser.add_argument("--resume", action="store_true", help="在已有数据集上续采")
+    parser.add_argument("--level", type=str, default="default")
+    parser.add_argument("--task_config", type=str, default="example.yaml")
+    parser.add_argument("--lerobot_out", type=str, required=True)
+    parser.add_argument("--repo_id", default="local/g1_omnipicker_tool")
+    parser.add_argument("--fps", type=int, default=20)
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--orcagym_addr", default="localhost:50051")
+    parser.add_argument(
+        "--waypoint_files",
+        type=str,
+        default=",".join(
+            os.path.join(base_dir, f"my_waypoint_tool{i}.yaml") for i in range(1, 6)
+        ),
+        help="5 个路点 YAML 路径，逗号分隔，顺序即抓取顺序（默认 my_waypoint_tool1..5.yaml）",
+    )
+    parser.add_argument("--num_episodes", type=int, default=1, help="采集轮数（默认1）")
+    parser.add_argument("--task", type=str, default="整理工具", help="语言指令（默认：整理工具）")
+    parser.add_argument(
+        "--randomize", action="store_true",
+        help="每个 episode 用 RNG 随机排列槽位（手电筒禁最右侧）；抓取按槽位左→右",
+    )
+    parser.add_argument(
+        "--extra_slot_waypoints",
+        type=str,
+        default=os.path.join(base_dir, "my_slot_waypoints.yaml"),
+        help="槽位补录 YAML。命中且 Y 与槽位一致时用绝对 wp0/wp1；传空字符串禁用",
+    )
+    parser.add_argument(
+        "--seed", type=int, default=None,
+        help="随机化基础种子；episode N 用 seed+N。默认不设=每次运行用时间种子（真随机）",
+    )
+    parser.add_argument(
+        "--safe_z", type=float, default=0.50,
+        help="安全过渡高度 base 系 z（米，默认 0.50）"
+    )
+    # 默认偏快：抓取仍留足沉降；放箱侧（尤其经由/松开，wp 几乎重合）尽量压缩。
+    parser.add_argument("--steps_transit", type=int, default=90, help="高位过渡步数（默认90）")
+    parser.add_argument("--steps_descend", type=int, default=110, help="垂直下降步数（默认110）")
+    parser.add_argument("--steps_grasp", type=int, default=55, help="移到抓取点步数（默认55）")
+    parser.add_argument("--steps_settle", type=int, default=75, help="抓取点沉降+闭爪驻留步数（默认75）")
+    parser.add_argument("--steps_lift", type=int, default=70, help="抬升步数（默认70）")
+    parser.add_argument(
+        "--steps_place_via",
+        type=int,
+        default=35,
+        help="6 点模式：两条放箱经由段各自步数（默认35≈1.8s@20fps；4 点 YAML 忽略）",
+    )
+    parser.add_argument("--steps_to_box", type=int, default=70, help="移到工具箱上方步数（默认70）")
+    parser.add_argument(
+        "--steps_release",
+        type=int,
+        default=40,
+        help="闭爪逼近松开位步数（默认40；当前 wp 箱上/松开几乎重合）",
+    )
+    parser.add_argument("--steps_release_settle", type=int, default=55, help="松开位沉降+张开驻留步数（默认55）")
+    parser.add_argument("--steps_lift_after", type=int, default=55, help="放置后抬升步数（默认55）")
+    parser.add_argument(
+        "--kp", type=float, default=220.0,
+        help="OSC 阻抗刚度 kp（默认220）",
+    )
+    parser.add_argument(
+        "--check_box_bottom",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="该工具路点结束后，待 EE xy 出整箱矩形且产生接触，再按白名单检查",
+    )
+    parser.add_argument(
+        "--place_check_timeout_s",
+        type=float,
+        default=_PLACE_CHECK_TIMEOUT_S,
+        help=f"EE xy 出整箱后等待接触的最长时间（秒，默认{_PLACE_CHECK_TIMEOUT_S}）",
+    )
+    parser.add_argument(
+        "--max_place_retries",
+        type=int,
+        default=8,
+        help="单集入箱失败最大重试次数（默认8，每次可换 seed）",
+    )
+    parser.add_argument(
+        "--clock",
+        choices=("sim", "wall"),
+        default="wall",
+        help="采帧时钟源（wall=墙钟，sim=仿真时间）",
+    )
     args = parser.parse_args()
 
-    lerobot_out = os.path.abspath(os.path.expanduser(args.lerobot_out))
-    num_episodes = int(args.num_episodes)
-
-    yaml_paths = [
-        os.path.join(base_dir, f"my_waypoint_tool{i}.yaml") for i in range(1, 6)
-    ]
-    extra_path = os.path.join(base_dir, "my_slot_waypoints.yaml")
+    # ── 加载 5 个路点 YAML ──────────────────────────────────────────────────
+    yaml_paths = [p.strip() for p in args.waypoint_files.split(",")]
+    if len(yaml_paths) != 5:
+        orca_logger.error(f"--waypoint_files 需要 5 个路径，收到 {len(yaml_paths)} 个")
+        return
 
     tool_data: list[dict] = []
     g_open_global = -0.8561
     g_close_global = 2.0
     for i, path in enumerate(yaml_paths):
-        path = os.path.abspath(path)
+        path = os.path.abspath(os.path.expanduser(path))
         if not os.path.exists(path):
             orca_logger.error(f"路点文件不存在: {path}")
             return
@@ -1081,25 +1254,55 @@ def main() -> None:
         if i == 0:
             g_open_global = td["g_open"]
             g_close_global = td["g_close"]
+        n_wp = len(td["waypoints"])
+        orca_logger.info(
+            f"工具 {i+1} ({_TOOL_NAMES[i]}): {path} | {n_wp} 点\n"
+            f"  wp0={td['waypoints'][0]['pos']}  wp1={td['waypoints'][1]['pos']}  "
+            f"release={td['waypoints'][-1]['pos']}"
+        )
 
+    # 槽位补录：加载后预检 Y 是否对齐槽位；不合格的 key 直接剔除
     extra_slot_waypoints: dict = {}
-    if os.path.isfile(extra_path):
-        raw_extras = _load_extra_slot_waypoints(extra_path)
-        for key, entry in raw_extras.items():
-            try:
-                slot_idx = int(key.split("_")[0][4:])
-            except (IndexError, ValueError):
-                continue
-            slot_y = float(_TOOL_REFERENCE_POS_B[slot_idx, 1])
-            bad = False
-            for wp_name in ("wp0", "wp1"):
-                y = float(entry[wp_name]["pos"][1])
-                if abs(y - slot_y) > _EXTRA_SLOT_Y_TOL:
-                    bad = True
-                    break
-            if not bad:
-                extra_slot_waypoints[key] = entry
+    if args.extra_slot_waypoints:
+        extra_path = os.path.abspath(os.path.expanduser(args.extra_slot_waypoints))
+        if os.path.isfile(extra_path):
+            raw_extras = _load_extra_slot_waypoints(extra_path)
+            for key, entry in raw_extras.items():
+                try:
+                    slot_idx = int(key.split("_")[0][4:])
+                except (IndexError, ValueError):
+                    orca_logger.warning(f"[槽位补录] 无法解析 key，忽略: {key}")
+                    continue
+                slot_y = float(_TOOL_REFERENCE_POS_B[slot_idx, 1])
+                bad = False
+                for wp_name in ("wp0", "wp1"):
+                    y = float(entry[wp_name]["pos"][1])
+                    if abs(y - slot_y) > _EXTRA_SLOT_Y_TOL:
+                        orca_logger.warning(
+                            f"[槽位补录] 剔除 {key}：{wp_name}.y={y:.4f} 偏离 "
+                            f"slot{slot_idx} 参考y={slot_y:.4f} "
+                            f"({abs(y - slot_y)*1000:.0f}mm)，请重录"
+                        )
+                        bad = True
+                        break
+                if not bad:
+                    extra_slot_waypoints[key] = entry
+            orca_logger.info(
+                f"槽位补录: {extra_path} → 有效 {len(extra_slot_waypoints)}/"
+                f"{len(raw_extras)} 条 ({', '.join(sorted(extra_slot_waypoints.keys())) or '无'})"
+            )
+            print(
+                f"  槽位补录: 有效 {len(extra_slot_waypoints)}/{len(raw_extras)} 条",
+                flush=True,
+            )
+        else:
+            orca_logger.warning(f"槽位补录文件不存在，跳过: {extra_path}")
+            print(f"  ⚠ 槽位补录文件不存在，跳过: {extra_path}", flush=True)
 
+    lerobot_out = os.path.abspath(os.path.expanduser(args.lerobot_out))
+    num_episodes = args.num_episodes
+
+    # ── 配置与环境初始化 ────────────────────────────────────────────────────
     from conf import g1_omnipicker_conf as agent_conf
 
     default_joint_values: dict = {}
@@ -1108,19 +1311,26 @@ def main() -> None:
     for jn, v in zip(agent_conf.r_arm["joint_names"], agent_conf.r_arm["neutral_joint_values"]):
         default_joint_values[jn] = v
 
-    print(f"工具整理采集 | 轮数={num_episodes} | 输出={lerobot_out}", flush=True)
+    print("=" * 62, flush=True)
+    print("  G1 OmniPicker 工具整理自动化采集", flush=True)
+    print(f"  任务: {args.task}", flush=True)
+    print(f"  工具顺序: {' → '.join(_TOOL_NAMES)}", flush=True)
+    print(f"  随机化: {'开' if args.randomize else '关'}", flush=True)
+    print(f"  安全高度: {args.safe_z} m (base系z)", flush=True)
+    print(f"  轮数: {num_episodes}", flush=True)
+    print(f"  输出目录: {lerobot_out}", flush=True)
+    print("=" * 62, flush=True)
 
-    with open(os.path.join(base_dir, _CFG_TASK_CONFIG), "r", encoding="utf-8") as f:
+    orca_logger.info("Creating scene manager")
+    with open(os.path.join(base_dir, args.task_config), "r", encoding="utf-8") as f:
         scene_config = load(f, Loader=Loader)
-    scene_manager = SceneManager(_CFG_ORCAGYM_ADDR, config=scene_config)
+    scene_manager = SceneManager(args.orcagym_addr, config=scene_config)
 
     script_name = os.path.basename(sys.argv[0]) if sys.argv else os.path.basename(__file__)
-    scene_manager.show_ui_message(1, "脚本控制：工具整理采集", "0xffff00", showtime=5)
+    scene_manager.show_ui_message(1, "脚本控制：G1 工具整理自动化采集", "0xffff00", showtime=5)
     scene_manager.get_scene_data(script_name, "beginscene")
 
-    scratch_dir = os.path.join(
-        base_dir, "_lerobot_scratch", "g1_omnipicker_tool", _CFG_LEVEL
-    )
+    scratch_dir = os.path.join(base_dir, "_lerobot_scratch", "g1_omnipicker_tool", args.level)
     storage = G1OmniPickerLeRobotStorage(dataset_path=scratch_dir)
 
     _n_motor = (
@@ -1137,6 +1347,7 @@ def main() -> None:
             }
         return storage.obs_callback(env)
 
+    orca_logger.info("Creating DataCollectionManager")
     manager = DataCollectionManager(
         agent_name="g1_omnipicker",
         env_name="DataCollection",
@@ -1148,11 +1359,12 @@ def main() -> None:
         scene_manager=scene_manager,
         data_storage=storage,
         frame_skip=5,
-        orcagym_addr=_CFG_ORCAGYM_ADDR,
+        orcagym_addr=args.orcagym_addr,
     )
     env = manager.env
     manager.save_video = False
 
+    # ── 首次初始化 ──────────────────────────────────────────────────────────
     env.reset()
     time.sleep(0.1)
 
@@ -1164,13 +1376,15 @@ def main() -> None:
     env.set_default_joint_values(default_joint_values)
     manager.set_disable_actuator_group([agent_conf.positions_group])
 
+    # 箱底内侧标定（Base 最大薄板 geom + 可选已入箱工具公共面）
     base_body_query = env.body(agent_conf.base_body)
     box_bottom = None
-    if _CFG_CHECK_BOX_BOTTOM:
+    if args.check_box_bottom:
         try:
             box_bottom = _calibrate_box_bottom_inner(env, base_body_query)
-        except Exception:
-            box_bottom = None
+        except Exception as e:
+            orca_logger.error(f"箱底标定失败，关闭入箱检测: {e}")
+            print(f"  ⚠ 箱底标定失败，关闭入箱检测: {e}", flush=True)
 
     ctrl_l_name = [env.actuator(m) for m in agent_conf.l_arm["motors_names"]]
     ctrl_r_name = [env.actuator(m) for m in agent_conf.r_arm["motors_names"]]
@@ -1179,10 +1393,11 @@ def main() -> None:
     l_arm = create_arm_osc_controller(env, agent_conf.l_arm, agent_conf.base_body, ctrl_l_name, init_l)
     r_arm = create_arm_osc_controller(env, agent_conf.r_arm, agent_conf.base_body, ctrl_r_name, init_r)
 
-    kp_val = float(np.clip(_CFG_KP, 1.0, 300.0))
+    kp_val = float(np.clip(args.kp, 1.0, 300.0))
     for _arm in (l_arm, r_arm):
         _arm.controller.kp = np.ones(6, dtype=np.float64) * kp_val
         _arm.controller.kd = 2.0 * np.sqrt(_arm.controller.kp)
+    orca_logger.info(f"OSC 阻抗刚度 kp 设为 {kp_val}（kd=2√kp 临界阻尼）")
 
     l_gname = [env.actuator(n) for n in agent_conf.gripper_l["actuator_names"]]
     r_gname = [env.actuator(n) for n in agent_conf.gripper_r["actuator_names"]]
@@ -1206,6 +1421,7 @@ def main() -> None:
     manager.set_task_status_controller(task_status)
     manager.set_task(EmptyTask(env))
 
+    # ── 相机初始化 ──────────────────────────────────────────────────────────
     cameras: dict = {}
     cam_hw = DEFAULT_HW
     camera_map = DEFAULT_CAMERA_MAP
@@ -1213,6 +1429,7 @@ def main() -> None:
     try:
         os.makedirs(STREAM_TRIGGER_PATH, exist_ok=True)
         env.begin_save_video(STREAM_TRIGGER_PATH)
+        orca_logger.info("begin_save_video 已调用，触发相机推流")
         cameras = bring_up_cameras(camera_map)
         camera_map = {n: v for n, v in camera_map.items() if n in cameras}
         if cameras:
@@ -1226,11 +1443,12 @@ def main() -> None:
         return
 
     cam_shape = (3, cam_hw[0], cam_hw[1])
+    orca_logger.info(f"相机分辨率 {cam_hw[0]}x{cam_hw[1]}，fps={args.fps}")
 
     writer = LeRobotDatasetWriter.create(
-        repo_id=_CFG_REPO_ID,
+        repo_id=args.repo_id,
         root=lerobot_out,
-        fps=_CFG_FPS,
+        fps=args.fps,
         camera_map=camera_map,
         state_dim=storage.state_dim,
         state_names=storage.state_names,
@@ -1240,39 +1458,52 @@ def main() -> None:
     )
 
     storage.configure_lerobot(
-        fps=_CFG_FPS,
+        fps=args.fps,
         cameras=cameras,
         camera_map=camera_map,
         target_hw=cam_hw,
         writer=writer,
-        task=_CFG_TASK,
-        clock=_CFG_CLOCK,
+        task=args.task,
+        clock=args.clock,
     )
 
+    orca_logger.info(f"开始采集，共 {num_episodes} 轮，任务: {args.task}，输出: {lerobot_out}")
+
+    # 随机化基础种子：未指定 --seed 时用时间，保证每次运行不同；指定则整次运行可复现
     randomize_base_seed: int | None = None
-    if _CFG_RANDOMIZE:
+    if args.randomize:
         randomize_base_seed = (
-            int(_CFG_SEED)
-            if _CFG_SEED is not None
+            int(args.seed)
+            if args.seed is not None
             else int(time.time() * 1000) % (2**31 - 1)
         )
+        orca_logger.info(
+            f"[槽位随机化] base_seed={randomize_base_seed} "
+            f"（episode N 使用 base_seed+N；手电筒禁 slot4）"
+        )
+        print(f"  随机种子 base_seed={randomize_base_seed}", flush=True)
 
     n_success = 0
-    place_retry = 0
+    place_retry = 0  # 当前目标集的入箱失败重试计数
 
     try:
         with writer:
             while n_success < num_episodes:
                 ep_display = n_success + 1
+                orca_logger.info(
+                    f"\n=== Episode {ep_display}/{num_episodes} "
+                    f"(retry={place_retry}) | {args.task} ==="
+                )
                 print(
-                    f"\n>>> Episode {ep_display}/{num_episodes}"
-                    + (f"（重试 {place_retry}）" if place_retry else ""),
+                    f"\n>>> 正在采集第 {ep_display}/{num_episodes} 轮"
+                    f"{f'（入箱重试 {place_retry}）' if place_retry else ''} "
+                    f"| 任务: {args.task}",
                     flush=True,
                 )
 
                 try:
                     scene_manager.show_ui_message(
-                        1, f"采集中 ({ep_display}/{num_episodes})",
+                        1, f"采集中: {args.task}  ({ep_display}/{num_episodes})",
                         "0x00ff88", showtime=0
                     )
                 except Exception:
@@ -1282,17 +1513,21 @@ def main() -> None:
                 time.sleep(0.05)
 
                 if not manager.update_scene():
+                    orca_logger.info("update_scene 失败，停止")
                     break
 
                 env.set_default_joint_values(default_joint_values)
                 base_body = env.body(agent_conf.base_body)
 
+                # ── 本集工具路点与抓取顺序 ─────────────────────────────────
                 episode_tool_data = [_copy_tool_spec(td) for td in tool_data]
-                grasp_order = list(range(5))
+                grasp_order = list(range(5))  # 非随机：按工具编号 0..4
+                episode_seed = None
                 slot_for_tool = {i: i for i in range(5)}
 
-                if _CFG_RANDOMIZE:
+                if args.randomize:
                     assert randomize_base_seed is not None
+                    # 成功集用 base+n_success；失败重试用大步长错开，可换排列
                     episode_seed = (
                         int(randomize_base_seed)
                         + n_success
@@ -1311,32 +1546,98 @@ def main() -> None:
                     }
 
                     episode_tool_data = []
+                    override_hits: list[str] = []
                     for tool_idx in range(5):
                         slot_idx = slot_for_tool[tool_idx]
                         warped = _warp_waypoints(tool_data[tool_idx], delta_b[tool_idx])
-                        warped, _used_extra = _apply_extra_slot_waypoints(
+                        warped, used_extra = _apply_extra_slot_waypoints(
                             warped, slot_idx, tool_idx, extra_slot_waypoints
                         )
+                        if used_extra:
+                            override_hits.append(
+                                f"{_TOOL_NAMES[tool_idx]}@slot{slot_idx}"
+                            )
                         episode_tool_data.append(warped)
 
                     grasp_order = [int(t) for t in assignment.tolist()]
 
+                    layout = ", ".join(
+                        f"slot{s}={_TOOL_NAMES[t]}" for s, t in enumerate(grasp_order)
+                    )
+                    pick_seq = " → ".join(_TOOL_NAMES[t] for t in grasp_order)
+                    orca_logger.info(
+                        f"[槽位随机化] ep={ep_display} seed={episode_seed} | {layout}"
+                    )
+                    orca_logger.info(f"[抓取顺序] {pick_seq}")
+                    print(f"  布局: {layout}", flush=True)
+                    print(f"  抓取: {pick_seq} | seed={episode_seed}", flush=True)
+                    if override_hits:
+                        msg = ", ".join(override_hits)
+                        orca_logger.info(f"[槽位补录] 采用绝对 wp0/wp1: {msg}")
+                        print(f"  [槽位补录] {msg}", flush=True)
+                    for tool_idx in range(5):
+                        slot_idx = slot_for_tool[tool_idx]
+                        src = (
+                            "补录"
+                            if f"{_TOOL_NAMES[tool_idx]}@slot{slot_idx}" in override_hits
+                            else "平移"
+                        )
+                        orca_logger.info(
+                            f"  {_TOOL_NAMES[tool_idx]}->slot{slot_idx} [{src}] "
+                            f"deltaY={delta_b[tool_idx, 1]*1000:.1f}mm "
+                            f"wp1={episode_tool_data[tool_idx]['waypoints'][1]['pos']}"
+                        )
+
+                # 槽位5（最右）：抓取 wp0/wp1 再偏右
                 tool_at_slot5 = int(grasp_order[_SLOT5_IDX])
+                before_y = float(
+                    episode_tool_data[tool_at_slot5]["waypoints"][1]["pos"][1]
+                )
                 episode_tool_data[tool_at_slot5] = _bias_grasp_waypoints_y(
                     episode_tool_data[tool_at_slot5], _SLOT5_GRASP_DY
                 )
+                after_y = float(
+                    episode_tool_data[tool_at_slot5]["waypoints"][1]["pos"][1]
+                )
+                orca_logger.info(
+                    f"[槽位5偏置] {_TOOL_NAMES[tool_at_slot5]} wp0/wp1 "
+                    f"y += {_SLOT5_GRASP_DY*1000:.1f}mm "
+                    f"(0.5×{_GRIPPER_OPEN_WIDTH_M*1000:.0f}mm 张开，偏右) "
+                    f"wp1.y {before_y:.4f}→{after_y:.4f}"
+                )
+                print(
+                    f"  [槽位5偏置] {_TOOL_NAMES[tool_at_slot5]} "
+                    f"抓取 y {_SLOT5_GRASP_DY*1000:+.1f}mm（偏右）",
+                    flush=True,
+                )
 
+                # 扳手@槽位4：wp0/wp1 略向左(+y)、向下(-z)，缓解跟踪够不着
                 if int(slot_for_tool.get(_WRENCH_IDX, -1)) == _SLOT4_IDX:
+                    w_before = episode_tool_data[_WRENCH_IDX]["waypoints"][1]["pos"]
                     episode_tool_data[_WRENCH_IDX] = _bias_grasp_waypoints(
                         episode_tool_data[_WRENCH_IDX],
                         dy=_SLOT4_WRENCH_GRASP_DY,
                         dz=_SLOT4_WRENCH_GRASP_DZ,
                     )
+                    w_after = episode_tool_data[_WRENCH_IDX]["waypoints"][1]["pos"]
+                    orca_logger.info(
+                        f"[槽位4扳手偏置] wp0/wp1 "
+                        f"y += {_SLOT4_WRENCH_GRASP_DY*1000:.1f}mm（左） "
+                        f"z += {_SLOT4_WRENCH_GRASP_DZ*1000:.1f}mm（下） "
+                        f"wp1 {list(np.asarray(w_before).round(4))}→"
+                        f"{list(np.asarray(w_after).round(4))}"
+                    )
+                    print(
+                        f"  [槽位4扳手偏置] 抓取 "
+                        f"y {_SLOT4_WRENCH_GRASP_DY*1000:+.1f}mm（左） "
+                        f"z {_SLOT4_WRENCH_GRASP_DZ*1000:+.1f}mm（下）",
+                        flush=True,
+                    )
 
                 all_segments: list[dict] = []
-                place_arm_at: dict[int, int] = {}
+                place_arm_at: dict[int, int] = {}  # 该工具全部路点结束步 → tool_idx
                 place_timeout_steps = max(
-                    1, int(round(float(_PLACE_CHECK_TIMEOUT_S) * _CFG_FPS))
+                    1, int(round(float(args.place_check_timeout_s) * args.fps))
                 )
                 cum_steps = 0
                 last_release_quat = None
@@ -1345,33 +1646,45 @@ def main() -> None:
                     td = episode_tool_data[tool_idx]
                     tool_segs = _build_tool_segments(
                         wps=td["waypoints"],
-                        safe_z=_CFG_SAFE_Z,
-                        steps_transit=_CFG_STEPS_TRANSIT,
-                        steps_descend=_CFG_STEPS_DESCEND,
-                        steps_grasp=_CFG_STEPS_GRASP,
-                        steps_settle=_CFG_STEPS_SETTLE,
-                        steps_lift=_CFG_STEPS_LIFT,
-                        steps_place_via=_CFG_STEPS_PLACE_VIA,
-                        steps_to_box=_CFG_STEPS_TO_BOX,
-                        steps_release=_CFG_STEPS_RELEASE,
-                        steps_release_settle=_CFG_STEPS_RELEASE_SETTLE,
-                        steps_lift_after=_CFG_STEPS_LIFT_AFTER,
+                        safe_z=args.safe_z,
+                        steps_transit=args.steps_transit,
+                        steps_descend=args.steps_descend,
+                        steps_grasp=args.steps_grasp,
+                        steps_settle=args.steps_settle,
+                        steps_lift=args.steps_lift,
+                        steps_place_via=args.steps_place_via,
+                        steps_to_box=args.steps_to_box,
+                        steps_release=args.steps_release,
+                        steps_release_settle=args.steps_release_settle,
+                        steps_lift_after=args.steps_lift_after,
                     )
                     for s in tool_segs:
-                        prefix = f"工具{tool_idx + 1}"
+                        if args.randomize:
+                            prefix = (
+                                f"槽位{slot_idx + 1}-"
+                                f"工具{tool_idx + 1}({_TOOL_NAMES[tool_idx]})"
+                            )
+                        else:
+                            prefix = f"工具{tool_idx + 1}({_TOOL_NAMES[tool_idx]})"
                         s["label"] = f"{prefix}-{s['label']}"
                     tool_start = cum_steps
                     last_release_pos = list(td["waypoints"][-1]["pos"])
                     last_release_quat = list(td["waypoints"][-1]["quat"])
                     tool_steps = sum(int(s["steps"]) for s in tool_segs)
-                    if _CFG_CHECK_BOX_BOTTOM and box_bottom is not None:
+                    # 该工具全部路点结束后启动监视：等 EE xy 出整箱矩形再查接触
+                    if args.check_box_bottom and box_bottom is not None:
                         tool_end = tool_start + tool_steps - 1
                         place_arm_at[tool_end] = int(tool_idx)
                     all_segments.extend(tool_segs)
                     cum_steps += tool_steps
+                    orca_logger.info(
+                        f"  拼段 {len(tool_segs)} | {_TOOL_NAMES[tool_idx]} | "
+                        f"{len(td['waypoints'])}点 | 接近位={td['waypoints'][0]['pos']}"
+                    )
 
+                # 末工具后追加撤离+驻留，保证 EE xy 能出整箱矩形并留接触检查窗口
                 if (
-                    _CFG_CHECK_BOX_BOTTOM
+                    args.check_box_bottom
                     and box_bottom is not None
                     and last_release_pos is not None
                     and last_release_quat is not None
@@ -1386,7 +1699,7 @@ def main() -> None:
                     )
                     retreat_x = float(0.5 * (xy_min[0] + xy_max[0]))
                     retreat_y = float(xy_min[1] - 0.12)
-                    retreat_pos = [retreat_x, retreat_y, float(_CFG_SAFE_Z)]
+                    retreat_pos = [retreat_x, retreat_y, float(args.safe_z)]
                     all_segments.append(
                         {
                             "steps": _PLACE_RETREAT_STEPS,
@@ -1397,6 +1710,7 @@ def main() -> None:
                             "label": "S-撤离箱上方",
                         }
                     )
+                    # 末尾只需覆盖「离开后等接触」窗口；检查多在 1 步内完成
                     wait_steps = place_timeout_steps + 2
                     all_segments.append(
                         {
@@ -1409,7 +1723,38 @@ def main() -> None:
                         }
                     )
                     cum_steps += _PLACE_RETREAT_STEPS + wait_steps
+                    orca_logger.info(
+                        f"  追加撤离+等待: retreat={retreat_pos} "
+                        f"retreat_steps={_PLACE_RETREAT_STEPS} "
+                        f"timeout_steps={place_timeout_steps}"
+                    )
 
+                total_steps = cum_steps
+                orca_logger.info(
+                    f"总段数: {len(all_segments)}，总步数: {total_steps}，"
+                    f"约 {total_steps / args.fps:.1f}s @ {args.fps}fps"
+                    + (
+                        f"；入箱监视 {len(place_arm_at)} 件"
+                        f"（EE出箱后等接触，超时 {args.place_check_timeout_s:.1f}s）"
+                        if place_arm_at
+                        else ""
+                    )
+                )
+                print(
+                    f"  轨迹: {len(all_segments)} 段 / {total_steps} 步"
+                    f"（约 {total_steps / args.fps:.1f}s）",
+                    flush=True,
+                )
+
+                # ── 段边界诊断表 ────────────────────────────────────────────
+                seg_bounds = {}
+                cum = 0
+                for s in all_segments:
+                    cum += int(s["steps"])
+                    last_idx = cum - 1
+                    seg_bounds[last_idx] = (s["label"], list(s["r_target_b"]))
+
+                # ── 离线预构建完整轨迹 ──────────────────────────────────────
                 l_pos, l_quat, r_pos, r_quat_traj, l_gm, r_gm = (
                     scripted.build_segmented_trajectory(
                         env, agent_conf, all_segments, g_open_global, g_close_global
@@ -1419,6 +1764,7 @@ def main() -> None:
                 device = G1ScriptedTrajectoryDevice(
                     l_arm, r_arm, l_grip, r_grip, task_status,
                     l_pos, l_quat, r_pos, r_quat_traj, l_gm, r_gm,
+                    seg_bounds=seg_bounds,
                     place_arm_at=place_arm_at if box_bottom is not None else None,
                     box_bottom=box_bottom,
                     base_body_query=base_body,
@@ -1430,10 +1776,28 @@ def main() -> None:
                 if device.place_failed:
                     storage.clear_data()
                     place_retry += 1
-                    print(">>> [✗] 放置未成功，重试", flush=True)
-                    if place_retry >= _CFG_MAX_PLACE_RETRIES:
-                        print(">>> 重试次数耗尽，停止", flush=True)
+                    orca_logger.warning(
+                        f"[入箱检测] 丢弃本集并重采 "
+                        f"(retry {place_retry}/{args.max_place_retries}) | "
+                        f"{device.place_fail_reason}"
+                    )
+                    print(
+                        f">>> [✗] 入箱失败，已删除本集缓存，"
+                        f"准备重采 ({place_retry}/{args.max_place_retries})",
+                        flush=True,
+                    )
+                    if place_retry >= args.max_place_retries:
+                        orca_logger.error(
+                            f"入箱重试超过 {args.max_place_retries} 次，停止采集"
+                        )
+                        print(">>> 入箱重试次数耗尽，停止", flush=True)
                         break
+                    # 随机化时换 seed；非随机仅重跑同一轨迹
+                    if args.randomize:
+                        orca_logger.info(
+                            f"[入箱检测] 更换 seed 重试 "
+                            f"(next offset retry={place_retry})"
+                        )
                     continue
 
                 storage.save_data(
@@ -1443,9 +1807,14 @@ def main() -> None:
                 )
                 n_success += 1
                 place_retry = 0
+                orca_logger.info(
+                    f"[✓] Episode {n_success}/{num_episodes} 保存完毕"
+                    f"（共 {writer.num_frames} 帧）"
+                )
                 print(f">>> [✓] Episode {n_success}/{num_episodes} 已保存", flush=True)
 
     except KeyboardInterrupt:
+        orca_logger.info("KeyboardInterrupt，停止采集")
         print("\n[停止] 采集已中断", flush=True)
     except Exception as e:
         orca_logger.error(f"采集异常: {e}\n{traceback.format_exc()}")
@@ -1455,11 +1824,12 @@ def main() -> None:
         except Exception:
             pass
         close_cameras(cameras)
-        print(
-            f"\n采集结束，共 {writer.num_episodes} 集 / {writer.num_frames} 帧"
-            f"\n数据位于: {lerobot_out}",
-            flush=True,
-        )
+        summary = f"采集结束，共 {writer.num_episodes} 集 / {writer.num_frames} 帧"
+        orca_logger.info(summary)
+        print(f"\n{'=' * 62}", flush=True)
+        print(f"  {summary}", flush=True)
+        print(f"  数据位于: {lerobot_out}", flush=True)
+        print(f"{'=' * 62}", flush=True)
         env.close()
 
 

@@ -1,7 +1,4 @@
-# 6 点路点  2026-07-18 16:53:41
-# 坐标系：G1 OmniPicker base_body（body_link1）
-# 底座右移补偿：delta_b=[0.0, -0.014278, 0.0]；pos'=pos-delta_b（y += 0.014278）
-# 累计 reloc Y：-0.141338 -0.068396 +0.014278 = -0.195456（相对最初）
+# 螺丝刀 6 点路点（G1 OmniPicker base_body）
 # 语义：接近 / 抓取 / 经由1 / 经由2 / 箱上方 / 松开
 
 gripper_open: -0.8561
@@ -12,14 +9,14 @@ segments:
   # 路点 1  接近（抓取）
   - steps: 300
     l_hold: true
-    r_target_b: [0.5528, -0.1789, 0.1935]
+    r_target_b: [0.5528, -0.2064, 0.1935]
     r_quat_b: [-0.5341, 0.3298, 0.4766, 0.6155]
     gripper_r: open
 
   # 路点 2  抓取闭爪
   - steps: 300
     l_hold: true
-    r_target_b: [0.5567, -0.1904, 0.1930]
+    r_target_b: [0.5567, -0.2179, 0.1930]
     r_quat_b: [-0.5151, 0.3948, 0.4696, 0.5986]
     gripper_r: close
 

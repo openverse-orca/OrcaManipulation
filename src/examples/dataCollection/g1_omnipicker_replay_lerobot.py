@@ -1,30 +1,35 @@
-"""G1 OmniPicker LeRobot v2.1 parquet 数据集回放脚本（fallback 版本）。
+"""G1 OmniPicker LeRobot v2.1 parquet 数据集回放。
 
-通过 G1ParquetReplayDevice + manager.run_episode() 完全复用采集脚本的驱动链路，
-彻底绕开自定义主循环时 OSC 不跟踪的问题。
+场景/手臂初始化严格对齐数采 + 推理（无 randomize）：
 
-回放目标：g1_omnipicker_collection_scripted_button_lerobot.py 生成的数据集
-  action shape: (N, 18) float32，B 系（base_body = body_link1）
+  首次（同数采）：
+    env.reset() → update_scene()（此时 task 仍为 None）
+    → set_default_joint_values(L_INIT + R_neutral)
+    → 创建 OSC/夹爪 → set_task(EmptyTask)
+
+  每集（同数采场景段 + 同推理控制段）：
+    env.reset()                    # load_initial_frame 恢复工具
+    → update_scene()
+    → set_default_joint_values(L_INIT + R_neutral)
+    → mj_forward / set_init_ctrl / controller.reset / render
+    → 左臂 hold + OSC 驻留 10 步 → 开播 parquet
+    # 不调用 _place_tools
 
 用法：
-  cd src/examples/dataCollection
-
-  # 回放全部集
   python g1_omnipicker_replay_lerobot.py \\
       --dataset_dir /path/to/lerobot_dataset \\
-      --task_config example.yaml
+      --task_config example.yaml --episode 1 \\
+      --kp 200 --steps_per_frame 10
 
-  # 仅回放第 1 集
-  python g1_omnipicker_replay_lerobot.py \\
-      --dataset_dir /path/to/lerobot_dataset \\
-      --task_config example.yaml \\
-      --episode 1
+说明：
+  --cmd_bias_* 学数采：把右臂目标往下报再交给 OSC（抵桌/抓取）。
+  默认 z=-0.030，且仅当原始目标 z <= --cmd_bias_z_below 时启用；
+  同时同步 OSC nullspace，避免压目标却跟不动。关闭：--cmd_bias_z 0。
 
-  # 循环回放（Ctrl+C 退出）
-  python g1_omnipicker_replay_lerobot.py \\
-      --dataset_dir /path/to/lerobot_dataset \\
-      --task_config example.yaml \\
-      --loop
+  --grasp_integral 近桌外环积分（与数采同 ControllerArm）：
+    当 parquet 原始右臂 z <= --grasp_integral_z_below 时累加；
+    每控制步 update_action_position，偏置限幅后压低 OSC 目标。
+    建议与积分数据联用时：--cmd_bias_z 0 --grasp_integral。
 """
 import os
 import sys
@@ -69,13 +74,11 @@ orca_logger = get_orca_logger(
     force_reinit=True,
 )
 
+_L_INIT_JOINT_VALUES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+_L_GRIP_OPEN_MOTOR = -0.8561
 
-# ---------------------------------------------------------------------------
-# Parquet 读取 & 反归一化
-# ---------------------------------------------------------------------------
 
 def _scan_parquet_files(dataset_dir: str) -> list[str]:
-    """扫描 data/chunk-*/episode_*.parquet，按文件名升序返回。"""
     data_dir = os.path.join(dataset_dir, "data")
     files: list[str] = []
     if not os.path.isdir(data_dir):
@@ -91,77 +94,44 @@ def _scan_parquet_files(dataset_dir: str) -> list[str]:
 
 
 def _load_episode(parquet_path: str, agent_conf) -> dict:
-    """
-    读取 parquet，解析 18 维 action → 反归一化末端位姿 + 电机绝对值。
-
-    返回 dict：
-      l_pos_b:   (N, 3) float32，左臂末端 B 系位置
-      l_quat_b:  (N, 4) float32，左臂末端 B 系四元数 xyzw
-      r_pos_b:   (N, 3) float32
-      r_quat_b:  (N, 4) float32
-      l_grip:    (N, 2) float32，左夹爪 [inner, outer] 绝对电机值
-      r_grip:    (N, 2) float32，右夹爪 [inner, outer] 绝对电机值
-      n_frames:  int
-    """
     import pyarrow.parquet as pq
     table = pq.read_table(parquet_path)
-    actions = np.array(table["action"].to_pylist(), dtype=np.float32)  # (N, 18)
-
+    actions = np.array(table["action"].to_pylist(), dtype=np.float32)
     if actions.ndim != 2 or actions.shape[1] < 18:
-        raise ValueError(f"action 形状异常: {actions.shape}，期望 (N, >=18)  文件: {parquet_path}")
+        raise ValueError(f"action 形状异常: {actions.shape}，期望 (N, >=18)")
 
-    # 臂末端（B 系）
-    l_pos_b  = actions[:, 0:3]
-    l_quat_b = actions[:, 3:7]
-    r_pos_b  = actions[:, 7:10]
-    r_quat_b = actions[:, 10:14]
-
-    # 夹爪反归一化：val = clip(norm,0,1) * (max-min) + min；G1 量程 (-1, 2)
-    def _denorm(norm_col: np.ndarray, lo: float, hi: float) -> np.ndarray:
+    def _denorm(norm_col, lo, hi):
         return np.clip(norm_col, 0.0, 1.0) * (hi - lo) + lo
 
-    l_ranges = agent_conf.gripper_l["actuator_ranges"]  # [(lo, hi), (lo, hi)]
+    l_ranges = agent_conf.gripper_l["actuator_ranges"]
     r_ranges = agent_conf.gripper_r["actuator_ranges"]
-
-    l_inner = _denorm(actions[:, 14], *l_ranges[0])
-    l_outer = _denorm(actions[:, 15], *l_ranges[1])
-    r_inner = _denorm(actions[:, 16], *r_ranges[0])
-    r_outer = _denorm(actions[:, 17], *r_ranges[1])
-    l_grip  = np.stack([l_inner, l_outer], axis=1)   # (N, 2)
-    r_grip  = np.stack([r_inner, r_outer], axis=1)   # (N, 2)
-
     return {
-        "l_pos_b":  l_pos_b,
-        "l_quat_b": l_quat_b,
-        "r_pos_b":  r_pos_b,
-        "r_quat_b": r_quat_b,
-        "l_grip":   l_grip,
-        "r_grip":   r_grip,
+        "l_pos_b": actions[:, 0:3],
+        "l_quat_b": actions[:, 3:7],
+        "r_pos_b": actions[:, 7:10],
+        "r_quat_b": actions[:, 10:14],
+        "l_grip": np.stack(
+            [_denorm(actions[:, 14], *l_ranges[0]), _denorm(actions[:, 15], *l_ranges[1])],
+            axis=1,
+        ),
+        "r_grip": np.stack(
+            [_denorm(actions[:, 16], *r_ranges[0]), _denorm(actions[:, 17], *r_ranges[1])],
+            axis=1,
+        ),
         "n_frames": len(actions),
     }
 
 
-# ---------------------------------------------------------------------------
-# Fallback Device：用 run_episode() 驱动，复用采集脚本的驱动链路
-# ---------------------------------------------------------------------------
-
 class G1ParquetReplayDevice(AbstractDevice):
-    """每次 update() 被调用时按 steps_per_frame 节奏推进 parquet 数据帧。
-
-    steps_per_frame: 每帧保持的仿真步数。每 steps_per_frame 次 update() 切换下一帧。
-    data: _load_episode() 返回的 dict
-    task_status: TaskStatusController（is_controller=False，无速率限制）
-    """
-
     def __init__(
-        self,
-        l_arm,
-        r_arm,
-        l_grip: Controller2F85Reverse,
-        r_grip: Controller2F85Reverse,
-        task_status: TaskStatusController,
-        data: dict,
-        steps_per_frame: int,
+        self, l_arm, r_arm, l_grip, r_grip, task_status, data, steps_per_frame,
+        lock_left_arm: bool = True,
+        track_log_every: int = 1,
+        cmd_bias_b: np.ndarray | None = None,
+        cmd_bias_z_below: float = 0.25,
+        sync_nullspace: bool = True,
+        grasp_integral: bool = False,
+        grasp_integral_z_below: float = 0.25,
     ):
         super().__init__()
         self.l_arm = l_arm
@@ -172,105 +142,300 @@ class G1ParquetReplayDevice(AbstractDevice):
         self.data = data
         self.steps_per_frame = max(1, steps_per_frame)
         self.n_frames = data["n_frames"]
-        self._call_count = 0   # 总 update() 调用次数
-        self._frame_idx = -1   # 当前正在持续的帧号
+        self.lock_left_arm = bool(lock_left_arm)
+        self.track_log_every = max(0, int(track_log_every))
+        # 学数采：近桌高度前馈把目标往下报（B 系米）；外环积分另由 grasp_integral 门控
+        self.cmd_bias_b = np.zeros(3, dtype=np.float64)
+        if cmd_bias_b is not None:
+            self.cmd_bias_b = np.asarray(cmd_bias_b, dtype=np.float64).reshape(3).copy()
+        self.cmd_bias_z_below = float(cmd_bias_z_below)
+        self.sync_nullspace = bool(sync_nullspace)
+        self.grasp_integral = bool(grasp_integral)
+        self.grasp_integral_z_below = float(grasp_integral_z_below)
+        self._prev_grasp_integral_active = False
+        self._call_count = 0
+        self._frame_idx = -1
+        self._cmd_r_pos = None  # parquet 原始目标（不含前馈）
+        self._cmd_r_pos_ff = None  # 前馈后目标（外环积分另算）
+        self._cmd_l_pos = None
+        self._l_hold_pos = None
+        self._l_hold_quat = None
+        self._l_hold_grip = None
+        self._applied_bias = np.zeros(3, dtype=np.float64)
+        self._cur_l_pos = None
+        self._cur_l_quat = None
+        self._cur_l_g = None
+        self._cur_r_quat = None
+        self._cur_r_g = None
+
+    def _sync_nullspace(self):
+        """把 OSC nullspace 锚到当前关节，减轻往 R_neutral 拉、方便往下压。"""
+        try:
+            osc = self.r_arm.controller
+            osc.update(force=True)
+            osc.initial_joint = np.array(osc.joint_pos, dtype=np.float64)
+        except Exception as e:
+            orca_logger.warning(f"[补偿] sync nullspace 失败: {e}")
+
+    def _bias_for_cmd(self, r_pos: np.ndarray) -> np.ndarray:
+        """近桌（原始 z 低）才施加前馈，高处抬升/搬运不加，避免整段轨迹被压扁。"""
+        if float(r_pos[2]) <= self.cmd_bias_z_below:
+            return self.cmd_bias_b
+        return np.zeros(3, dtype=np.float64)
+
+    def set_left_hold(self, l_pos_b, l_quat_b, l_grip_ctrl=None):
+        self._l_hold_pos = np.asarray(l_pos_b, dtype=np.float32).copy()
+        self._l_hold_quat = np.asarray(l_quat_b, dtype=np.float32).copy()
+        if l_grip_ctrl is not None:
+            self._l_hold_grip = np.asarray(l_grip_ctrl, dtype=np.float32).reshape(2).copy()
+        else:
+            self._l_hold_grip = np.array(
+                [_L_GRIP_OPEN_MOTOR, _L_GRIP_OPEN_MOTOR], dtype=np.float32
+            )
+
+    def _query_actual_ee_b(self):
+        """查询左右臂末端实测 base 系位置；失败返回 (None, None)。"""
+        try:
+            env = self.r_arm.env
+            # 与 _query_ee_b 一致：base 列表只传一次（重复同名会触发 body not found）
+            ee_b = env.query_site_pos_and_quat_B(
+                [self.l_arm.ee_name, self.r_arm.ee_name],
+                [self.r_arm.base_link],
+            )
+            l_act = np.asarray(ee_b[self.l_arm.ee_name]["xpos"], dtype=np.float64)
+            r_act = np.asarray(ee_b[self.r_arm.ee_name]["xpos"], dtype=np.float64)
+            return l_act, r_act
+        except Exception as e:
+            orca_logger.warning(f"[跟踪] 查询 EE 失败: {e}")
+            return None, None
+
+    def _log_tracking(self, frame: int, sub: int):
+        """实测 EE vs parquet 原始目标；同时打印下发 OSC 的前馈目标。"""
+        if self._cmd_r_pos is None:
+            return
+        _, r_act = self._query_actual_ee_b()
+        if r_act is None:
+            return
+        cmd = np.asarray(self._cmd_r_pos, dtype=np.float64)
+        ff = (
+            np.asarray(self._cmd_r_pos_ff, dtype=np.float64)
+            if self._cmd_r_pos_ff is not None
+            else cmd
+        )
+        err = r_act - cmd
+        err_ff = r_act - ff
+        err_mm = float(np.linalg.norm(err) * 1000.0)
+        bias_mm = (self._applied_bias * 1000.0).round(1)
+        integ = self.r_arm.get_integral_bias_b()
+        corrected = self.r_arm.get_last_corrected_b()
+        corr_str = (
+            f" 积分偏置={integ.round(4).tolist()} "
+            f"积分修正={np.asarray(corrected).round(4).tolist()}"
+            if corrected is not None
+            else f" 积分偏置={integ.round(4).tolist()}"
+        )
+        msg = (
+            f"[跟踪] frame={frame:04d}/{self.n_frames} sub={sub}/{self.steps_per_frame} | "
+            f"原始={cmd.round(4).tolist()} 下发={ff.round(4).tolist()} "
+            f"实际={r_act.round(4).tolist()} "
+            f"对原始 dz={err[2]*1000:+.1f}mm 对下发 dz={err_ff[2]*1000:+.1f}mm "
+            f"|err原始|={err_mm:.1f}mm 本帧前馈={bias_mm.tolist()}mm"
+            f"{corr_str}"
+        )
+        orca_logger.info(msg)
+        print(msg, flush=True)
+
+    def _apply_grasp_integral_gate(self, r_pos_raw: np.ndarray) -> None:
+        """近桌高度开启外环积分；上升沿清零，离开近桌后关闭并清零。"""
+        if not self.grasp_integral:
+            if self._prev_grasp_integral_active:
+                self.r_arm.enable_integral(False)
+                self.r_arm.reset_integral()
+            self._prev_grasp_integral_active = False
+            return
+        active = float(r_pos_raw[2]) <= self.grasp_integral_z_below
+        if active and not self._prev_grasp_integral_active:
+            self.r_arm.reset_integral()
+            if self.sync_nullspace:
+                self._sync_nullspace()
+            orca_logger.info(
+                f"[积分] 进入近桌段 frame={self._frame_idx} "
+                f"raw_z={float(r_pos_raw[2]):.4f}，积分偏置已清零"
+            )
+        if (not active) and self._prev_grasp_integral_active:
+            bias = self.r_arm.get_integral_bias_b()
+            orca_logger.info(
+                f"[积分] 离开近桌段 frame={self._frame_idx}，"
+                f"最终偏置={bias.round(4).tolist()} "
+                f"(z={bias[2] * 1000:+.1f}mm)"
+            )
+            self.r_arm.reset_integral()
+        self.r_arm.enable_integral(active)
+        self._prev_grasp_integral_active = active
 
     @override
     def update(self):
         call = self._call_count
         self._call_count += 1
-
-        # 计算当前应播放的帧号（每 steps_per_frame 次 update 推进一帧）
         frame = call // self.steps_per_frame
         if frame >= self.n_frames:
-            # 所有帧播完，发出 END 信号
+            # 越界首拍：上一帧（末帧）已跑满 steps_per_frame，补打跟踪
+            if (
+                self._frame_idx >= 0
+                and self.track_log_every > 0
+                and self._frame_idx % self.track_log_every == 0
+            ):
+                self._log_tracking(self._frame_idx, self.steps_per_frame)
+                self._frame_idx = -1  # 只打一次
             if self.task_status.current_status == TaskStatus.RUNNING:
                 self.task_status.update_task_status(True)
             return
-
-        # 第一帧第一次：启动任务
         if call == 0:
-            self.task_status.update_task_status(True)  # NOT_STARTED → RUNNING
-
-        # 只在帧号变化时更新目标（避免重复 B→W 变换消耗）
+            self.task_status.update_task_status(True)
         if frame != self._frame_idx:
+            # 换帧前：上一帧已跑满 steps_per_frame，打跟踪
+            if self._frame_idx >= 0:
+                if (
+                    self.track_log_every > 0
+                    and self._frame_idx % self.track_log_every == 0
+                ):
+                    self._log_tracking(self._frame_idx, self.steps_per_frame)
             self._frame_idx = frame
-            l_pos  = self.data["l_pos_b"][frame]
-            l_quat = self.data["l_quat_b"][frame]
-            r_pos  = self.data["r_pos_b"][frame]
+            if self.sync_nullspace and np.any(self.cmd_bias_b != 0.0):
+                self._sync_nullspace()
+            r_pos = np.asarray(self.data["r_pos_b"][frame], dtype=np.float64)
             r_quat = self.data["r_quat_b"][frame]
-            l_g    = self.data["l_grip"][frame]
-            r_g    = self.data["r_grip"][frame]
+            r_g = self.data["r_grip"][frame]
+            if self.lock_left_arm and self._l_hold_pos is not None:
+                l_pos, l_quat, l_g = self._l_hold_pos, self._l_hold_quat, self._l_hold_grip
+            else:
+                l_pos = self.data["l_pos_b"][frame]
+                l_quat = self.data["l_quat_b"][frame]
+                l_g = self.data["l_grip"][frame]
+            self._cmd_l_pos = np.asarray(l_pos, dtype=np.float32).copy()
+            self._cmd_r_pos = r_pos.astype(np.float32).copy()
+            # 学数采抵桌：近桌高度把目标再往下报
+            self._applied_bias = self._bias_for_cmd(r_pos)
+            r_cmd = (r_pos + self._applied_bias).astype(np.float32)
+            self._cmd_r_pos_ff = r_cmd.copy()
+            self._cur_l_pos = np.asarray(l_pos, dtype=np.float32).copy()
+            self._cur_l_quat = np.asarray(l_quat, dtype=np.float32).copy()
+            self._cur_l_g = np.asarray(l_g, dtype=np.float32).copy()
+            self._cur_r_quat = np.asarray(r_quat, dtype=np.float32).copy()
+            self._cur_r_g = np.asarray(r_g, dtype=np.float32).copy()
 
-            self.l_arm.update_action_position(l_pos)
-            self.l_arm.update_action_axisangle(l_quat)
-            self.r_arm.update_action_position(r_pos)
-            self.r_arm.update_action_axisangle(r_quat)
-            self.l_grip.update_ctrl(l_g)
-            self.r_grip.update_ctrl(r_g)
-
-            # 每 10% 帧打印进度
-            if frame % max(1, self.n_frames // 10) == 0:
-                orca_logger.info(
-                    f"  frame={frame:04d}/{self.n_frames}  "
-                    f"L=[{l_pos[0]:+.3f},{l_pos[1]:+.3f},{l_pos[2]:+.3f}]  "
-                    f"R=[{r_pos[0]:+.3f},{r_pos[1]:+.3f},{r_pos[2]:+.3f}]"
-                )
-
-
-# ---------------------------------------------------------------------------
-# 工具：创建控制器（镜像 eval_g1_omnipicker_lerobot.py）
-# ---------------------------------------------------------------------------
-
-def _create_arm(env, arm_conf, agent_conf):
-    ctrl_names = [env.actuator(n) for n in arm_conf["motors_names"]]
-    init_ctrl  = {n: v for n, v in zip(ctrl_names, arm_conf["motors_init_ctrl"])}
-    return create_arm_osc_controller(env, arm_conf, agent_conf.base_body, ctrl_names, init_ctrl)
-
-
-def _create_gripper(env, grip_conf, agent_conf):
-    ctrl_names = [env.actuator(n) for n in grip_conf["actuator_names"]]
-    init_ctrl  = {n: v for n, v in zip(ctrl_names, grip_conf["init_ctrl"])}
-    return create_gripper_2f85_reverse_controller(
-        env, grip_conf, agent_conf.base_body, ctrl_names, init_ctrl,
-        Controller2F85Reverse.ControllerType.DATA,
-    )
+        # 每控制步刷新目标：外环积分才能逐步累加（与数采一致）
+        if self._cmd_r_pos is None or self._cmd_r_pos_ff is None:
+            return
+        self._apply_grasp_integral_gate(
+            np.asarray(self._cmd_r_pos, dtype=np.float64)
+        )
+        self.l_arm.update_action_position(self._cur_l_pos)
+        self.l_arm.update_action_axisangle(self._cur_l_quat)
+        self.r_arm.update_action_position(self._cmd_r_pos_ff)
+        self.r_arm.update_action_axisangle(self._cur_r_quat)
+        self.l_grip.update_ctrl(self._cur_l_g)
+        self.r_grip.update_ctrl(self._cur_r_g)
 
 
-# ---------------------------------------------------------------------------
-# main
-# ---------------------------------------------------------------------------
+def _query_ee_b(env, agent_conf):
+    base_body = env.body(agent_conf.base_body)
+    ee_names = [
+        env.site(agent_conf.l_arm["ee_site_name"]),
+        env.site(agent_conf.r_arm["ee_site_name"]),
+    ]
+    ee_b = env.query_site_pos_and_quat_B(ee_names, [base_body])
+    l_pos = ee_b[ee_names[0]]["xpos"].astype(np.float32)
+    r_pos = ee_b[ee_names[1]]["xpos"].astype(np.float32)
+    l_quat = ee_b[ee_names[0]]["xquat"][[1, 2, 3, 0]].astype(np.float32)
+    r_quat = ee_b[ee_names[1]]["xquat"][[1, 2, 3, 0]].astype(np.float32)
+    return l_pos, l_quat, r_pos, r_quat
+
+
+def _query_arm_qpos(env, agent_conf) -> tuple[list, list]:
+    l_names = [env.joint(n) for n in agent_conf.l_arm["joint_names"]]
+    r_names = [env.joint(n) for n in agent_conf.r_arm["joint_names"]]
+    lq = env.query_joint_qpos(l_names)
+    rq = env.query_joint_qpos(r_names)
+    l_vals = [float(np.asarray(lq[n]).reshape(-1)[0]) for n in l_names]
+    r_vals = [float(np.asarray(rq[n]).reshape(-1)[0]) for n in r_names]
+    return l_vals, r_vals
+
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="G1 OmniPicker LeRobot v2.1 parquet 数据集回放"
+    parser = argparse.ArgumentParser(description="G1 parquet 回放（初始化对齐数采/推理）")
+    parser.add_argument("--dataset_dir", type=str, required=True)
+    parser.add_argument("--task_config", type=str, required=True)
+    parser.add_argument("--episode", type=int, default=None)
+    parser.add_argument("--loop", action="store_true")
+    parser.add_argument(
+        "--steps_per_frame", type=int, default=10,
+        help="每个 parquet 帧重复执行的 OSC 控制步数（跟踪步数；推荐 10）",
+    )
+    parser.add_argument("--render_every", type=int, default=5)
+    parser.add_argument(
+        "--kp", type=float, default=200.0,
+        help="OSC 阻抗刚度 kp（推荐 200；范围约 1~300；kd=2√kp 临界阻尼）",
     )
     parser.add_argument(
-        "--dataset_dir", type=str, required=True,
-        help="LeRobot 数据集根目录（含 data/ meta/ 子目录）",
+        "--track_log_every", type=int, default=1,
+        help="每 N 个 parquet 帧打印一次实测 EE vs 数据目标（默认 1=每帧；0=关闭）",
     )
     parser.add_argument(
-        "--task_config", type=str, required=True,
-        help="场景配置 YAML（与数据集对应的任务配置）",
+        "--cmd_bias_x", type=float, default=0.0,
+        help="右臂目标前馈 dx（B 系米；学数采人为平移目标，默认 0）",
     )
     parser.add_argument(
-        "--episode", type=int, default=None,
-        help="仅回放指定集（1-indexed）；缺省则按顺序播完全部集",
+        "--cmd_bias_y", type=float, default=0.0,
+        help="右臂目标前馈 dy（B 系米；默认 0）",
     )
     parser.add_argument(
-        "--loop", action="store_true",
-        help="循环回放（播完全部后从头再来；配合 --episode 可单集循环）",
+        "--cmd_bias_z", type=float, default=-0.030,
+        help="右臂目标前馈 dz（B 系米；默认 -0.030 学数采抵桌；0=关闭）",
     )
     parser.add_argument(
-        "--steps_per_frame", type=int, default=3,
-        help=(
-            "每个 action 帧保持的 5ms 控制步数（默认 3）。"
-            "传 1 最快；传 10 约 1× 实时速度"
-        ),
+        "--cmd_bias_z_below", type=float, default=0.25,
+        help="仅当 parquet 原始右臂 z<=该值(m) 时施加前馈（默认 0.25≈近桌/抓取）",
     )
     parser.add_argument(
-        "--render_every", type=int, default=5,
-        help="每隔多少控制步渲染一次（默认 5）；设为 1 每步都渲染（慢），设为 0 禁用渲染",
+        "--sync_nullspace", action=argparse.BooleanOptionalAction, default=True,
+        help="施加前馈时同步 OSC nullspace（默认开；便于往下压）",
+    )
+    parser.add_argument(
+        "--grasp_integral",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="开启近桌外环积分，减小回放末端相对数据目标的稳态误差（默认关）",
+    )
+    parser.add_argument(
+        "--grasp_integral_ki",
+        type=float,
+        default=0.3,
+        help="回放外环积分增益（逐控制步，默认0.3）",
+    )
+    parser.add_argument(
+        "--grasp_integral_max",
+        type=float,
+        default=0.04,
+        help="回放外环积分偏置限幅（米，默认0.04）",
+    )
+    parser.add_argument(
+        "--grasp_integral_axes",
+        type=str,
+        default="z",
+        help="外环积分生效轴，如 z / xy / xyz（默认 z）",
+    )
+    parser.add_argument(
+        "--grasp_integral_log_every",
+        type=int,
+        default=10,
+        help="积分日志节流：每 N 控制步打印一次（默认10；0=关闭）",
+    )
+    parser.add_argument(
+        "--grasp_integral_z_below",
+        type=float,
+        default=0.25,
+        help="仅当 parquet 原始右臂 z<=该值(m) 时启用外环积分（默认0.25）",
     )
     parser.add_argument("--orcagym_addr", default="localhost:50051")
     args = parser.parse_args()
@@ -280,45 +445,70 @@ def main() -> None:
     dataset_dir = os.path.abspath(os.path.expanduser(args.dataset_dir))
     orca_logger.info(f"数据集: {dataset_dir}")
 
-    # ── 扫描 parquet 文件 ────────────────────────────────────────────
     all_files = _scan_parquet_files(dataset_dir)
     if not all_files:
-        raise FileNotFoundError(f"未找到 parquet 文件: {dataset_dir}/data/")
-
+        raise FileNotFoundError(f"未找到 parquet: {dataset_dir}/data/")
     if args.episode is not None:
         idx = args.episode - 1
         if not (0 <= idx < len(all_files)):
-            raise ValueError(f"--episode {args.episode} 超出范围 (1..{len(all_files)})")
+            raise ValueError(f"--episode {args.episode} 超出范围")
         playlist = [all_files[idx]]
     else:
         playlist = list(all_files)
 
+    cmd_bias_b = np.array(
+        [args.cmd_bias_x, args.cmd_bias_y, args.cmd_bias_z], dtype=np.float64
+    )
     orca_logger.info(
         f"共 {len(all_files)} 集，待回放 {len(playlist)} 集  "
-        f"steps_per_frame={args.steps_per_frame}  loop={args.loop}"
+        f"steps_per_frame={args.steps_per_frame}  kp={args.kp}  "
+        f"cmd_bias_b={cmd_bias_b.tolist()}m "
+        f"({(cmd_bias_b * 1000).round(1).tolist()}mm)  "
+        f"z_below={args.cmd_bias_z_below}m  sync_ns={args.sync_nullspace}"
+    )
+    orca_logger.info(
+        "学数采抵桌: 近桌高度前馈压低目标 + nullspace 同步 "
+        f"(--cmd_bias_z {args.cmd_bias_z} --cmd_bias_z_below {args.cmd_bias_z_below})"
+    )
+    if args.grasp_integral:
+        orca_logger.info(
+            f"回放外环积分: ON  ki={args.grasp_integral_ki} "
+            f"max={args.grasp_integral_max}m axes={args.grasp_integral_axes} "
+            f"z_below={args.grasp_integral_z_below}m "
+            f"log_every={args.grasp_integral_log_every}"
+        )
+    else:
+        orca_logger.info("回放外环积分: OFF（--grasp_integral 可开启）")
+
+    # 与数采一字不差的默认关节
+    default_joint_values: dict = {}
+    for jn, v in zip(agent_conf.l_arm["joint_names"], _L_INIT_JOINT_VALUES):
+        default_joint_values[jn] = v
+    for jn, v in zip(
+        agent_conf.r_arm["joint_names"], agent_conf.r_arm["neutral_joint_values"]
+    ):
+        default_joint_values[jn] = v
+    orca_logger.info(
+        f"左臂 L_INIT={_L_INIT_JOINT_VALUES}  "
+        f"右臂 neutral={agent_conf.r_arm['neutral_joint_values']}"
     )
 
-    # ── 关节初值 ─────────────────────────────────────────────────────
-    default_joint_values: dict = {}
-    for jn, v in zip(agent_conf.l_arm["joint_names"], agent_conf.l_arm["neutral_joint_values"]):
-        default_joint_values[jn] = v
-    for jn, v in zip(agent_conf.r_arm["joint_names"], agent_conf.r_arm["neutral_joint_values"]):
-        default_joint_values[jn] = v
-
-    # ── 场景管理 ─────────────────────────────────────────────────────
     with open(os.path.join(base_dir, args.task_config), "r", encoding="utf-8") as f:
         scene_config = load(f, Loader=Loader)
     scene_manager = SceneManager(args.orcagym_addr, config=scene_config)
+    script_name = os.path.basename(sys.argv[0]) if sys.argv else "g1_omnipicker_replay_lerobot.py"
+    scene_manager.show_ui_message(1, "脚本控制：G1 parquet 回放", "0xffff00", showtime=5)
+    scene_manager.get_scene_data(script_name, "beginscene")
 
-    # ── DataCollectionManager ──────────────────────────────────────────
     def obs_callback(env) -> dict:
-        return {"replay": np.zeros(env.nu, dtype=np.float32)}
+        return {"replay": np.zeros(max(env.nu, 1), dtype=np.float32)}
 
+    # 与数采：manager 创建时 task=None，首次 update_scene 不会走 update_actor_qpos
     manager = DataCollectionManager(
         agent_name="g1_omnipicker",
         env_name="DataCollection",
         entry_point=ENTRY_POINT,
-        default_joint_values=default_joint_values,
+        default_joint_values={},
         obs_callback=obs_callback,
         env_index=0,
         device=None,
@@ -327,10 +517,79 @@ def main() -> None:
         orcagym_addr=args.orcagym_addr,
     )
     env = manager.env
+    manager.save_video = False
+
+    # ── 首次初始化（严格按数采顺序）────────────────────────────────────
+    orca_logger.info("=== 首次初始化（同数采：reset → update_scene → set_default）===")
+    env.reset()
+    time.sleep(0.1)
+
+    if not manager.update_scene():
+        orca_logger.error("首次 update_scene 失败，退出")
+        env.close()
+        return
+
+    env.set_default_joint_values(default_joint_values)
     manager.set_disable_actuator_group([agent_conf.positions_group])
+
+    # 与数采：在 set_default 之后创建控制器
+    ctrl_l_name = [env.actuator(m) for m in agent_conf.l_arm["motors_names"]]
+    ctrl_r_name = [env.actuator(m) for m in agent_conf.r_arm["motors_names"]]
+    init_l = {n: v for n, v in zip(ctrl_l_name, agent_conf.l_arm["motors_init_ctrl"])}
+    init_r = {n: v for n, v in zip(ctrl_r_name, agent_conf.r_arm["motors_init_ctrl"])}
+    l_arm = create_arm_osc_controller(
+        env, agent_conf.l_arm, agent_conf.base_body, ctrl_l_name, init_l
+    )
+    r_arm = create_arm_osc_controller(
+        env, agent_conf.r_arm, agent_conf.base_body, ctrl_r_name, init_r
+    )
+
+    kp_val = float(np.clip(args.kp, 1.0, 300.0))
+    for _arm in (l_arm, r_arm):
+        _arm.controller.kp = np.ones(6, dtype=np.float64) * kp_val
+        _arm.controller.kd = 2.0 * np.sqrt(_arm.controller.kp)
+    orca_logger.info(f"OSC 阻抗刚度 kp 设为 {kp_val}（kd=2√kp 临界阻尼）")
+
+    if args.grasp_integral:
+        r_arm.configure_integral(
+            ki=float(args.grasp_integral_ki),
+            max_bias=float(args.grasp_integral_max),
+            axes=str(args.grasp_integral_axes),
+            log_every=int(args.grasp_integral_log_every),
+        )
+
+    l_gname = [env.actuator(n) for n in agent_conf.gripper_l["actuator_names"]]
+    r_gname = [env.actuator(n) for n in agent_conf.gripper_r["actuator_names"]]
+    init_lg = {n: v for n, v in zip(l_gname, agent_conf.gripper_l["init_ctrl"])}
+    init_rg = {n: v for n, v in zip(r_gname, agent_conf.gripper_r["init_ctrl"])}
+    l_grip = create_gripper_2f85_reverse_controller(
+        env, agent_conf.gripper_l, agent_conf.base_body, l_gname, init_lg,
+        Controller2F85Reverse.ControllerType.DATA,
+    )
+    r_grip = create_gripper_2f85_reverse_controller(
+        env, agent_conf.gripper_r, agent_conf.base_body, r_gname, init_rg,
+        Controller2F85Reverse.ControllerType.DATA,
+    )
+
+    manager.add_controller(l_arm)
+    manager.add_controller(r_arm)
+    manager.add_controller(l_grip)
+    manager.add_controller(r_grip)
+
+    task_status = TaskStatusController(env, agent_conf.base_body, is_controller=False)
+    manager.set_task_status_controller(task_status)
+    # 与数采：首次 update_scene 完成后再 set_task
     manager.set_task(EmptyTask(env))
 
-    # ── 跳帧渲染补丁（run_episode 每步都调 env.render，用计数器控制频率）──
+    l_q, r_q = _query_arm_qpos(env, agent_conf)
+    l_pos, l_quat, r_pos, r_quat = _query_ee_b(env, agent_conf)
+    orca_logger.info(
+        f"  [首次] L_q={np.round(l_q, 3).tolist()}  R_q={np.round(r_q, 3).tolist()}"
+    )
+    orca_logger.info(
+        f"  [首次] L_ee={np.round(l_pos, 4).tolist()}  R_ee={np.round(r_pos, 4).tolist()}"
+    )
+
     _render_counter = [0]
     _render_every = max(0, args.render_every)
     _orig_render = env.render
@@ -344,32 +603,13 @@ def main() -> None:
         return None
 
     env.render = _patched_render
-    orca_logger.info(f"render_every={_render_every}  steps_per_frame={args.steps_per_frame}")
-
-    # ── 创建控制器 ────────────────────────────────────────────────────
-    orca_logger.info("Creating arm OSC controllers")
-    l_arm  = _create_arm(env, agent_conf.l_arm, agent_conf)
-    r_arm  = _create_arm(env, agent_conf.r_arm, agent_conf)
-    orca_logger.info("Creating gripper controllers (2F85Reverse)")
-    l_grip = _create_gripper(env, agent_conf.gripper_l, agent_conf)
-    r_grip = _create_gripper(env, agent_conf.gripper_r, agent_conf)
-
-    manager.add_controller(l_arm)
-    manager.add_controller(r_arm)
-    manager.add_controller(l_grip)
-    manager.add_controller(r_grip)
-
-    # TaskStatusController（is_controller=False：不使用速率限制，精确按帧控制）
-    task_status = TaskStatusController(env, agent_conf.base_body, is_controller=False)
-    manager.set_task_status_controller(task_status)
-
-    # ── 主回放循环 ────────────────────────────────────────────────────
+    orca_logger.info(f"render_every={_render_every}")
     orca_logger.info("Starting G1 replay loop (Ctrl+C to stop)")
 
     try:
         ep_files = list(playlist)
         ep_total = len(ep_files)
-        ep_idx   = 0
+        ep_idx = 0
 
         while True:
             if manager._shutdown_requested:
@@ -377,7 +617,7 @@ def main() -> None:
             if ep_idx >= len(ep_files):
                 if args.loop:
                     ep_files = list(playlist)
-                    ep_idx   = 0
+                    ep_idx = 0
                     orca_logger.info("所有集回放完毕，循环重头")
                 else:
                     orca_logger.info("所有集回放完毕，退出")
@@ -385,42 +625,84 @@ def main() -> None:
 
             parquet_path = ep_files[ep_idx]
             ep_idx += 1
-
             ep_name = os.path.basename(parquet_path)
             orca_logger.info(f"=== 回放 {ep_name}  ({ep_idx}/{ep_total}) ===")
 
-            # 加载 parquet
-            ep_data  = _load_episode(parquet_path, agent_conf)
+            ep_data = _load_episode(parquet_path, agent_conf)
             n_frames = ep_data["n_frames"]
-            steps_per_frame = max(1, args.steps_per_frame)
+            spf = max(1, args.steps_per_frame)
             orca_logger.info(
-                f"  {n_frames} 帧 × {steps_per_frame} 步/帧 = {n_frames * steps_per_frame} 控制步  "
-                f"预计仿真时长={n_frames * steps_per_frame * 0.005:.1f}s"
+                f"  {n_frames} 帧 × {spf} 步/帧 = {n_frames * spf} 控制步"
             )
 
-            # 重置场景（对齐采集脚本时序）
+            # ── 每集场景重置（同数采）──────────────────────────────────
             env.reset()
-            time.sleep(0.1)
-            manager.update_scene()
-            # spawn_scene 后再 apply 一次关节初值，确保 controllers.reset() 抓到正确起始位姿
+            time.sleep(0.05)
+
+            if not manager.update_scene():
+                orca_logger.info("update_scene 失败，停止")
+                break
+
             env.set_default_joint_values(default_joint_values)
 
-            # 创建本集的 replay device 并注入 manager
-            device = G1ParquetReplayDevice(
-                l_arm=l_arm,
-                r_arm=r_arm,
-                l_grip=l_grip,
-                r_grip=r_grip,
-                task_status=task_status,
-                data=ep_data,
-                steps_per_frame=steps_per_frame,
+            # ── 每集控制侧（同推理）────────────────────────────────────
+            env.mj_forward()
+            manager.set_init_ctrl()
+            env.set_ctrl(manager.ctrl)
+            for controller in manager.controllers:
+                controller.reset()
+            env.render()
+            time.sleep(0.05)
+
+            l_pos, l_quat, r_pos, r_quat = _query_ee_b(env, agent_conf)
+            l_q, r_q = _query_arm_qpos(env, agent_conf)
+            orca_logger.info(
+                f"  [reset] L_q={np.round(l_q, 3).tolist()}  "
+                f"R_q={np.round(r_q, 3).tolist()}"
             )
+            orca_logger.info(
+                f"  [reset] L_ee={np.round(l_pos, 4).tolist()}  "
+                f"R_ee={np.round(r_pos, 4).tolist()}"
+            )
+
+            l_grip_hold = np.array(
+                [_L_GRIP_OPEN_MOTOR, _L_GRIP_OPEN_MOTOR], dtype=np.float32
+            )
+            r_grip0 = np.asarray(ep_data["r_grip"][0], dtype=np.float32)
+
+            # 与推理：以实测 EE 为初始目标，左臂 hold，OSC 驻留 10 步
+            l_arm.update_action_position(l_pos)
+            l_arm.update_action_axisangle(l_quat)
+            r_arm.update_action_position(r_pos)
+            r_arm.update_action_axisangle(r_quat)
+            l_grip.update_ctrl(l_grip_hold)
+            r_grip.update_ctrl(r_grip0)
+            for _ in range(10):
+                action = manager.run_controllers()
+                env.step(action)
+                env.render()
+
+            l_pos, l_quat, r_pos, r_quat = _query_ee_b(env, agent_conf)
+            orca_logger.info(
+                f"  [init] 开播前 L_ee={np.round(l_pos, 4).tolist()}  "
+                f"R_ee={np.round(r_pos, 4).tolist()}"
+            )
+
+            device = G1ParquetReplayDevice(
+                l_arm=l_arm, r_arm=r_arm, l_grip=l_grip, r_grip=r_grip,
+                task_status=task_status, data=ep_data, steps_per_frame=spf,
+                lock_left_arm=True,
+                track_log_every=args.track_log_every,
+                cmd_bias_b=cmd_bias_b,
+                cmd_bias_z_below=args.cmd_bias_z_below,
+                sync_nullspace=args.sync_nullspace,
+                grasp_integral=bool(args.grasp_integral),
+                grasp_integral_z_below=float(args.grasp_integral_z_below),
+            )
+            device.set_left_hold(l_pos, l_quat, l_grip_hold)
             manager.set_device(device)
 
-            # 走 run_episode()：与采集脚本完全相同的驱动链路
-            task_status.reset()
             manager.run_episode()
-
             orca_logger.info(f"  episode 播完: {device._call_count} 控制步")
 
     except Exception as e:
@@ -440,7 +722,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         orca_logger.info("KeyboardInterrupt, End")
     except Exception as e:
-        OrcaLog.get_instance().error(f"Unexpected error: {e}\n{traceback.format_exc()}")
-    finally:
-        orca_logger.info("Exiting program")
-        os._exit(0)
+        orca_logger.error(f"Error: {e}\n{traceback.format_exc()}")
+        raise
