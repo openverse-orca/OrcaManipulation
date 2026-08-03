@@ -2,15 +2,15 @@
     "version": "3.0",
     "viewport_camera_transform": {
         "position": [
-            -6.575135707855225,
-            0.9936830997467041,
-            3.7540318965911865
+            -6.578919887542725,
+            1.6093710660934448,
+            2.93295955657959
         ],
         "rotation": [
-            0.8944037595989061,
-            -0.4472499211433533,
-            -0.001372837118323691,
-            0.002745572955316947
+            0.8944037595956185,
+            -0.44724992114170936,
+            -0.0013728374675646118,
+            0.0027455741194600783
         ]
     },
     "actors": [
@@ -72,7 +72,81 @@
                 ],
                 "scale": 1.0
             },
-            "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/openloong_gripper_2f85_fix_base_usda"
+            "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/openloong_gripper_2f85_fix_base_usda",
+            "entity_overrides": [
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 0
+                        },
+                        {
+                            "name": "base_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "base_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "Link_head_yaw",
+                            "index": 2
+                        },
+                        {
+                            "name": "Link_head_pitch",
+                            "index": 1
+                        },
+                        {
+                            "name": "neck_center_body",
+                            "index": 1
+                        },
+                        {
+                            "name": "camera_head",
+                            "index": 0
+                        },
+                        {
+                            "name": "cameras",
+                            "index": 0
+                        },
+                        {
+                            "name": "camera_head",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "DepthCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "IsRecording",
+                                    "value": true,
+                                    "type": "bool"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
         },
         {
             "name": "basket",
@@ -80,9 +154,9 @@
             "type": "AssetActor",
             "transform": {
                 "position": [
-                    -6.972110748291016,
-                    2.9254143238067627,
-                    1.094182014465332
+                    -6.796365738,
+                    2.779978037,
+                    1.096674442
                 ],
                 "rotation": [
                     1.0,
