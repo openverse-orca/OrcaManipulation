@@ -1,12 +1,8 @@
 # 宇树 g1_pick 四色按钮接触候选关节角
-# 修正：原误把 4 点全归入 red；按实际操作顺序重标为 红→绿→黄→蓝 各 1 点
-# 2026-08-05 14:16: 仅重录红色（来自 pose_g1_pick_button_candidates4.yaml）；绿/黄/蓝未改
 # 机器人：宇树 g1_pick（关节角控制）
 # q 顺序与 G1PickLeRobotStorage / observation.state 一致：
 #   [0:7] L臂  [7:14] R臂  [14:21] L手  [21:28] R手
-# 触发：左右 squeeze 同按边沿采样实测 q（接触瞬间）
 # 颜色顺序：红 → 绿 → 黄 → 蓝
-# 遥操作：复用 g1_pick_collection_tele_lerobot.ControllerWiring
 #
 # approach_back：接触 EE 沿 -X 后撤距离（米），脚本 FK→后撤→IK 得预备关节角
 # （对齐 OmniPicker pose_g1_button_candidates.yaml，默认 0.12）
