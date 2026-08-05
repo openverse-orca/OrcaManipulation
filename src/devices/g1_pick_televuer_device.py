@@ -2,6 +2,12 @@
 
 Provides backend-agnostic bind APIs for dual SE3 poses, triggers, and
 task/discard/shutdown events with squeeze hysteresis + chord arbitration.
+
+Health / diagnostics (see XR_TELEVUER.md --diag_health):
+  - Split cam_seq vs ctrl_seq (head vs controller uplink)
+  - Liveness based on advancing seq only (not sticky motion_data_ready)
+  - Child-process / port-8012 watchdog
+  - Squeeze rising-edge EVT trace
 """
 from __future__ import annotations
 
@@ -70,8 +76,9 @@ class SqueezeChordArbitrator:
       left only          → task_toggle
     """
 
-    def __init__(self, chord_window_s: float = 0.08):
+    def __init__(self, chord_window_s: float = 0.08, evt_log: bool = True):
         self.chord_window_s = float(chord_window_s)
+        self.evt_log = bool(evt_log)
         self._l_btn = _HysteresisButton()
         self._r_btn = _HysteresisButton()
         self._pending_l_t: float | None = None
@@ -94,6 +101,12 @@ class SqueezeChordArbitrator:
             if self._pending_l_t is not None or self._pending_r_t is not None:
                 self._pending_l_t = None
                 self._pending_r_t = None
+                if self.evt_log:
+                    print(
+                        f"[TV][EVT] action=shutdown l_rise={l_rise} r_rise={r_rise} "
+                        f"l_pressed={self._l_btn.pressed} r_pressed={self._r_btn.pressed}",
+                        flush=True,
+                    )
                 return "shutdown"
 
         # Resolve pending single-side edges after window
@@ -107,6 +120,12 @@ class SqueezeChordArbitrator:
                 # right takes priority over a simultaneous pending left if both expire
                 action = "discard"
             self._pending_r_t = None
+        if action is not None and self.evt_log:
+            print(
+                f"[TV][EVT] action={action} l_rise={l_rise} r_rise={r_rise} "
+                f"l_pressed={self._l_btn.pressed} r_pressed={self._r_btn.pressed}",
+                flush=True,
+            )
         return action
 
 
@@ -127,8 +146,14 @@ def _selfcheck_trigger_normalize() -> None:
         got = normalize_televuer_trigger(tv_val)
         if abs(got - expect) > 1e-6:
             raise RuntimeError(
-                f"trigger normalize broken: in={tv_val} got={got} expect={expect}"
+                f"[TV][SELFCHECK] trigger normalize broken: "
+                f"in={tv_val} got={got} expect={expect}"
             )
+    print(
+        "[TV][SELFCHECK] trigger normalize OK "
+        "(wrapper 10→0 pressed ↔ HandController 0→1 close)",
+        flush=True,
+    )
 
 
 class TeleVuerDevice(AbstractDevice):
@@ -145,6 +170,8 @@ class TeleVuerDevice(AbstractDevice):
         display_mode: str = "pass-through",
         img_shape: tuple[int, int] = (480, 640),
         binocular: bool = False,
+        evt_log: bool = True,
+        log_buttons: bool = True,
         run_trigger_selfcheck: bool = True,
         cert_file: str | None = None,
         key_file: str | None = None,
@@ -152,7 +179,10 @@ class TeleVuerDevice(AbstractDevice):
         self.pose_mapper = pose_mapper or TvToOrcaPoseMapper()
         self.disconnect_timeout_s = float(disconnect_timeout_s)
         self.sustained_timeout_s = float(sustained_timeout_s)
-        self._arbitrator = SqueezeChordArbitrator(chord_window_s=chord_window_s)
+        self._log_buttons = bool(log_buttons)
+        self._arbitrator = SqueezeChordArbitrator(
+            chord_window_s=chord_window_s, evt_log=evt_log
+        )
 
         self._dual_pose_cb: Callable | None = None
         self._left_trigger_cb: Callable | None = None
@@ -178,6 +208,8 @@ class TeleVuerDevice(AbstractDevice):
         self._connected = False
         self._was_connected = False
         self._closed = False
+        self._last_btn_log_t = 0.0
+        self._last_child_fatal_log_t = 0.0
         self._child_was_alive = True
         # Empty string "" disables TLS (Vuer skips cert resolution + SSL site).
         # None = TeleVuer default path (~/.config/xr_teleoperate or package cert).
@@ -189,6 +221,7 @@ class TeleVuerDevice(AbstractDevice):
             and cert_file == ""
             and key_file == ""
         )
+        self._visit_url_printed = False
 
         # Rate samples for heartbeat (cam/ctrl events over last window)
         self._rate_t0 = time.monotonic()
@@ -230,8 +263,8 @@ class TeleVuerDevice(AbstractDevice):
             from televuer.tv_wrapper import TeleVuerWrapper
         except ImportError as e:
             raise ImportError(
-                "televuer is not installed. Please install the xr_teleoperate "
-                "televuer package before running Unitree teleoperation."
+                "televuer is not installed. Install the xr_teleoperate televuer "
+                "submodule (`pip install -e .../teleop/televuer`) or use --xr_backend pico."
             ) from e
 
         class CountingTeleVuer(TeleVuer):
@@ -299,6 +332,24 @@ class TeleVuerDevice(AbstractDevice):
             raise
         finally:
             wrap_mod.TeleVuer = self._orig_televuer_cls
+
+        visit = self.client_visit_url()
+        mode = "HTTPS+WSS" if self._tls_enabled else "HTTP+WS (no TLS)"
+        print(
+            f"[TV][LINK] USB-local open on Pico: {visit}  ({mode})",
+            flush=True,
+        )
+        print(
+            "[TV][LINK] Ignore Vuer's Visit: https://vuer.ai — that URL is for "
+            "the hosted frontend, not USB-local.",
+            flush=True,
+        )
+        if self._tls_enabled:
+            print(
+                "[TV][LINK] NOTE: vuer 0.0.60 HTTPS getSocketURI drops :8012; "
+                "?ws=wss://127.0.0.1:8012 is required (or use --tv_no_tls).",
+                flush=True,
+            )
 
     # ----- bind API -----
     def bind_dual_pose_event(self, callback: Callable):
@@ -378,13 +429,14 @@ class TeleVuerDevice(AbstractDevice):
         return _port_listening(port if port is not None else self.VUER_PORT)
 
     def health_snapshot(self) -> dict:
-        """Structured health dict (cam/ctrl liveness, child process, port)."""
+        """Structured health dict for [HEALTH] heartbeat (USB-local diagnostics)."""
         now = time.monotonic()
         cam = self._cam_seq
         ctrl = self._ctrl_seq
         dt = max(1e-3, now - self._rate_t0)
         cam_rate = (cam - self._rate_cam0) / dt
         ctrl_rate = (ctrl - self._rate_ctrl0) / dt
+        # Reset rate window each snapshot (caller ~1–2 Hz)
         self._rate_t0 = now
         self._rate_cam0 = cam
         self._rate_ctrl0 = ctrl
@@ -409,7 +461,9 @@ class TeleVuerDevice(AbstractDevice):
 
         alive = self.child_alive()
         cam_only = cam > 0 and ctrl == 0
+        # D2 hint: WSS traffic (cam/any seq) but motion never latched
         seq_rising_no_motion = (cam + ctrl) > 30 and not motion_latched
+        # D4 hint: controller stream starved vs head
         backpressure = (
             cam_rate > 20.0 and ctrl_rate >= 0.0 and ctrl_rate < cam_rate * 0.25
             and cam_rate - ctrl_rate > 10.0
@@ -442,14 +496,24 @@ class TeleVuerDevice(AbstractDevice):
 
         now = time.monotonic()
 
+        # Child watchdog (D3)
         alive = self.child_alive()
+        if self._child_was_alive and not alive:
+            if now - self._last_child_fatal_log_t >= 2.0:
+                self._last_child_fatal_log_t = now
+                print(
+                    f"[HEALTH][FATAL] vuer child exited code={self.child_exitcode()} "
+                    f"port8012={'bound' if self.port_bound() else 'free'} — "
+                    "check 8012 residual / cert / televuer logs; restart 数采",
+                    flush=True,
+                )
         self._child_was_alive = alive
 
         seq = self._read_event_seq()
         cam_seq = self._read_cam_seq()
         ctrl_seq = self._read_ctrl_seq()
 
-        # ONLY advancing seq refreshes liveness — never sticky
+        # D1 fix: ONLY advancing seq refreshes liveness — never sticky
         # motion_data_ready (which stays True forever after first CONTROLLER_MOVE).
         seq_advanced = seq > self._last_event_seq
         if seq_advanced:
@@ -471,18 +535,28 @@ class TeleVuerDevice(AbstractDevice):
         connected = self._last_event_monotonic > 0 and age < self.disconnect_timeout_s
         if connected and not self._was_connected:
             self._connected = True
+            print(
+                f"[TV][LINK] reconnect age={age:.2f}s cam_seq={self._cam_seq} "
+                f"ctrl_seq={self._ctrl_seq} → rebase",
+                flush=True,
+            )
             if self._reconnect_cb is not None:
                 self._reconnect_cb()
         if (not connected) and self._was_connected:
             self._connected = False
             sustained = age >= self.sustained_timeout_s
+            print(
+                f"[TV][LINK] disconnect sustained={sustained} age={age:.2f}s "
+                f"cam_seq={self._cam_seq} ctrl_seq={self._ctrl_seq}",
+                flush=True,
+            )
             if self._disconnect_cb is not None:
                 self._disconnect_cb(sustained)
         self._was_connected = connected
         self._connected = connected
 
         # Fresh controller traffic required to push goals / buttons.
-        # Sticky motion_data_ready alone is NOT enough (avoids stale pose after drop).
+        # Sticky motion_data_ready alone is NOT enough (D1: avoids stale pose after drop).
         ctrl_fresh = (
             self._last_ctrl_monotonic > 0
             and (now - self._last_ctrl_monotonic) < self.disconnect_timeout_s
@@ -510,6 +584,18 @@ class TeleVuerDevice(AbstractDevice):
         # Gating only on the analog value makes grip look completely dead.
         l_sq = _squeeze_analog(tele.left_ctrl_squeeze, tele.left_ctrl_squeezeValue)
         r_sq = _squeeze_analog(tele.right_ctrl_squeeze, tele.right_ctrl_squeezeValue)
+        if self._log_buttons:
+            if not hasattr(self, "_last_btn_log_t"):
+                self._last_btn_log_t = 0.0
+            if now - self._last_btn_log_t >= 2.0:
+                self._last_btn_log_t = now
+                print(
+                    f"[TV][BTN] L={l_sq:.2f}(b={bool(tele.left_ctrl_squeeze)} "
+                    f"v={float(tele.left_ctrl_squeezeValue):.2f}) "
+                    f"R={r_sq:.2f}(b={bool(tele.right_ctrl_squeeze)} "
+                    f"v={float(tele.right_ctrl_squeezeValue):.2f})",
+                    flush=True,
+                )
 
         action = self._arbitrator.update(l_sq, r_sq, now=now)
         if action == "shutdown" and self._shutdown_cb is not None:
@@ -517,6 +603,8 @@ class TeleVuerDevice(AbstractDevice):
         elif action == "discard" and self._discard_cb is not None:
             self._discard_cb()
         elif action == "task_toggle" and self._task_toggle_cb is not None:
+            # Match Pico grip API: pass True to TaskStatusController.update_task_status
+            print("[TV][BTN] left squeeze → task_toggle", flush=True)
             self._task_toggle_cb(True)
 
     def close(self):

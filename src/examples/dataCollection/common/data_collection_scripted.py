@@ -19,7 +19,7 @@ import os
 import sys
 import traceback
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -494,7 +494,7 @@ def main():
         default_joint_values[joint_name] = value
 
     orca_logger.info("Creating scene manager")
-    with open(os.path.join(base_dir, args.task_config), "r", encoding="utf-8") as f:
+    with open(os.path.abspath(os.path.join(base_dir, args.task_config)), "r", encoding="utf-8") as f:
         config = load(f, Loader=Loader)
     scene_manager = SceneManager(orcagym_addr, config=config)
 

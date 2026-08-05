@@ -2,10 +2,10 @@
 
 本仓库基于 OrcaLab / OrcaGym，提供人形机器人数据采集、回放与在线推理工具。当前交付覆盖两类机器人：
 
-| 机器人 | 支持场景 | 详细说明 |
-|--------|----------|----------|
-| 智元 G1 OmniPicker | 四色按按钮、工具整理（脚本化 + Pico 遥操作） | [docs/g1_omnipicker.md](docs/g1_omnipicker.md) |
-| 宇树 G1 | 四色按按钮（TeleVuer 遥操作采集） | [docs/unitree_g1.md](docs/unitree_g1.md) |
+| 机器人 | 支持场景 | 采集文档 | 推理文档 |
+|--------|----------|----------|----------|
+| 智元 G1 OmniPicker | 四色按按钮、工具整理（脚本化 + Pico 遥操作） | [docs/g1_omnipicker_collection.md](docs/g1_omnipicker_collection.md) | [docs/g1_omnipicker_inference.md](docs/g1_omnipicker_inference.md) |
+| 宇树 G1 | 四色按按钮（TeleVuer 遥操作 / 脚本化） | [docs/unitree_g1_collection.md](docs/unitree_g1_collection.md) | [docs/unitree_g1_inference.md](docs/unitree_g1_inference.md) |
 
 请按上表进入对应文档查看完整流程。下文说明两套机器人共用的环境配置与数据格式。
 
@@ -47,7 +47,7 @@ pip install gymnasium==1.2.1
 在线推理额外依赖 `openpi_client`，请在运行推理脚本前设置：
 
 ```bash
-export OPENPI_CLIENT_SRC=~/openpi/packages/openpi-client/src
+export OPENPI_CLIENT_SRC=<openpi-client源码路径>/src
 ```
 
 ---
@@ -58,37 +58,54 @@ export OPENPI_CLIENT_SRC=~/openpi/packages/openpi-client/src
 OrcaManipulation/
 ├── README.md
 ├── docs/
-│   ├── g1_omnipicker.md          # 智元 G1 OmniPicker 完整流程
-│   └── unitree_g1.md             # 宇树 G1 完整流程
+│   ├── g1_omnipicker_collection.md   # 智元 · 采集
+│   ├── g1_omnipicker_inference.md    # 智元 · 推理
+│   ├── unitree_g1_collection.md      # 宇树 · 采集
+│   └── unitree_g1_inference.md       # 宇树 · 推理
 ├── requirements.txt
 ├── pyproject.toml
 └── src/
-    ├── conf/                     # 机器人配置（关节/夹爪/相机）
-    ├── controllers/              # 臂控制器 / 夹爪控制器 / 任务状态
-    ├── dataCollectionManager/    # 数据采集主控
-    ├── dataStorage/              # LeRobot v2.1 存储（Parquet + MP4）
-    ├── devices/                  # 输入设备抽象（Pico / TeleVuer）
-    ├── envs/dataCollection/      # MuJoCo 环境封装
-    ├── scene/                    # 场景管理
-    ├── task/                     # 任务基类
-    └── examples/dataCollection/  # 入口脚本与场景布局文件
+    ├── conf/
+    ├── controllers/
+    ├── dataCollectionManager/
+    ├── dataStorage/
+    ├── devices/
+    ├── envs/dataCollection/
+    ├── scene/
+    ├── task/
+    └── examples/
+        ├── dataCollection/
+        │   ├── common/                 # 共用 example.yaml / scripted 基座
+        │   ├── g1_omnipicker/          # 智元采集入口与布局
+        │   └── unitree_g1/             # 宇树采集入口与布局
+        └── inference/
+            ├── g1_omnipicker/          # 智元推理入口
+            └── unitree_g1/             # 宇树推理入口
 ```
 
 ---
 
 ## 入口脚本
 
-入口脚本均位于 `src/examples/dataCollection/`：
+### 数据采集（`src/examples/dataCollection/`）
 
 | 脚本 | 机器人 | 用途 |
 |------|--------|------|
-| `g1_omnipicker_collection_scripted_tool_lerobot.py` | 智元 | 工具整理脚本化自动采集 |
-| `g1_omnipicker_collection_scripted_button_lerobot.py` | 智元 | 四色按钮脚本化自动采集 |
-| `g1_omnipicker_collection_tele_lerobot.py` | 智元 | Pico VR 遥操作采集（左臂锁定） |
-| `g1_omnipicker_replay_lerobot.py` | 智元 | LeRobot Parquet 数据集回放 |
-| `eval_g1_omnipicker_lerobot.py` | 智元 | 按钮任务在线推理（连接 OpenPI 服务） |
-| `eval_g1_omnipicker_tool_lerobot.py` | 智元 | 工具任务在线推理（连接 OpenPI 服务） |
-| `g1_pick_collection_tele_lerobot.py` | 宇树 | TeleVuer 遥操作采集（双臂） |
+| `g1_omnipicker/g1_omnipicker_collection_scripted_tool_lerobot.py` | 智元 | 工具整理脚本化自动采集 |
+| `g1_omnipicker/g1_omnipicker_collection_scripted_button_lerobot.py` | 智元 | 四色按钮脚本化自动采集 |
+| `g1_omnipicker/g1_omnipicker_collection_tele_lerobot.py` | 智元 | Pico VR 遥操作采集（左臂锁定） |
+| `g1_omnipicker/g1_omnipicker_replay_lerobot.py` | 智元 | LeRobot Parquet 数据集回放 |
+| `unitree_g1/g1_pick_collection_tele_lerobot.py` | 宇树 | TeleVuer 遥操作采集（双臂） |
+| `unitree_g1/g1_pick_collection_scripted_button_lerobot.py` | 宇树 | 四色按钮脚本化自动采集 |
+| `unitree_g1/record_g1_pick_button_waypoints.py` | 宇树 | 录制按钮接触关节角 |
+
+### 在线推理（`src/examples/inference/`）
+
+| 脚本 | 机器人 | 用途 |
+|------|--------|------|
+| `g1_omnipicker/eval_g1_omnipicker_lerobot.py` | 智元 | 按钮任务在线推理（OpenPI） |
+| `g1_omnipicker/eval_g1_omnipicker_tool_lerobot.py` | 智元 | 工具任务在线推理（OpenPI） |
+| `unitree_g1/eval_g1_pick_lerobot.py` | 宇树 | 按钮任务在线推理（OpenPI） |
 
 ---
 

@@ -31,13 +31,16 @@ import sys
 import time
 import traceback
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
 if base_dir not in sys.path:
     sys.path.insert(0, base_dir)
+_common_dir = os.path.abspath(os.path.join(base_dir, "..", "common"))
+if _common_dir not in sys.path:
+    sys.path.insert(0, _common_dir)
 
 import numpy as np
 from yaml import Loader, load, safe_load
@@ -302,7 +305,7 @@ def main() -> None:
         description="G1 OmniPicker 四色按钮脚本化自动采集 → LeRobot v2.1 格式"
     )
     parser.add_argument("--level", type=str, default="default")
-    parser.add_argument("--task_config", type=str, default="example.yaml")
+    parser.add_argument("--task_config", type=str, default="../common/example.yaml")
     parser.add_argument("--lerobot_out", type=str, required=True)
     parser.add_argument("--repo_id", default="local/g1_omnipicker_button")
     parser.add_argument("--fps", type=int, default=20)
@@ -406,7 +409,7 @@ def main() -> None:
         default_joint_values[jn] = v
 
     orca_logger.info("Creating scene manager")
-    with open(os.path.join(base_dir, args.task_config), "r", encoding="utf-8") as f:
+    with open(os.path.abspath(os.path.join(base_dir, args.task_config)), "r", encoding="utf-8") as f:
         scene_config = load(f, Loader=Loader)
     scene_manager = SceneManager(args.orcagym_addr, config=scene_config)
 

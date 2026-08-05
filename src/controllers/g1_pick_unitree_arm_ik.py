@@ -70,7 +70,9 @@ _EE_OFFSET = np.array([0.08, 0.0, 0.0], dtype=np.float64)
 # 该 URDF 零位上臂朝下、前臂朝前，el=0 物理上已弯 ~82°。
 # 其余关节为 0 时 |肩→末端| 在 el≈+1.40rad 达最大 ~0.454m，此处才是伸直构型。
 _EL_STRAIGHT = 1.40
-# Default clamp radius when project_reachable is enabled. NOT a hard kinematic limit:
+_EL_PHYS_BEND_ZERO_DEG = 82.0  # approximate physical bend at el=0 (for diag)
+# Reference radius for the [GOAL] over-reach diagnostic, and the clamp radius
+# when project_reachable is explicitly enabled. NOT a hard kinematic limit:
 # with the shoulder free to orient, measured max |shoulder->EE| is direction
 # dependent (0.434 across-body inward .. 0.490 straight outward, 0.473 for a
 # forward raise). The 0.454 figure only holds with all other joints at zero.
@@ -239,6 +241,10 @@ class G1_29_ArmIK:
         # Lower lag after fixing var_q_last to last command.
         self.smooth_filter = WeightedMovingFilter(np.array([0.90, 0.07, 0.03]), 14)
         self._data = self.reduced_robot.model.createData()
+        # Elbow diagnostics for [EL] log (L=3, R=10); updated each solve_ik.
+        self._last_warm_el = (0.0, 0.0)
+        self._last_ipopt_el = (0.0, 0.0)
+        self._last_cmd_el = (0.0, 0.0)
 
         # Shoulder origins at q=0 (model frame) for reach projection.
         self.shoulder_l, self.shoulder_r = self._compute_shoulder_origins()
@@ -278,6 +284,11 @@ class G1_29_ArmIK:
         excess = dist - self.max_reach
         T[:3, 3] = sh + v * (self.max_reach / dist)
         return T, excess
+
+    @staticmethod
+    def elbow_phys_bend_deg(el_rad: float) -> float:
+        """Approximate physical bend angle: 0≈straight, ~82≈URDF zero."""
+        return float(_EL_PHYS_BEND_ZERO_DEG - np.degrees(el_rad))
 
     def _save_cache(self) -> None:
         data = {
@@ -351,9 +362,16 @@ class G1_29_ArmIK:
             sol_q_raw = np.asarray(
                 self.opti.value(self.var_q), dtype=np.float64
             ).reshape(-1)
+            # Warm was set before solve; record before overwrite.
+            self._last_warm_el = (
+                float(self._q_last_cmd[3]),
+                float(self._q_last_cmd[10]),
+            )
+            self._last_ipopt_el = (float(sol_q_raw[3]), float(sol_q_raw[10]))
 
             self.smooth_filter.add_data(sol_q_raw)
             sol_q = np.asarray(self.smooth_filter.filtered_data, dtype=np.float64).copy()
+            self._last_cmd_el = (float(sol_q[3]), float(sol_q[10]))
 
             if current_lr_arm_motor_dq is not None:
                 v = np.asarray(current_lr_arm_motor_dq, dtype=np.float64) * 0.0

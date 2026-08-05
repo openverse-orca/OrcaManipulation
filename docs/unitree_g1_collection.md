@@ -1,6 +1,6 @@
-# 宇树 G1
+# 宇树 G1 · 数据采集
 
-本文说明宇树 G1 四色按按钮任务的 VR 遥操作采集。宇树侧通过 TeleVuer 接收 Pico 手柄位姿，端口为 `8012`；智元侧流程见 [g1_omnipicker.md](g1_omnipicker.md)，两套机器人请勿混用配置。
+本文说明宇树 G1 四色按按钮任务的场景准备、TeleVuer 遥操作采集、脚本化采集与数据格式。在线推理见 [unitree_g1_inference.md](unitree_g1_inference.md)。
 
 ---
 
@@ -9,7 +9,7 @@
 ### 加载场景
 
 1. 请启动 OrcaLab 6.3。
-2. 请加载布局文件 `unitree_button.json`。
+2. 请加载布局文件 `unitree_button.json`（位于 `src/examples/dataCollection/unitree_g1/`）。
 3. 请确认场景中的机器人名称为 `unitree_humanoid_robot_1`。
 
 ### 配置两路相机
@@ -48,7 +48,7 @@ adb reverse tcp:8012 tcp:8012
 
 ```bash
 conda activate orcalab_lerobot
-cd src/examples/dataCollection
+cd src/examples/dataCollection/unitree_g1
 ```
 
 启动遥操作采集脚本（请将输出目录与 `repo_id` 换成你自己的路径与名称）：
@@ -56,7 +56,7 @@ cd src/examples/dataCollection
 ```bash
 python -u g1_pick_collection_tele_lerobot.py \
     --level default \
-    --task_config example.yaml \
+    --task_config ../common/example.yaml \
     --scene_json unitree_button.json \
     --task "按红色按钮" \
     --lerobot_out <数据集输出目录> \
@@ -95,6 +95,33 @@ adb shell am start -a android.intent.action.VIEW \
 3. 请轻按**左 squeeze（侧握键）**开始数采。
 
 每次重新运行数采前：请先关闭头显当前浏览器页面，再按本节顺序重新执行（先启脚本，再 adb 打开页面）。
+
+---
+
+## 脚本化四色按钮采集
+
+可在无头显时，用已录制的接触关节角自动采集：
+
+```bash
+conda activate orcalab_lerobot
+cd src/examples/dataCollection/unitree_g1
+
+python -u g1_pick_collection_scripted_button_lerobot.py \
+    --level default \
+    --task_config ../common/example.yaml \
+    --scene_json unitree_button.json \
+    --agent_name unitree_humanoid_robot_1 \
+    --pose_candidates pose_g1_pick_button_candidates.yaml \
+    --lerobot_out <数据集输出目录> \
+    --repo_id <数据集仓库名> \
+    --counts 5,5,5,5 \
+    --fps 20 --clock wall --cameras head,wrist_r
+```
+
+接触点可用 `record_g1_pick_button_waypoints.py` 重新录制（双 squeeze 记点，Ctrl+C 写出 YAML）。
+
+---
+
 ## 按键映射
 
 宇树遥操作使用 **Pico VR 手柄**，通过 TeleVuer 接入（端口 `8012`）。双臂均可跟随手柄；灵巧手通过扳机控制开合；腿部与腰部保持锁定。
@@ -104,7 +131,7 @@ adb shell am start -a android.intent.action.VIEW \
 | 物理按键（Pico） | 左手 | 右手 | 代码枚举 `PicoJoystickKey` | 底层字段 |
 |------------------|------|------|---------------------------|----------|
 | 6DOF 位姿 | ✓ | ✓ | `L_TRANSFORM` / `R_TRANSFORM` | `position`, `rotation` |
-| 侧握 Grip | ✓ | ✓ | `L_GRIPBUTTON` / `R_GRIPBUTTON` | `gripButtonPressed` |
+| 侧握 Grip / squeeze | ✓ | ✓ | `L_GRIPBUTTON` / `R_GRIPBUTTON` | `gripButtonPressed` |
 | 扳机 Trigger | ✓ | ✓ | `L_TRIGGER` / `R_TRIGGER` | `triggerValue` ∈ [0, 1] |
 
 ### 机器人控制功能
@@ -120,13 +147,13 @@ adb shell am start -a android.intent.action.VIEW \
 
 | 功能 | 操作 | 说明 |
 |------|------|------|
-| 开始当前集 | 轻按**左 Grip** ×1 | 防抖 ≥ 0.2 s；开始后机器人才会跟随手柄 |
-| 结束并保存 | 再次轻按**左 Grip** ×1 | 强制保存当前集 |
-| 放弃本集 | 轻按**右 Grip**（仅右，不含左） | 丢弃当前集并重置场景；防抖 0.3 s |
-| 终止全部采集 | **左 + 右 Grip 同时按下** | 丢弃未保存集，等待视频编码后退出 |
+| 开始当前集 | 轻按**左 squeeze** ×1 | 防抖 ≥ 0.2 s；开始后机器人才会跟随手柄 |
+| 结束并保存 | 再次轻按**左 squeeze** ×1 | 强制保存当前集 |
+| 放弃本集 | 轻按**右 squeeze**（仅右，不含左） | 丢弃当前集并重置场景；防抖 0.3 s |
+| 终止全部采集 | **左 + 右 squeeze 同时按下** | 丢弃未保存集，等待视频编码后退出 |
 | 强制退出 | 终端 `Ctrl+C` | 中断采集 |
 
-未开始采集时，双臂保持静止。脚本连接成功并不等于已开始采集，请再按一次左 Grip 后机器人才会跟随手柄。握持时请避免左右侧握同时按下，以免误触「终止全部采集」。
+未开始采集时，双臂保持静止。脚本连接成功并不等于已开始采集，请再按一次左 squeeze 后机器人才会跟随手柄。握持时请避免左右侧握同时按下，以免误触「终止全部采集」。
 
 ---
 
@@ -142,7 +169,7 @@ adb shell am start -a android.intent.action.VIEW \
 
 ### 目录结构
 
-与智元数据集结构相同，采用 LeRobot v2.1 格式：
+采用 LeRobot v2.1 格式：
 
 ```text
 <dataset_root>/
@@ -160,39 +187,23 @@ adb shell am start -a android.intent.action.VIEW \
 
 ### action 与 observation.state 维度（28 维）
 
-宇树 G1 配备灵巧手，状态维度与智元不同（智元为 18 维二指夹爪，宇树为 28 维多指灵巧手）：
+| 维度范围 | 含义 |
+|----------|------|
+| `[0:7]` | 左臂 7 关节角（rad） |
+| `[7:14]` | 右臂 7 关节角 |
+| `[14:21]` | 左手 7 关节角 |
+| `[21:28]` | 右手 7 关节角 |
 
-| 维度范围 | 字段名 | 含义 |
-|----------|--------|------|
-| `[0:3]` | `l_pos_x/y/z` | 左臂末端位置（base 坐标系，单位米） |
-| `[3:7]` | `l_quat_x/y/z/w` | 左臂末端四元数（xyzw） |
-| `[7:10]` | `r_pos_x/y/z` | 右臂末端位置 |
-| `[10:14]` | `r_quat_x/y/z/w` | 右臂末端四元数 |
-| `[14:21]` | `l_<joint>_norm` × 7 | 左手 7 个关节归一化值（拇指 3 + 中指 2 + 食指 2） |
-| `[21:28]` | `r_<joint>_norm` × 7 | 右手 7 个关节归一化值（拇指 3 + 中指 2 + 食指 2） |
-
-左右手各 7 个关节（按代码顺序）：
-
-| 索引（相对每手） | 关节名 |
-|------------------|--------|
-| 0 | `thumb_0_joint` |
-| 1 | `thumb_1_joint` |
-| 2 | `thumb_2_joint` |
-| 3 | `middle_0_joint` |
-| 4 | `middle_1_joint` |
-| 5 | `index_0_joint` |
-| 6 | `index_1_joint` |
-
-关节归一化公式：`norm = clamp(电机值 / 关节量程, 0, 1)`。
+`observation.state` 为实测关节角 `q`；`action` 为相对增量 `Δq`。
 
 ---
 
 ## 故障排查
 
-**现象**：头显打不开页面或持续重连。**原因**：端口转发未建立，或误用了加密地址。**处理**：请重执行 `adb reverse tcp:8012 tcp:8012`，并按脚本打印的地址打开页面。
+**现象**：头显打不开页面或持续重连。**原因**：端口转发未建立、先开了旧浏览器页、或误用了加密地址。**处理**：请关闭头显当前页面 → 确认数采脚本已启动 → 重执行 `adb reverse` 与 `adb shell am start ...` 打开 `http://127.0.0.1:8012/`（`--tv_no_tls` 时用 http）。
 
 **现象**：相机超时。**原因**：头部或右腕端口未分别设为 `7070` / `7080`，或推流未启用。**处理**：请按上表重新配置相机，确认 Recording 已勾选。
 
-**现象**：关节名报错（如 `KeyError: 'g1_pick_left_hand_thumb_0_joint'`）。**原因**：机器人前缀与场景不一致。**处理**：请确认布局中的机器人名称，并在启动命令中将 `--agent_name` 设为相同值（默认为 `unitree_humanoid_robot_1`）。
+**现象**：关节名报错。**原因**：机器人前缀与场景不一致。**处理**：请确认布局中的机器人名称，并在启动命令中将 `--agent_name` 设为相同值（默认为 `unitree_humanoid_robot_1`）。
 
-**现象**：手柄已连接但机器人不动。**原因**：尚未开始当前集。**处理**：请轻按左手柄侧握键开始采集。
+**现象**：手柄已连接但机器人不动。**原因**：尚未开始当前集。**处理**：请轻按左手柄 squeeze 开始采集。

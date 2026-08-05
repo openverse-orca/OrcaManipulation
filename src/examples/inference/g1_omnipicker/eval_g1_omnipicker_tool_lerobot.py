@@ -47,7 +47,7 @@ def _install_interrupt_handlers() -> None:
     signal.signal(signal.SIGINT, _handler)
     signal.signal(signal.SIGTERM, _handler)
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -436,7 +436,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="G1 OmniPicker 工具整理场景 OpenPI 推理评估（左臂锁定）"
     )
-    parser.add_argument("--task_config", type=str, default="example.yaml",
+    parser.add_argument("--task_config", type=str, default="../../dataCollection/common/example.yaml",
                         help="场景配置 YAML（默认 example.yaml）")
     parser.add_argument("--orcagym_addr", type=str, default="localhost:50051")
     parser.add_argument("--host", type=str, default="localhost", help="策略服务器主机")
@@ -507,7 +507,7 @@ def main():
     # 默认关闭预览；仅 --preview 时开启
     args.no_preview = not args.preview
 
-    with open(os.path.join(base_dir, args.task_config), "r", encoding="utf-8") as f:
+    with open(os.path.abspath(os.path.join(base_dir, args.task_config)), "r", encoding="utf-8") as f:
         config = load(f, Loader=Loader)
     scene_manager = SceneManager(args.orcagym_addr, config=config)
 

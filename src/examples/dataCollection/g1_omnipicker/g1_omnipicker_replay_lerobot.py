@@ -36,7 +36,7 @@ import sys
 import time
 import traceback
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -493,7 +493,7 @@ def main() -> None:
         f"右臂 neutral={agent_conf.r_arm['neutral_joint_values']}"
     )
 
-    with open(os.path.join(base_dir, args.task_config), "r", encoding="utf-8") as f:
+    with open(os.path.abspath(os.path.join(base_dir, args.task_config)), "r", encoding="utf-8") as f:
         scene_config = load(f, Loader=Loader)
     scene_manager = SceneManager(args.orcagym_addr, config=scene_config)
     script_name = os.path.basename(sys.argv[0]) if sys.argv else "g1_omnipicker_replay_lerobot.py"

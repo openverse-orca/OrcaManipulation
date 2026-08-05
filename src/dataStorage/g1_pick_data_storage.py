@@ -165,67 +165,82 @@ class G1PickDataStorage(AbstractDataStorage):
 
 
 # ---------------------------------------------------------------------------
-# LeRobot 子类（28 维：14 EE + 14 hand）— 独立于共享 lerobot_data_storage
+# LeRobot 子类（28 维：14 arm q + 14 hand q；action = Δq）
 # ---------------------------------------------------------------------------
+# 约定（对齐 LeRobot / UMI relative-to-current-state，非对上一 action 累加）：
+#   observation.state[t] = q[t]          # 实测关节角 (rad)
+#   action[t]           = q[t+1] - q[t] # Δq
+# 控制链路不变；仅改 LeRobot 写入语义。HDF5 仍保留 EE 字段供诊断。
 
 from dataStorage.lerobot_data_storage import LeRobotSimSyncMixin  # noqa: E402
 
 
-def _build_g1pick_state_names() -> list[str]:
-    names = [
-        "l_pos_x", "l_pos_y", "l_pos_z",
-        "l_quat_x", "l_quat_y", "l_quat_z", "l_quat_w",
-        "r_pos_x", "r_pos_y", "r_pos_z",
-        "r_quat_x", "r_quat_y", "r_quat_z", "r_quat_w",
-    ]
-    for name in g1_pick_conf.l_hand["positions_names"]:
-        names.append(f"l_{name}_norm")
-    for name in g1_pick_conf.r_hand["positions_names"]:
-        names.append(f"r_{name}_norm")
-    return names
+def _build_g1pick_q_names() -> list[str]:
+    """与 obs_callback 拼接顺序严格一致：L臂→R臂→L手→R手。"""
+    return (
+        list(g1_pick_conf.l_arm["joint_names"])
+        + list(g1_pick_conf.r_arm["joint_names"])
+        + list(g1_pick_conf.l_hand["joint_names"])
+        + list(g1_pick_conf.r_hand["joint_names"])
+    )
+
+
+def _build_g1pick_delta_names() -> list[str]:
+    return [f"delta_{n}" for n in _build_g1pick_q_names()]
 
 
 class G1PickLeRobotStorage(LeRobotSimSyncMixin, G1PickDataStorage):
-    """g1_pick 的 LeRobot 格式 storage（28 维：14 arm EE + 14 hand）。"""
+    """g1_pick LeRobot storage：state=q，action=Δq（14 臂 + 14 手，单位 rad）。"""
 
     def __init__(self, dataset_path: str) -> None:
         super().__init__(dataset_path=dataset_path, hdf5_path=None)
-        n_l = len(g1_pick_conf.l_hand["positions_names"])
-        n_r = len(g1_pick_conf.r_hand["positions_names"])
-        self._l_hand_max = np.array(
-            [abs(r[1] - r[0]) for r in g1_pick_conf.l_hand["positions_ranges"][:n_l]],
-            dtype=np.float32,
+        self._n_arm = len(g1_pick_conf.l_arm["joint_names"]) + len(
+            g1_pick_conf.r_arm["joint_names"]
         )
-        self._r_hand_max = np.array(
-            [abs(r[1] - r[0]) for r in g1_pick_conf.r_hand["positions_ranges"][:n_r]],
-            dtype=np.float32,
+        self._n_hand = len(g1_pick_conf.l_hand["joint_names"]) + len(
+            g1_pick_conf.r_hand["joint_names"]
         )
-        self._n_l = n_l
-        self._n_r = n_r
-        self._n_effector = n_l + n_r
+        self._q_names = _build_g1pick_q_names()
+        self._delta_names = _build_g1pick_delta_names()
+        if len(self._q_names) != self._n_arm + self._n_hand:
+            raise RuntimeError("g1_pick q name 数量与 DOF 不一致")
 
     @property
     def state_dim(self) -> int:
-        return 14 + self._n_effector
+        return self._n_arm + self._n_hand
+
+    @property
+    def action_dim(self) -> int:
+        return self.state_dim
 
     @property
     def state_names(self) -> list[str]:
-        return _build_g1pick_state_names()
+        return list(self._q_names)
+
+    @property
+    def action_names(self) -> list[str]:
+        return list(self._delta_names)
 
     def build_state(self, obs: dict) -> np.ndarray:
-        pos = np.asarray(obs["/action/end/position"], dtype=np.float32)
-        quat = np.asarray(obs["/action/end/orientation"], dtype=np.float32)
-        motor = np.asarray(obs["/action/effector/motor"], dtype=np.float32).flatten()
-        l_motor = motor[: self._n_l]
-        r_motor = motor[self._n_l : self._n_l + self._n_r]
-        l_norm = np.clip(
-            l_motor / np.where(self._l_hand_max > 0, self._l_hand_max, 1.0), 0.0, 1.0
-        )
-        r_norm = np.clip(
-            r_motor / np.where(self._r_hand_max > 0, self._r_hand_max, 1.0), 0.0, 1.0
-        )
-        return np.concatenate([
-            pos[0], quat[0],
-            pos[1], quat[1],
-            l_norm, r_norm,
-        ]).astype(np.float32)
+        """实测关节角 q：臂 14 + 手 14。"""
+        arm_q = np.asarray(obs["/action/joint/position"], dtype=np.float32).reshape(-1)
+        hand_q = np.asarray(obs["/action/effector/position"], dtype=np.float32).reshape(-1)
+        if arm_q.shape[0] != self._n_arm or hand_q.shape[0] != self._n_hand:
+            raise ValueError(
+                f"q 维度异常: arm={arm_q.shape} (期望 {self._n_arm}), "
+                f"hand={hand_q.shape} (期望 {self._n_hand})"
+            )
+        return np.concatenate([arm_q, hand_q]).astype(np.float32)
+
+    def build_action(
+        self, state_prev: np.ndarray, state_cur: np.ndarray
+    ) -> np.ndarray:
+        """Δq = q[t+1] − q[t]（相对当前状态，非对上一 action 累加）。"""
+        prev = np.asarray(state_prev, dtype=np.float32).reshape(-1)
+        cur = np.asarray(state_cur, dtype=np.float32).reshape(-1)
+        if prev.shape != cur.shape or prev.shape[0] != self.state_dim:
+            raise ValueError(
+                f"Δq 维度异常: prev={prev.shape} cur={cur.shape} "
+                f"期望 ({self.state_dim},)"
+            )
+        return (cur - prev).astype(np.float32)

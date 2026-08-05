@@ -1,6 +1,6 @@
-# 智元 G1 OmniPicker
+# 智元 G1 OmniPicker · 数据采集
 
-本文说明智元 G1 OmniPicker 的场景准备、脚本化采集、Pico 遥操作、数据回放与在线推理。宇树 G1 流程见 [unitree_g1.md](unitree_g1.md)，两套机器人请勿混用配置。
+本文说明智元 G1 OmniPicker 的场景准备、脚本化/遥操作采集、回放与数据格式。在线推理见 [g1_omnipicker_inference.md](g1_omnipicker_inference.md)。
 
 ---
 
@@ -51,7 +51,7 @@ localhost:50051
 
 ```bash
 conda activate orcalab_lerobot
-cd src/examples/dataCollection
+cd src/examples/dataCollection/g1_omnipicker
 ```
 
 ---
@@ -62,7 +62,7 @@ cd src/examples/dataCollection
 
 ```bash
 python g1_omnipicker_collection_scripted_tool_lerobot.py \
-    --task_config example.yaml \
+    --task_config ../common/example.yaml \
     --lerobot_out ~/datasets/g1_tool_scripted \
     --repo_id local/g1_omnipicker_tool \
     --num_episodes 20 \
@@ -79,7 +79,7 @@ python g1_omnipicker_collection_scripted_tool_lerobot.py \
 
 ```bash
 python g1_omnipicker_collection_scripted_button_lerobot.py \
-    --task_config example.yaml \
+    --task_config ../common/example.yaml \
     --lerobot_out ~/datasets/g1_button_scripted \
     --repo_id local/g1_omnipicker_button \
     --counts 25,25,25,25 \
@@ -112,7 +112,7 @@ adb reverse tcp:8001 tcp:8001
 
 ```bash
 python g1_omnipicker_collection_tele_lerobot.py \
-    --task_config example.yaml \
+    --task_config ../common/example.yaml \
     --lerobot_out ~/datasets/g1_tele \
     --repo_id local/g1_omnipicker \
     --task "按红色按钮" \
@@ -190,7 +190,7 @@ OrcaLab 场景内会显示操作提示：`左Grip×1=开始 左Grip×2=保存 �
 ```bash
 python g1_omnipicker_replay_lerobot.py \
     --dataset_dir /path/to/lerobot_dataset \
-    --task_config example.yaml \
+    --task_config ../common/example.yaml \
     --episode 1 \
     --steps_per_frame 3 \
     --render_every 5
@@ -199,51 +199,6 @@ python g1_omnipicker_replay_lerobot.py \
 - 集号从 1 开始；省略则顺序播完全部。
 - `--steps_per_frame` 越小回放速度越快（默认 3）。
 - 需要循环播放时请追加 `--loop`（按 `Ctrl+C` 退出）。
-
----
-
-## 在线推理
-
-### 启动策略服务
-
-请在策略侧的独立终端启动服务（以端口 `8010` 为例）：
-
-```bash
-python serve_policy.py \
-    --port 8010 \
-    --checkpoint /path/to/checkpoint
-```
-
-### 按钮任务推理
-
-```bash
-export OPENPI_CLIENT_SRC=~/openpi/packages/openpi-client/src
-
-python eval_g1_omnipicker_lerobot.py \
-    --task_config example.yaml \
-    --host localhost \
-    --port 8010 \
-    --prompt "按红色按钮" \
-    --max_steps 500 \
-    --action_repeat 1 \
-    --episodes 3
-```
-
-### 工具任务推理
-
-```bash
-export OPENPI_CLIENT_SRC=~/openpi/packages/openpi-client/src
-
-python eval_g1_omnipicker_tool_lerobot.py \
-    --task_config example.yaml \
-    --host localhost \
-    --port 8010 \
-    --prompt "整理工具" \
-    --max_steps 10000 \
-    --episodes 1
-```
-
-`--prompt` 须与训练数据中的任务描述保持一致。
 
 ---
 

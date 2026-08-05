@@ -1,0 +1,75 @@
+# 由 record_g1_pick_button_waypoints.py 自动生成  2026-08-05 10:04:10
+# 修正：原误把 4 点全归入 red；按实际操作顺序重标为 红→绿→黄→蓝 各 1 点
+# 2026-08-05 14:16: 仅重录红色（来自 pose_g1_pick_button_candidates4.yaml）；绿/黄/蓝未改
+# 机器人：宇树 g1_pick（关节角控制）
+# q 顺序与 G1PickLeRobotStorage / observation.state 一致：
+#   [0:7] L臂  [7:14] R臂  [14:21] L手  [21:28] R手
+# 触发：左右 squeeze 同按边沿采样实测 q（接触瞬间）
+# 颜色顺序：红 → 绿 → 黄 → 蓝
+# 遥操作：复用 g1_pick_collection_tele_lerobot.ControllerWiring
+#
+# approach_back：接触 EE 沿 -X 后撤距离（米），脚本 FK→后撤→IK 得预备关节角
+# （对齐 OmniPicker pose_g1_button_candidates.yaml，默认 0.12）
+
+approach_back: 0.12
+
+joint_dim: 28
+joint_names:
+  - left_shoulder_pitch_joint
+  - left_shoulder_roll_joint
+  - left_shoulder_yaw_joint
+  - left_elbow_joint
+  - left_wrist_roll_joint
+  - left_wrist_pitch_joint
+  - left_wrist_yaw_joint
+  - right_shoulder_pitch_joint
+  - right_shoulder_roll_joint
+  - right_shoulder_yaw_joint
+  - right_elbow_joint
+  - right_wrist_roll_joint
+  - right_wrist_pitch_joint
+  - right_wrist_yaw_joint
+  - left_hand_thumb_0_joint
+  - left_hand_thumb_1_joint
+  - left_hand_thumb_2_joint
+  - left_hand_middle_0_joint
+  - left_hand_middle_1_joint
+  - left_hand_index_0_joint
+  - left_hand_index_1_joint
+  - right_hand_thumb_0_joint
+  - right_hand_thumb_1_joint
+  - right_hand_thumb_2_joint
+  - right_hand_middle_0_joint
+  - right_hand_middle_1_joint
+  - right_hand_index_0_joint
+  - right_hand_index_1_joint
+
+buttons:
+
+  red:
+    task: "按红色按钮"
+    candidates:
+      # 红色候选 1  时间: 14:16:35（重录，指尖正对按钮）
+      - q: [-0.0314, 0.0140, -0.0045, 0.3072, -0.0168, -0.3114, 0.0123, -0.7777, 0.2170, 0.1887, 0.7053, -0.1931, -0.0380, -0.1020, -0.0031, 0.0004, 0.0001, -0.0015, -0.0002, -0.0016, -0.0002, -1.1313, -0.9581, -1.6288, 0.1254, 0.1336, 0.1677, 0.0738]
+        # R_arm≈ pitch=-0.778 roll=0.217 yaw=0.189 elbow=0.705
+
+  green:
+    task: "按绿色按钮"
+    candidates:
+      # 绿色候选 1  时间: 10:03:16
+      - q: [-0.0296, 0.0163, -0.0034, 0.3115, -0.0171, -0.3163, 0.0127, -0.4701, 0.0463, 0.1919, 0.4490, -0.1774, 0.0705, 0.0629, -0.0019, -0.0014, -0.0002, -0.0002, -0.0000, -0.0002, -0.0000, -1.0752, -0.9076, -1.6398, -0.0092, -0.0247, -0.0152, -0.0284]
+        # R_arm≈ pitch=-0.470 roll=0.046 yaw=0.192 elbow=0.449
+
+  yellow:
+    task: "按黄色按钮"
+    candidates:
+      # 黄色候选 1  时间: 10:03:39
+      - q: [-0.0307, 0.0150, -0.0041, 0.3115, -0.0170, -0.3163, 0.0126, -0.3530, -0.2436, -0.0258, 0.3952, -0.0143, -0.0322, 0.1190, -0.0019, -0.0006, -0.0001, -0.0014, -0.0002, -0.0014, -0.0002, -1.0842, -0.9144, -1.6541, 0.0370, 0.0012, 0.0291, -0.0092]
+        # R_arm≈ pitch=-0.353 roll=-0.244 yaw=-0.026 elbow=0.395
+
+  blue:
+    task: "按蓝色按钮"
+    candidates:
+      # 蓝色候选 1  时间: 10:03:56
+      - q: [-0.0294, 0.0163, -0.0034, 0.3117, -0.0171, -0.3163, 0.0127, -0.4195, -0.1007, 0.1218, 0.6930, -0.1807, -0.1218, 0.0180, -0.0019, -0.0015, -0.0002, -0.0002, -0.0000, -0.0002, -0.0000, -1.0732, -0.9125, -1.6301, 0.0062, 0.0010, 0.0353, 0.0064]
+        # R_arm≈ pitch=-0.419 roll=-0.101 yaw=0.122 elbow=0.693

@@ -52,7 +52,7 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(line_buffering=True)
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -103,7 +103,7 @@ def main() -> None:
         description="G1 OmniPicker VR 遥操作采集 → LeRobot v2.1 格式"
     )
     parser.add_argument("--level", type=str, default="default", help="场景的名称（默认 default）")
-    parser.add_argument("--task_config", default="example.yaml", help="场景配置 YAML 文件名")
+    parser.add_argument("--task_config", default="../common/example.yaml", help="场景配置 YAML 文件名")
     parser.add_argument("--lerobot_out", required=True, help="LeRobot 数据集输出根目录")
     parser.add_argument(
         "--repo_id", default="local/g1_omnipicker",
@@ -179,7 +179,7 @@ def main() -> None:
 
     # ── 场景管理 ──────────────────────────────────────────────────────────────
     orca_logger.info("Creating scene manager")
-    with open(os.path.join(base_dir, args.task_config), "r", encoding="utf-8") as f:
+    with open(os.path.abspath(os.path.join(base_dir, args.task_config)), "r", encoding="utf-8") as f:
         scene_config = load(f, Loader=Loader)
     scene_manager = SceneManager(args.orcagym_addr, config=scene_config)
 
