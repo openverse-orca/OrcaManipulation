@@ -7,8 +7,8 @@ gymnasium==1.2.1
 opencv-python
 av
 pyarrow
-# 0.3.4 起提供 save_episode_data_only；0.3.0–0.3.3 无此 API
-lerobot==0.3.4
+# 使用仓库自带 third_party/lerobot（含数采补丁）。不要 pip install lerobot==0.3.4（网上没有这个包）
+-e ./third_party/lerobot
 mujoco
 numba
 termcolor>=2.4.0
@@ -17,4 +17,4 @@ h5py
 
 # 可选：在线推理需要 openpi_client
 # 安装方式一：pip install openpi_client
-# 安装方式二：export OPENPI_CLIENT_SRC=~/openpi/packages/openpi-client/src
+# 安装方式二：export OPENPI_CLIENT_SRC=<openpi-client源码路径>/src

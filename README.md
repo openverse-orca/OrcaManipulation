@@ -18,7 +18,7 @@
 | OrcaLab | **6.3** |
 | Python | **3.12 及以上** |
 | `orca-gym` | 推荐与 OrcaLab 6.3 配套的 **26.6.x** |
-| `lerobot` | **0.3.4**（更低版本缺少所需的数据集接口） |
+| `lerobot` | **使用仓库内 `third_party/lerobot`**（见下方安装；不要从网上装 `lerobot==0.3.4`） |
 | `gymnasium` | **1.2.1**（与 `orca-gym` 一致） |
 | GPU 视频编码 | NVIDIA GPU，驱动及 PyAV/FFmpeg 需支持 `av1_nvenc` |
 
@@ -26,23 +26,27 @@
 
 ## 环境安装
 
+请在仓库根目录执行（会安装自带的 `third_party/lerobot`）：
+
 ```bash
 conda activate orcalab_lerobot
+cd OrcaManipulation
 pip install -r requirements.txt
 ```
 
 安装完成后若出现以下类似提示，可以忽略：
 
 ```
-lerobot 0.3.4 requires gymnasium<1.0.0, but you have gymnasium 1.2.1
+lerobot ... requires gymnasium<1.0.0, but you have gymnasium 1.2.1
 ```
 
-本项目只使用 lerobot 的数据集读写能力，不依赖其 gymnasium 集成；运行时以 `orca-gym` 所需版本为准。`requirements.txt` 已显式锁定 `gymnasium==1.2.1` 与 `lerobot==0.3.4`，防止 pip 自动降级。若个别环境仍出现降级，请执行：
+本项目只使用 lerobot 的数据集读写能力，不依赖其 gymnasium 集成；运行时以 `orca-gym` 所需版本为准。`requirements.txt` 已显式锁定 `gymnasium==1.2.1`。若个别环境把 gymnasium 降级了，请执行：
 
 ```bash
-pip install lerobot==0.3.4 --no-deps
 pip install gymnasium==1.2.1
 ```
+
+说明：`third_party/lerobot` 是从本机可用环境整理出的干净副本（官方代码 + 数采所需补丁）。详情见 [third_party/README.md](third_party/README.md)。
 
 在线推理额外依赖 `openpi_client`，请在运行推理脚本前设置：
 
@@ -57,6 +61,8 @@ export OPENPI_CLIENT_SRC=<openpi-client源码路径>/src
 ```text
 OrcaManipulation/
 ├── README.md
+├── third_party/
+│   └── lerobot/                  # 自带 lerobot（含数采补丁）
 ├── docs/
 │   ├── g1_omnipicker_collection.md   # 智元 · 采集
 │   ├── g1_omnipicker_inference.md    # 智元 · 推理
