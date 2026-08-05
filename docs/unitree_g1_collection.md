@@ -100,7 +100,7 @@ adb shell am start -a android.intent.action.VIEW \
 
 ## 脚本化四色按钮采集
 
-可在无头显时，用已录制的接触关节角自动采集：
+可在无头显时，用候选接触关节角自动采集：
 
 ```bash
 conda activate orcalab_lerobot
@@ -118,7 +118,6 @@ python -u g1_pick_collection_scripted_button_lerobot.py \
     --fps 20 --clock wall --cameras head,wrist_r
 ```
 
-接触点可用 `record_g1_pick_button_waypoints.py` 重新录制（双 squeeze 记点，Ctrl+C 写出 YAML）。
 
 ---
 

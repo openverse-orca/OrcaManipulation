@@ -97,7 +97,6 @@ OrcaManipulation/
 | `g1_omnipicker/g1_omnipicker_replay_lerobot.py` | 智元 | LeRobot Parquet 数据集回放 |
 | `unitree_g1/g1_pick_collection_tele_lerobot.py` | 宇树 | TeleVuer 遥操作采集（双臂） |
 | `unitree_g1/g1_pick_collection_scripted_button_lerobot.py` | 宇树 | 四色按钮脚本化自动采集 |
-| `unitree_g1/record_g1_pick_button_waypoints.py` | 宇树 | 录制按钮接触关节角 |
 
 ### 在线推理（`src/examples/inference/`）
 

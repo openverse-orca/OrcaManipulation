@@ -1,4 +1,4 @@
-# 由 record_g1_pick_button_waypoints.py 自动生成  2026-08-05 10:04:10
+# 宇树 g1_pick 四色按钮接触候选关节角
 # 修正：原误把 4 点全归入 red；按实际操作顺序重标为 红→绿→黄→蓝 各 1 点
 # 2026-08-05 14:16: 仅重录红色（来自 pose_g1_pick_button_candidates4.yaml）；绿/黄/蓝未改
 # 机器人：宇树 g1_pick（关节角控制）
