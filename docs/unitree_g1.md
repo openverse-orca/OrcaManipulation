@@ -29,9 +29,11 @@ localhost:50051
 
 ---
 
-## 连接头显
+## 连接头显与启动采集
 
-宇树遥操作通过 TeleVuer 读取 Pico 手柄位姿，请按以下步骤建立链路：
+宇树遥操作通过 TeleVuer 读取 Pico 手柄位姿（端口 `8012`）。请严格按下列顺序操作。
+
+### 1. 连接头显并做端口转发
 
 1. 请用 USB 连接 Pico 头显，确认 `adb devices` 能看到设备。
 2. 请执行端口转发：
@@ -40,21 +42,16 @@ localhost:50051
 adb reverse tcp:8012 tcp:8012
 ```
 
-3. 请在头显浏览器打开脚本启动后打印的访问地址。关闭加密传输时，地址形如 `http://127.0.0.1:8012/`。
-4. 请进入透传模式，晃动手柄确认位姿数据正常上报。
+### 2. 启动数采脚本
 
----
-
-## 启动采集
-
-完成连接后，请激活环境并进入脚本目录：
+请激活环境并进入脚本目录：
 
 ```bash
 conda activate orcalab_lerobot
 cd src/examples/dataCollection
 ```
 
-启动遥操作采集脚本：
+启动遥操作采集脚本（请将输出目录与 `repo_id` 换成你自己的路径与名称）：
 
 ```bash
 python -u g1_pick_collection_tele_lerobot.py \
@@ -62,8 +59,8 @@ python -u g1_pick_collection_tele_lerobot.py \
     --task_config example.yaml \
     --scene_json unitree_button.json \
     --task "按红色按钮" \
-    --lerobot_out ~/datasets/g1_unitree_button \
-    --repo_id local/g1_unitree_button \
+    --lerobot_out <数据集输出目录> \
+    --repo_id <数据集仓库名> \
     --fps 20 \
     --clock wall \
     --cameras head,wrist_r \
@@ -74,12 +71,30 @@ python -u g1_pick_collection_tele_lerobot.py \
     --tv_ee_dx 0.03
 ```
 
-脚本会打印头显访问地址与操作提示。正常进入采集后，终端会周期性出现「正在采集第 N 集」。若只有连接类提示而没有该信息，请停止并检查终端报错。
+请等到终端打印出访问地址后再继续。关闭加密传输（`--tv_no_tls`）时，地址形如：
+
+```text
+http://127.0.0.1:8012/
+```
+
+脚本还会打印操作提示。正常进入采集后，终端会周期性出现「正在采集第 N 集」。若只有连接类提示而没有该信息，请停止并检查终端报错。
 
 断点续采时请在命令中追加 `--resume`。
 
----
+### 3. 打开头显页面并开始采集
 
+1. 请另开一个终端，用 adb 在头显浏览器中打开上述地址：
+
+```bash
+adb reverse tcp:8012 tcp:8012
+adb shell am start -a android.intent.action.VIEW \
+  -d 'http://127.0.0.1:8012/'
+```
+
+2. 请在头显页面中点击 **Virtual Reality**。
+3. 请轻按**左 squeeze（侧握键）**开始数采。
+
+每次重新运行数采前：请先关闭头显当前浏览器页面，再按本节顺序重新执行（先启脚本，再 adb 打开页面）。
 ## 按键映射
 
 宇树遥操作使用 **Pico VR 手柄**，通过 TeleVuer 接入（端口 `8012`）。双臂均可跟随手柄；灵巧手通过扳机控制开合；腿部与腰部保持锁定。
