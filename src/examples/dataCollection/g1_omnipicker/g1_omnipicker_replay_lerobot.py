@@ -1,36 +1,4 @@
-"""G1 OmniPicker LeRobot v2.1 parquet 数据集回放。
-
-场景/手臂初始化严格对齐数采 + 推理（无 randomize）：
-
-  首次（同数采）：
-    env.reset() → update_scene()（此时 task 仍为 None）
-    → set_default_joint_values(L_INIT + R_neutral)
-    → 创建 OSC/夹爪 → set_task(EmptyTask)
-
-  每集（同数采场景段 + 同推理控制段）：
-    env.reset()                    # load_initial_frame 恢复工具
-    → update_scene()
-    → set_default_joint_values(L_INIT + R_neutral)
-    → mj_forward / set_init_ctrl / controller.reset / render
-    → 左臂 hold + OSC 驻留 10 步 → 开播 parquet
-    # 不调用 _place_tools
-
-用法：
-  python g1_omnipicker_replay_lerobot.py \\
-      --dataset_dir /path/to/lerobot_dataset \\
-      --task_config example.yaml --episode 1 \\
-      --kp 200 --steps_per_frame 10
-
-说明：
-  --cmd_bias_* 学数采：把右臂目标往下报再交给 OSC（抵桌/抓取）。
-  默认 z=-0.030，且仅当原始目标 z <= --cmd_bias_z_below 时启用；
-  同时同步 OSC nullspace，避免压目标却跟不动。关闭：--cmd_bias_z 0。
-
-  --grasp_integral 近桌外环积分（与数采同 ControllerArm）：
-    当 parquet 原始右臂 z <= --grasp_integral_z_below 时累加；
-    每控制步 update_action_position，偏置限幅后压低 OSC 目标。
-    建议与积分数据联用时：--cmd_bias_z 0 --grasp_integral。
-"""
+"""回放 G1 OmniPicker LeRobot v2.1 数据集。"""
 import os
 import sys
 import time
@@ -144,7 +112,7 @@ class G1ParquetReplayDevice(AbstractDevice):
         self.n_frames = data["n_frames"]
         self.lock_left_arm = bool(lock_left_arm)
         self.track_log_every = max(0, int(track_log_every))
-        # 学数采：近桌高度前馈把目标往下报（B 系米）；外环积分另由 grasp_integral 门控
+        # 近桌高度条件下为右臂目标添加基座坐标系偏移。
         self.cmd_bias_b = np.zeros(3, dtype=np.float64)
         if cmd_bias_b is not None:
             self.cmd_bias_b = np.asarray(cmd_bias_b, dtype=np.float64).reshape(3).copy()
@@ -194,7 +162,7 @@ class G1ParquetReplayDevice(AbstractDevice):
             )
 
     def _query_actual_ee_b(self):
-        """查询左右臂末端实测 base 系位置；失败返回 (None, None)。"""
+        """查询左右臂末端在基座坐标系下的位置；失败返回 (None, None)。"""
         try:
             env = self.r_arm.env
             # 与 _query_ee_b 一致：base 列表只传一次（重复同名会触发 body not found）
@@ -210,7 +178,7 @@ class G1ParquetReplayDevice(AbstractDevice):
             return None, None
 
     def _log_tracking(self, frame: int, sub: int):
-        """实测 EE vs parquet 原始目标；同时打印下发 OSC 的前馈目标。"""
+        """比较末端位置与 parquet 目标，并打印 OSC 前馈目标。"""
         if self._cmd_r_pos is None:
             return
         _, r_act = self._query_actual_ee_b()
@@ -314,7 +282,7 @@ class G1ParquetReplayDevice(AbstractDevice):
                 l_g = self.data["l_grip"][frame]
             self._cmd_l_pos = np.asarray(l_pos, dtype=np.float32).copy()
             self._cmd_r_pos = r_pos.astype(np.float32).copy()
-            # 学数采抵桌：近桌高度把目标再往下报
+            # 近桌高度条件下施加目标偏移。
             self._applied_bias = self._bias_for_cmd(r_pos)
             r_cmd = (r_pos + self._applied_bias).astype(np.float32)
             self._cmd_r_pos_ff = r_cmd.copy()
@@ -379,11 +347,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--track_log_every", type=int, default=1,
-        help="每 N 个 parquet 帧打印一次实测 EE vs 数据目标（默认 1=每帧；0=关闭）",
+        help="每 N 个 parquet 帧打印一次末端位置与数据目标的比较；0 表示关闭",
     )
     parser.add_argument(
         "--cmd_bias_x", type=float, default=0.0,
-        help="右臂目标前馈 dx（B 系米；学数采人为平移目标，默认 0）",
+        help="在满足高度条件时为右臂目标添加基座坐标系偏移",
     )
     parser.add_argument(
         "--cmd_bias_y", type=float, default=0.0,
@@ -391,7 +359,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--cmd_bias_z", type=float, default=-0.030,
-        help="右臂目标前馈 dz（B 系米；默认 -0.030 学数采抵桌；0=关闭）",
+        help="右臂目标在基座坐标系 Z 方向的偏移，单位米；0 表示关闭",
     )
     parser.add_argument(
         "--cmd_bias_z_below", type=float, default=0.25,
@@ -467,8 +435,7 @@ def main() -> None:
         f"z_below={args.cmd_bias_z_below}m  sync_ns={args.sync_nullspace}"
     )
     orca_logger.info(
-        "学数采抵桌: 近桌高度前馈压低目标 + nullspace 同步 "
-        f"(--cmd_bias_z {args.cmd_bias_z} --cmd_bias_z_below {args.cmd_bias_z_below})"
+        f"cmd_bias: z={args.cmd_bias_z} z_below={args.cmd_bias_z_below}"
     )
     if args.grasp_integral:
         orca_logger.info(
@@ -670,7 +637,7 @@ def main() -> None:
             )
             r_grip0 = np.asarray(ep_data["r_grip"][0], dtype=np.float32)
 
-            # 与推理：以实测 EE 为初始目标，左臂 hold，OSC 驻留 10 步
+            # 以当前末端为初始目标，左臂 hold，OSC 驻留 10 步。
             l_arm.update_action_position(l_pos)
             l_arm.update_action_axisangle(l_quat)
             r_arm.update_action_position(r_pos)

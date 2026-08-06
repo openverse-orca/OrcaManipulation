@@ -1,18 +1,4 @@
-"""
-无 Pico：用脚本在基座系下下发末端位姿 + 夹爪指令（OSC 跟踪）。
-
-前置：先启动 OrcaLab 仿真，再运行本脚本（与 data_collection_tele 相同 gRPC 地址）。
-
-位姿传入方式（三选一）：
-1) 默认：--delta_b 在当前末端 B 系位姿上加位移；
-2) 显式目标：--l_target_b / --r_target_b（基座系末端位置，米），可选 --l_quat_b / --r_quat_b（四元数 x,y,z,w）；
-3) 文件：--pose_file 指向 JSON 或 YAML，字段见 load_pose_spec_from_file 文档。
-
-占位夹爪：前半张开、后半闭合，可在 pose 文件中用 gripper_open / gripper_close 覆盖。
-
-数据采集：加 --record_hdf5 时，将本回合观测按与 data_collection_tele 相同格式写入
-dataset/openloong/<level>/<uuid>/record/proprio_stats.hdf5，可供 data_collection_aug.py 回放。
-"""
+"""执行基于预定义末端位姿和夹爪目标的脚本化数据采集。"""
 import argparse
 import json
 import os
@@ -131,12 +117,7 @@ def build_placeholder_trajectory(
     open_value: float,
     close_value: float,
 ):
-    """
-    从当前末端 B 系位姿插值到目标。
-    - 若 l_target_b / r_target_b 非空：末端位置插值到该绝对 B 系坐标；
-    - 否则使用 pos_delta_b：l1 = l0 + delta，r1 = r0 + delta。
-    - 若 l_quat_xyzw_target / r_quat_xyzw_target 非空：与当前姿态 slerp；否则姿态保持起始值。
-    """
+    """从当前末端状态插值到绝对目标或相对位移；四元数顺序为 xyzw。"""
     base_body = env.body(agent_conf.base_body)
     ee_names = [
         env.site(agent_conf.l_arm["ee_site_name"]),

@@ -1,28 +1,4 @@
-"""G1 OmniPicker 四色按钮脚本化自动采集 → LeRobot v2.1 格式。
-
-与 g1_omnipicker_collection_scripted_lerobot.py 的区别：
-  - 无 --pose_file；改用 --pose_candidates YAML（默认 pose_g1_button_candidates.yaml）
-    该文件记录红/绿/黄/蓝四色各 4 个遥操实测接触位姿。
-  - 启动时阻塞式询问四色各采多少集（终端 UI），非 TTY 时从 --counts 读取。
-  - 按数量展开颜色序列后随机打乱，逐集执行不同颜色+随机候选点。
-  - 每集语言指令通过 storage.set_task() 写入，保证 parquet 中指令随颜色变化。
-  - 轨迹：4 段（接近 → 前推接触 → 保压 → 后撤），左臂全程锁死，右夹爪全程闭合。
-
-用法：
-  cd src/examples/dataCollection
-  python g1_omnipicker_collection_scripted_button_lerobot.py \\
-      --task_config example.yaml \\
-      --lerobot_out /path/to/out_dataset \\
-      --repo_id local/g1_omnipicker_button \\
-      --fps 20
-
-  # 非交互（CI / 脚本调用）
-  python g1_omnipicker_collection_scripted_button_lerobot.py \\
-      ... --counts 5,5,5,5
-
-  # 断点续采
-  python g1_omnipicker_collection_scripted_button_lerobot.py ... --resume
-"""
+"""G1 OmniPicker 四色按钮脚本化数据采集。"""
 import argparse
 import os
 import random

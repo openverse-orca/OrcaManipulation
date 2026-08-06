@@ -1,37 +1,4 @@
-"""宇树 g1_pick 四色按钮脚本化自动采集 → LeRobot v2.1。
-
-流程对齐 ``g1_omnipicker_collection_scripted_button_lerobot.py``：
-  - ``--pose_candidates`` 读红/绿/黄/蓝接触候选（本脚本为 28 维关节角 q）
-  - 终端询问四色各采多少集（非 TTY 用 ``--counts``）
-  - 默认按 红→绿→黄→蓝 顺序执行（与录点一致）；``--shuffle`` 才打乱
-  - 每集 ``storage.set_task()`` 写入对应语言指令
-  - 轨迹 4 段：接近 → 前推接触 → 保压 → 后撤（左臂锁录制接触 q）
-  - 预备点：接触 q → FK → EE -X 后撤 ``approach_back`` → IK（对齐 OmniPicker）
-  - 每集重刷 arm gains；``max_dq_step`` 限幅；保压段打跟踪误差日志
-  - 命令空间 PI（``--arm_ki`` 默认 10，push/hold 启用）消除按压稳态误差
-  - ``--diag_csv`` 逐步记录目标/实测/力/积分，每集打印分段汇总
-
-控制对齐 ``g1_pick_collection_tele_lerobot.py``：
-  - Unitree position 执行器 + arm kp/gravcomp XML 旁路 + 锁腿 + pin 基座
-  - ``G1PickLeRobotStorage``（state=q，action=Δq）+ 头/右腕相机
-
-用法：
-  conda activate orcalab_lerobot
-  cd ~/orca_m/OrcaManipulation/src/examples/dataCollection
-  # 先开 orcalab，加载 unitree_button / unitree_humanoid_robot_1
-
-  python -u g1_pick_collection_scripted_button_lerobot.py \\
-      --level default --task_config example.yaml \\
-      --scene_json unitree_button.json \\
-      --agent_name unitree_humanoid_robot_1 \\
-      --pose_candidates pose_g1_pick_button_candidates.yaml \\
-      --lerobot_out g1_unitree_button_scripted \\
-      --repo_id local/g1_pick_button_scripted \\
-      --fps 20 --clock wall --cameras head,wrist_r
-
-  # 非交互
-  python -u g1_pick_collection_scripted_button_lerobot.py ... --counts 5,5,5,5
-"""
+"""宇树 G1 四色按钮脚本化数据采集。"""
 from __future__ import annotations
 
 import argparse
@@ -110,11 +77,7 @@ _ARM_SHORT_NAMES = (
 # ---------------------------------------------------------------------------
 
 class G1PickQTargetController:
-    """把 28 维绝对关节角目标写入臂+手 position 执行器。
-
-    可选命令空间积分：ctrl_arm = q_tgt + I，I += ki*(q_tgt-q_meas)*dt。
-    每步可写诊断 CSV（目标/实测/力/积分）。
-    """
+    """向手臂和手部位置执行器写入 28 维关节目标。"""
 
     def __init__(
         self,
@@ -480,7 +443,7 @@ class G1PickQTargetController:
 
 
 class G1PickQScriptedDevice(AbstractDevice):
-    """逐步下发预计算 q 轨迹；首末帧切换 TaskStatus（对齐 OmniPicker scripted）。"""
+    """逐步下发预计算 q 轨迹，并在首末帧切换 TaskStatus。"""
 
     def __init__(
         self,
@@ -528,7 +491,7 @@ class G1PickQScriptedDevice(AbstractDevice):
         target = self.q_traj[self.t]
         self.q_ctrl.set_target_q(target)
 
-        # 保压段跟踪误差（用控制器实测 q，不依赖 obs 回调时序）
+        # 保压段跟踪误差（使用控制器当前关节角）。
         if phase == "hold" and self.q_contact is not None:
             try:
                 q_meas = self.q_ctrl.read_arm_q()
@@ -636,7 +599,7 @@ def compute_approach_q(
     q_contact: np.ndarray,
     approach_back: float,
 ) -> tuple[np.ndarray, dict]:
-    """对齐 OmniPicker：接触点 EE 沿 -X 后撤 approach_back，再 IK 得预备关节角。
+    """接触点 EE 沿 -X 后撤 approach_back，再 IK 得预备关节角。
 
     - 接触 q 原样保留（尤其左臂/双手），只重算右臂接近位
     - 左臂 EE 目标固定为接触时 FK，右臂位置 x -= approach_back
@@ -727,7 +690,7 @@ def build_button_q_trajectory(
 
 
 def _install_xml_patch(env, agent_name: str, arm_gravcomp: float) -> None:
-    """与 g1_pick_collection_tele_lerobot 相同的 weld + gravcomp 旁路。"""
+    """在保留 freejoint 的前提下配置基座约束和重力补偿。"""
     _orig_load = env.gym.load_model_xml
     _gc = float(arm_gravcomp)
 
@@ -884,7 +847,7 @@ def main() -> None:
         "--approach_back",
         type=float,
         default=0.12,
-        help="接触 EE 沿 -X 后撤距离（米），对齐 OmniPicker（默认 0.12）",
+        help="接触 EE 沿 -X 后撤距离，单位米，默认 0.12",
     )
     parser.add_argument(
         "--max_dq_step",
@@ -1042,7 +1005,7 @@ def main() -> None:
         manager.real_time_step = 0.0
     _install_xml_patch(env, args.agent_name, args.arm_gravcomp)
 
-    # ── 初始化控制栈（对齐 tele：gain / 锁腿 / pin）────────────────────────
+    # 初始化控制栈：gain / 锁腿 / pin。
     env.reset()
     time.sleep(0.1)
     if not manager.update_scene():

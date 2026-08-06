@@ -1,23 +1,4 @@
-"""g1_pick VR 遥操作采集 → LeRobot v2.1（正式数采，默认关闭调试刷屏）。
-
-用法：
-  python -u g1_pick_collection_tele_lerobot.py \\
-      --level default --task_config example.yaml \\
-      --scene_json unitree_button.json \\
-      --agent_name unitree_humanoid_robot_1 \\
-      --task "按红色按钮" \\
-      --lerobot_out g1_unitree_button \\
-      --repo_id local/g1_pick_unitree_test \\
-      --fps 20 --clock wall --cameras head,wrist_r \\
-      --orcagym_addr localhost:50051 \\
-      --xr_backend televuer --tv_no_tls \\
-      --tv_goal_mode rebased_tv --tv_ee_dx 0.03
-
-默认数据集根目录: OrcaManipulation/L_dataset/unitree
-（相对路径的 --lerobot_out 会落在该根下；也可传绝对路径）
-
-排障请用 g1_pick_collection_tele_lerobot_test.py 并打开 --diag_*。
-"""
+"""宇树 G1 VR 遥操作数据采集。"""
 import argparse
 import dataclasses
 import os
@@ -36,14 +17,13 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# OrcaManipulation/L_dataset/unitree —— 正式数采默认根目录
 _ORCA_MANIP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 DEFAULT_LEROBOT_ROOT = os.path.join(_ORCA_MANIP_ROOT, "L_dataset", "unitree")
 DEFAULT_LEROBOT_OUT = os.path.join(DEFAULT_LEROBOT_ROOT, "g1_unitree_button")
 
 
 def resolve_lerobot_out(path: str) -> str:
-    """相对路径落到 DEFAULT_LEROBOT_ROOT；绝对路径原样 expand。"""
+    """将相对路径解析到默认数据集目录，并展开绝对路径。"""
     p = os.path.expanduser(str(path).strip())
     if not os.path.isabs(p):
         p = os.path.join(DEFAULT_LEROBOT_ROOT, p)
@@ -845,7 +825,7 @@ class DiagLog:
         self.enabled = _diag_enabled
 
     def log(self, msg: str) -> None:
-        # 安静版：诊断未开启时不向终端刷屏（文件句柄仍保留但不写）
+        # 诊断未开启时不向终端输出诊断日志。
         if not self.enabled:
             return
         line = f"[{time.strftime('%H:%M:%S')}] {msg}"
@@ -1557,7 +1537,7 @@ def main() -> None:
     parser.add_argument("--log_file", default=None,
                         help="终端输出日志路径（同时输出到文件和终端）")
     parser.add_argument("--diag_tele", action=argparse.BooleanOptionalAction, default=False,
-                        help="启用分层遥操诊断日志（安静版默认关；需要时 --diag_tele）")
+                        help="启用分层遥操诊断日志")
     parser.add_argument("--diag_every", type=int, default=50,
                         help="诊断日志节流间隔（步），默认 50")
     parser.add_argument(
@@ -1623,7 +1603,7 @@ def main() -> None:
         "--tv_goal_ema",
         type=float,
         default=0.95,
-        help="目标 EMA 系数 [0,1]；1=不平滑，默认 0.95（原 0.85 偏拖尾）",
+        help="目标 EMA 平滑系数，范围为 [0,1]；1 表示不平滑，默认值为 0.95",
     )
     parser.add_argument(
         "--ik_max_reach",
@@ -1635,31 +1615,30 @@ def main() -> None:
     parser.add_argument(
         "--ik_project_reachable",
         action="store_true",
-        help="恢复旧行为：把超程目标钳到 max_reach 球面。"
-        "该球面落在各方向真实可达（0.434~0.490m）之内，会让肘部保持弯曲 15~40°",
+        help="将超出范围的末端目标投影到 max_reach 球面",
     )
     parser.add_argument(
         "--diag_health",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="TeleVuer 分层健康心跳 [HEALTH]（默认关；交付前可关。也可用环境变量 G1_DIAG_HEALTH=1）",
+        help="启用 TeleVuer 分层健康状态日志；也可通过环境变量 G1_DIAG_HEALTH=1 启用",
     )
     parser.add_argument(
         "--diag_joints",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="后台轮询双臂关节诊断（安静版默认关；需要时 --diag_joints）",
+        help="启用双臂关节状态的后台诊断",
     )
     parser.add_argument(
         "--diag_joints_hz",
         type=float,
         default=5.0,
-        help="关节诊断采样频率 Hz（默认 5；跟手抖动排查可开到 10~20）",
+        help="关节诊断采样频率，单位 Hz，默认值为 5",
     )
     parser.add_argument(
         "--diag_log_dir",
         default="/tmp/g1pick_tele_diag",
-        help="调试模式下每次运行保存完整诊断日志的目录（带时间戳，默认 /tmp/g1pick_tele_diag）",
+        help="诊断日志保存目录，默认 /tmp/g1pick_tele_diag",
     )
     parser.add_argument(
         "--tv_no_tls",
@@ -1844,7 +1823,7 @@ def main() -> None:
     env = manager.env
     manager.save_video = False
 
-    # gRPC 模式：拦截 XML 加载，所有修改写入旁路副本，原始缓存文件不动
+    # gRPC 模式：拦截 XML 加载，写入修改后的副本并保留原始缓存。
     # ───────────────────────────────────────────────────────────────────────
     # 策略：_orig_load() 返回 ~/.orcagym/tmp/<uuid>.xml（原始，只读）
     #       本钩子在同目录生成 <uuid>_teleop_patched.xml 并返回其路径。
@@ -1909,7 +1888,7 @@ def main() -> None:
                 if gc_injected > 0:
                     patches_applied.append(f"gravcomp={_gc}(n={gc_injected})")
 
-            # ── 写入旁路副本，原始文件保持不动 ──────────────────────────────
+            # 写入修改后的副本，保留原始文件。
             import pathlib
             orig = pathlib.Path(orig_path)
             patched_path = str(orig.with_stem(orig.stem + "_teleop_patched"))

@@ -61,7 +61,6 @@ def sample_images(image_paths: list) -> np.ndarray:
     for i, idx in enumerate(sampled_indices):
         item = image_paths[idx]
         if isinstance(item, np.ndarray):
-            # NVENC 流式编码模式：episode_buffer 中直接存 numpy HWC uint8 数组
             img = np.asarray(item, dtype=np.uint8)
             if img.ndim == 3 and img.shape[2] in (1, 3, 4):
                 img = img.transpose(2, 0, 1)  # HWC → CHW

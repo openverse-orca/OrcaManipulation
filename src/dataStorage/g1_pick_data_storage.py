@@ -168,7 +168,7 @@ class G1PickDataStorage(AbstractDataStorage):
 # LeRobot 子类（28 维：14 arm q + 14 hand q；action = Δq）
 # ---------------------------------------------------------------------------
 # 约定（对齐 LeRobot / UMI relative-to-current-state，非对上一 action 累加）：
-#   observation.state[t] = q[t]          # 实测关节角 (rad)
+#   observation.state[t] = q[t]          # 关节角 (rad)
 #   action[t]           = q[t+1] - q[t] # Δq
 # 控制链路不变；仅改 LeRobot 写入语义。HDF5 仍保留 EE 字段供诊断。
 
@@ -222,7 +222,7 @@ class G1PickLeRobotStorage(LeRobotSimSyncMixin, G1PickDataStorage):
         return list(self._delta_names)
 
     def build_state(self, obs: dict) -> np.ndarray:
-        """实测关节角 q：臂 14 + 手 14。"""
+        """关节角 q：臂 14 + 手 14。"""
         arm_q = np.asarray(obs["/action/joint/position"], dtype=np.float32).reshape(-1)
         hand_q = np.asarray(obs["/action/effector/position"], dtype=np.float32).reshape(-1)
         if arm_q.shape[0] != self._n_arm or hand_q.shape[0] != self._n_hand:

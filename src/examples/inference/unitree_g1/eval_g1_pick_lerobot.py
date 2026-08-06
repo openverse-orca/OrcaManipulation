@@ -1,37 +1,6 @@
-"""eval_g1_pick_lerobot.py — 宇树 g1_pick OpenPI 远程策略推理评估。
+"""在 OrcaLab 中运行宇树 G1 OpenPI 远程策略推理。
 
-数据接收链路参考 eval_g1_omnipicker_lerobot.py（openpi WebSocket 策略 + 内存流相机），
-关节控制方式参考 g1_pick_replay_lerobot.py（position 执行器 + XML weld/gravcomp 补丁 +
-锁腿 + pin floating base + 臂/手 ReplayPositionController）。
-
-State / Action 布局（28 维，与数据集 observation.state/action 完全一致）：
-    observation.state[t] = q[t]           实测关节角 (rad)，14 臂 + 14 手
-    action[t]           = Δq = q[t+1]-q[t]  相对当前状态的增量
-
-    q 顺序（与 G1PickLeRobotStorage / g1_pick_conf 严格一致）：
-        [0:7]   左臂 7   [7:14]  右臂 7
-        [14:21] 左手 7   [21:28] 右手 7
-
-策略输出的是 Δq。控制目标按回放同一套开环积分（见 g1_pick_lerobot_data_device.integrate_delta_q）：
-        q_cmd[0] = q_measured_after_settle
-        q_cmd[t+1] = q_cmd[t] + Δq[t]
-再拆成 臂14 / 手14 下发给 position 执行器。观测仍用实测 q 喂策略；勿每步用实测重基，
-否则跟踪滞后时目标会跟着重力下垂漂移（看起来像机械臂一直往下掉）。
-
-相机键：cam_head / cam_wrist_r（2 路，与采集数据集一致）。
-
-运行环境：orcalab_lerobot
-
-用法：
-  conda activate orcalab_lerobot
-  cd src/examples/dataCollection
-
-  python -u eval_g1_pick_lerobot.py \\
-      --task_config example.yaml \\
-      --host localhost --port 8010 \\
-      --prompt "按红色按钮" \\
-      --agent_name unitree_humanoid_robot_1 \\
-      --max_steps 500 --episodes 3
+状态为 28 维关节角，策略动作为相邻目标关节角增量。
 """
 from __future__ import annotations
 
@@ -101,8 +70,9 @@ STREAM_TRIGGER_PATH = "/tmp/eval_g1_pick_lerobot_stream"
 STATE_DIM = 28
 ARM_DIM = 14
 HAND_DIM = 14
+# 顺序：左臂 7、右臂 7、左手 7、右手 7。
 
-# g1_pick 采集用相机映射（与 g1_pick_collection_tele_lerobot.py 一致；本任务只用头+右腕）
+# g1_pick 采集用相机映射（本任务只用头+右腕）
 G1_PICK_CAMERA_MAP = {
     "camera_head_color": ("cam_head", 7070),
     "camera_wrist_r_color": ("cam_wrist_r", 7080),
@@ -124,12 +94,7 @@ orca_logger = get_orca_logger(
 )
 
 
-# ---------------------------------------------------------------------------
-# 从数采脚本导入 增益 / 锁腿 / pin base（不执行其 main）
-# ---------------------------------------------------------------------------
-
 def _load_tele_helpers():
-    """从数采脚本导入 apply_arm_position_gains / lock_lower_body / pin_floating_base。"""
     tele_path = os.path.abspath(
         os.path.join(
             os.path.dirname(__file__),
@@ -152,20 +117,8 @@ def _load_tele_helpers():
     )
 
 
-# ---------------------------------------------------------------------------
-# position 回放控制器（复制自 g1_pick_replay_lerobot.py，不用 OSC / 2F85）
-# ---------------------------------------------------------------------------
-
 class ReplayPositionController:
-    """将目标关节角直接写入 MuJoCo position 执行器。
-
-    接口对齐数采 HandController / JointHoldController：
-      update_ctrl(vals) → 设定目标
-      run_controller()  → {actuator_id: value}
-
-    可选命令空间积分（默认关闭，与脚本化数采 G1PickQTargetController 同语义）：
-      ctrl = target + I,  I += ki*(target - q_meas)*dt
-    """
+    """向 MuJoCo 位置执行器写入目标关节角，并可选应用积分补偿。"""
 
     def __init__(
         self,
@@ -243,7 +196,7 @@ class ReplayPositionController:
             raise ValueError(
                 f"update_ctrl 维度 {arr.shape[0]} != 期望 {len(self.ctrl_index)}"
             )
-        # 软限幅：相对目标放宽 0.05 rad，避免卡死；MuJoCo 执行器自身也会限
+        # 在配置限位基础上增加 0.05 rad 容差。
         if self._lo is not None and self._hi is not None:
             arr = np.clip(arr, self._lo - 0.05, self._hi + 0.05)
         self._target = arr.astype(np.float32)
@@ -273,12 +226,8 @@ class ReplayPositionController:
         }
 
 
-# ---------------------------------------------------------------------------
-# XML 补丁：weld + arm/hand gravcomp（复制自 g1_pick_replay_lerobot.py）
-# ---------------------------------------------------------------------------
-
 def _install_xml_patch(env, agent_name: str, arm_gravcomp: float) -> None:
-    """复制数采 XML 旁路补丁：weld + arm/hand gravcomp（不删 freejoint）。"""
+    """在保留 freejoint 的前提下配置基座约束和重力补偿。"""
     _orig_load = env.gym.load_model_xml
     _gc = float(arm_gravcomp)
 
@@ -566,7 +515,7 @@ def main():
         config = load(f, Loader=Loader)
     scene_manager = SceneManager(args.orcagym_addr, config=config)
 
-    # storage 仅用于 obs_callback + build_state（构造实测 28 维 q），不落盘
+    # storage 仅用于 obs_callback 与 build_state，不落盘。
     storage = G1PickLeRobotStorage(dataset_path="/tmp/_eval_g1pick_scratch")
 
     agent_name = args.agent_name
@@ -708,16 +657,16 @@ def main():
             step = 0
             truncated = False
 
-            # 开环积分种子：与回放 integrate_delta_q 一致（q0=实测，之后 q+=Δq）
+            # 开环积分：以当前关节角为初值，之后按 Δq 累加。
             q_cmd = storage.build_state(storage.obs_callback(env)).astype(np.float32).copy()
             device.set_target(q_cmd[:ARM_DIM], q_cmd[ARM_DIM:STATE_DIM])
             orca_logger.info(
                 f"[q_cmd seed] R_pitch={q_cmd[7]:.3f} R_elbow={q_cmd[10]:.3f}  "
-                f"(此后开环积分，不再用实测重基)"
+                f"(此后开环积分)"
             )
 
             while step < args.max_steps and not truncated and not _interrupt.is_set():
-                # 观测：实测本体感知（与采集数据集 observation.state 一致）
+                # 观测：本体感知，与采集数据集 observation.state 一致。
                 state = storage.build_state(storage.obs_callback(env))
                 action_chunk = policy_runner.infer_action_chunk(state)
 
@@ -725,7 +674,7 @@ def main():
                     if step >= args.max_steps or truncated or _interrupt.is_set():
                         break
 
-                    # 控制：开环 q_cmd += Δq（对齐回放；勿用实测重基）
+                    # 控制：开环累加 Δq。
                     dq = np.asarray(model_action, dtype=np.float32).reshape(-1)[:STATE_DIM]
                     q_cmd = q_cmd + dq
                     device.set_target(q_cmd[:ARM_DIM], q_cmd[ARM_DIM:STATE_DIM])

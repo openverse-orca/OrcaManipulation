@@ -1,14 +1,8 @@
 # G1 OmniPicker 四色按钮候选接触位姿
 # 坐标系：G1 OmniPicker base_body（g1_omnipicker_body_link1）
-# 四元数约定：xyzw（与 build_segmented_trajectory 一致）
+# 四元数：xyzw
 #
-# 数据来源：按钮接触位姿候选
-#   红色 → 路点 1-4   绿色 → 路点 5-8
-#   黄色 → 路点 9-12  蓝色 → 路点 13-16
-#
-# approach_back：预备位沿 -X 后撤距离（米），由脚本自动计算 A=[P.x-back, P.y, P.z]
-# segments 步数参考（可用 --steps_* CLI 覆盖）：
-#   接近250步 → 前推120步 → 保压40步 → 后撤150步 (共560步，fps=20约28秒/集)
+# approach_back：沿末端 -X 方向的预备距离，单位米
 
 gripper_open: -0.8561
 gripper_close: 2.0

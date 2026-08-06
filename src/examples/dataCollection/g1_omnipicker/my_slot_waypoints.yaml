@@ -1,8 +1,5 @@
-# 槽位补录  2026-07-18 16:53:41
 # 坐标系：G1 OmniPicker base_body（body_link1）
-# 底座右移补偿：pos'=pos-[0.0, -0.014278, 0.0]
 
-# slot0_tool1
 slot0_tool1:
   wp0:
     pos:  [0.5883, -0.0736, 0.1942]
@@ -13,7 +10,6 @@ slot0_tool1:
     quat: [-0.5191, 0.3919, 0.5222, 0.5516]
     grip: close
 
-# slot0_tool2
 slot0_tool2:
   wp0:
     pos:  [0.5942, -0.0685, 0.1862]
@@ -24,7 +20,6 @@ slot0_tool2:
     quat: [-0.4276, 0.4697, 0.4339, 0.6389]
     grip: close
 
-# slot0_tool3
 slot0_tool3:
   wp0:
     pos:  [0.5615, -0.0623, 0.1768]
@@ -35,7 +30,6 @@ slot0_tool3:
     quat: [-0.4983, 0.3836, 0.5132, 0.5841]
     grip: close
 
-# slot0_tool4
 slot0_tool4:
   wp0:
     pos:  [0.5622, -0.0623, 0.1829]
@@ -46,7 +40,6 @@ slot0_tool4:
     quat: [-0.5060, 0.4019, 0.5370, 0.5423]
     grip: close
 
-# slot1_tool0
 slot1_tool0:
   wp0:
     pos:  [0.5579, -0.1909, 0.1685]
@@ -57,7 +50,6 @@ slot1_tool0:
     quat: [-0.5213, 0.4673, 0.5154, 0.4942]
     grip: close
 
-# slot3_tool4
 slot3_tool4:
   wp0:
     pos:  [0.5818, -0.4077, 0.1777]

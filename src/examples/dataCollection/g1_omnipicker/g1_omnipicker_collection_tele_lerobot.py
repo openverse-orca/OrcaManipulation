@@ -1,45 +1,4 @@
-"""G1 OmniPicker VR 遥操作采集 → LeRobot v2.1 格式（parquet + 视频）。
-
-与 g1_omnipicker_collection_tele.py 的区别：
-  - data_storage 换成 G1OmniPickerLeRobotStorage
-  - 相机走 CameraWrapper WebSocket 内存流 / OrcaStudio 服务端 MP4（由 --camera_source 切换）
-  - manager.save_video=False（视频由 LeRobot 后台 ffmpeg 编码，不用 OrcaStudio 服务端录像）
-  - 强制保存：episode 结束后无论任务是否成功均保存，去掉 task_is_success 判断
-  - 主循环不调用 manager.run()，改为显式 env.reset/update_scene/run_episode 控制
-
-控制按键（与原脚本一致）：
-  左臂移动       已锁定（左臂全程静止，不响应手柄）
-  右臂移动       右手柄位姿 (R_TRANSFORM)
-  左夹爪         X/Y 键 或 左扳机 (L_TRIGGER)
-  右夹爪         A/B 键 或 右扳机 (R_TRIGGER)
-  底盘转向/油门  已关闭（摇杆空闲）
-  开始采集       轻按左手柄 Grip 侧握键 (L_GRIPBUTTON)
-  结束保存       再次轻按左手柄 Grip 侧握键
-  放弃本集       轻按右手柄 Grip 侧握键 (R_GRIPBUTTON) — 丢弃当前集数据并重置场景
-  终止采集       左右 Grip 同时按下 — 等待编码完成后退出进程
-
-采集前手臂冻结：
-  场景重置后、按左 Grip 开始采集前，机械臂/夹爪不响应手柄（保持静止），
-  仅左 Grip 键有效（用于开始/保存）；开始采集后手臂才随手柄运动。
-  首次检测到手柄连接时，屏幕提示「已连接手柄，可以开始采集」。
-
-退出清理顺序：
-    writer.close() → env.stop_save_video() → close_cameras() → env.close()
-
-用法：
-  cd src/examples/dataCollection
-  python g1_omnipicker_collection_tele_lerobot.py \\
-      --lerobot_out /path/to/out_dataset \\
-      --repo_id local/g1_omnipicker \\
-      --fps 20 \\
-      --clock wall
-
-  # MP4 模式（WebSocket 端口不可用时）
-  python g1_omnipicker_collection_tele_lerobot.py ... --camera_source mp4
-
-  # 追加到已有数据集（断点续采）
-  python g1_omnipicker_collection_tele_lerobot.py ... --resume
-"""
+"""G1 OmniPicker VR 遥操作数据采集。"""
 import argparse
 import os
 import sys
@@ -116,7 +75,7 @@ def main() -> None:
     parser.add_argument("--fps", type=int, default=20, help="采集帧率（默认 20，wall 遥操作推荐）")
     parser.add_argument(
         "--clock", choices=("sim", "wall"), default="wall",
-        help="采帧门控时钟源。wall（默认）=墙钟，用于 VR 遥操作；sim=仿真时间。",
+        help="采帧时钟源：wall 使用系统时钟，sim 使用仿真时钟",
     )
     parser.add_argument("--resume", action="store_true", help="追加到已有数据集（断点续采）")
     parser.add_argument("--orcagym_addr", default="localhost:50051")

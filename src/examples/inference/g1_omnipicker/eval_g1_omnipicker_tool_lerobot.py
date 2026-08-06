@@ -1,21 +1,4 @@
-"""eval_g1_omnipicker_tool_lerobot.py — 工具整理场景 OpenPI 推理评估。
-
-相对 eval_g1_omnipicker_lerobot.py 的差异：
-  1) 默认关闭相机预览窗口
-  2) 左臂与数采一致：reset 时初始化到 _L_INIT_JOINT_VALUES（全 0，水平伸直），
-     推理过程中锁定，不跟踪策略输出的左臂末端目标
-
-用法：
-  conda activate orcalab_lerobot
-  cd src/examples/dataCollection
-  # OrcaLab 先加载 g1_tool.json
-  python eval_g1_omnipicker_tool_lerobot.py \
-      --task_config example.yaml \
-      --host localhost --port 8010 \
-      --prompt "整理工具" \
-      --max_steps 10000 --episodes 1
-
-"""
+"""在工具整理场景中运行 G1 OmniPicker OpenPI 推理。"""
 from __future__ import annotations
 
 import argparse
@@ -98,14 +81,13 @@ orca_logger = get_orca_logger(
     force_reinit=True,
 )
 
-# 从 conf 预取夹爪量程，供 denorm 使用
-_L_GRIP_RANGES = agent_conf.gripper_l["actuator_ranges"]  # [(min,max),(min,max)]
+_L_GRIP_RANGES = agent_conf.gripper_l["actuator_ranges"]
 _R_GRIP_RANGES = agent_conf.gripper_r["actuator_ranges"]
 
-# 与工具/按钮数采脚本一致：左臂复位关节角（水平伸直锁定位）
+# 左臂复位关节角。
 _L_INIT_JOINT_VALUES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-# 与采集脚本一致：左夹爪张开的电机绝对值（norm≈0.048；init_ctrl=0→norm=0.333 会 OOD）
+# 左夹爪张开电机值。
 _L_GRIP_OPEN_MOTOR = -0.8561
 
 
@@ -160,7 +142,7 @@ class EEFDevice(AbstractDevice):
         self._prev_grasp_integral_active = False
 
     def set_left_hold(self, l_pos_b, l_quat_b, l_grip_ctrl=None):
-        """记录左臂锁定位姿（数采初始化后的实测末端）。"""
+        """记录左臂锁定位姿。"""
         self._l_hold_pos = np.asarray(l_pos_b, dtype=np.float32).copy()
         self._l_hold_quat = np.asarray(l_quat_b, dtype=np.float32).copy()
         if l_grip_ctrl is not None:
@@ -422,7 +404,7 @@ def create_gripper(env, grip_conf):
 
 
 def build_initial_action_from_state(state: np.ndarray) -> dict:
-    """从首帧实测 18 维 state 构造初始末端目标，用于相机预热与首次推理前的 device 目标。"""
+    """从首帧 18 维观测状态构造初始末端目标。"""
     return parse_policy_action(state)
 
 
@@ -511,7 +493,7 @@ def main():
         config = load(f, Loader=Loader)
     scene_manager = SceneManager(args.orcagym_addr, config=config)
 
-    # storage 仅用于 obs_callback + build_state（构造实测 state），不落盘
+    # storage 仅用于 obs_callback 与 build_state，不落盘。
     storage = G1OmniPickerLeRobotStorage(dataset_path="/tmp/_eval_g1_scratch")
 
     manager = DataCollectionManager(
@@ -609,13 +591,12 @@ def main():
             env.render()
             time.sleep(0.05)
 
-            # 初始末端目标由首帧实测 state 动态获取（此时左臂应已在锁定位）
+            # 从首帧观测状态初始化末端目标。
             _init_obs = storage.obs_callback(env)
             _init_state = storage.build_state(_init_obs)
             _init_action = build_initial_action_from_state(_init_state)
             _init_action_apply = action_dict_for_apply(_init_action)
-            # H1 修正：覆盖左夹爪为采集时张开值（init_ctrl=0→norm=0.333 会 OOD）
-            # 采集脚本 g_open=-0.8561 → norm≈0.048；这里强制对齐
+            # 使用左夹爪张开值初始化控制器。
             _init_action_apply["l_grip_ctrl"] = np.array(
                 [_L_GRIP_OPEN_MOTOR, _L_GRIP_OPEN_MOTOR], dtype=np.float32
             )
@@ -638,7 +619,7 @@ def main():
             # 每集开始重置积分门控状态
             device.reset_integral_state()
 
-            # 锁定左臂：以初始化后实测末端为 hold，后续策略左臂输出一律忽略
+            # 锁定左臂：以初始化后的末端位姿为 hold，忽略后续策略左臂输出。
             device.set_left_hold(
                 _init_action_apply["l_pos_b"],
                 _init_action_apply["l_quat_b"],
@@ -702,7 +683,7 @@ def main():
             truncated = False
 
             while step < args.max_steps and not truncated and not _interrupt.is_set():
-                # state 由实测本体感知构造（与采集数据集 observation.state 一致）
+                # state 由本体感知构造，与采集数据集 observation.state 一致。
                 state = storage.build_state(storage.obs_callback(env))
 
                 for model_action in action_chunk:

@@ -395,7 +395,7 @@ class G1PickDualArmIKController(AbstractController):
         if abs(d_site_z) > 0.015 and abs(dz_goal_site) > 0.02:
             return "TRACK_SAG"  # 目标稳但仿真 EE 掉 → 刚度/重力跟不住
         if q_track > 0.05:
-            return "Q_LAG"  # 指令关节与实测关节差大
+            return "Q_LAG"  # 指令关节与当前关节差大
         return "HOLD_OK"
 
     def _log_goal_diag(

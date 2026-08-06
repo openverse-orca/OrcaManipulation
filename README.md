@@ -1,6 +1,6 @@
 # OrcaManipulation
 
-本仓库基于 OrcaLab / OrcaGym，提供人形机器人数据采集、回放与在线推理工具。当前交付覆盖两类机器人：
+本仓库基于 OrcaLab / OrcaGym，提供人形机器人数据采集、回放与在线推理工具，支持以下两类机器人：
 
 | 机器人 | 支持场景 | 采集文档 | 推理文档 |
 |--------|----------|----------|----------|
@@ -18,7 +18,7 @@
 | OrcaLab | **6.3** |
 | Python | **3.12 及以上** |
 | `orca-gym` | 推荐与 OrcaLab 6.3 配套的 **26.6.x** |
-| `lerobot` | **使用仓库内 `third_party/lerobot`**（见下方安装；不要从网上装 `lerobot==0.3.4`） |
+| `lerobot` | **使用仓库内置的 `third_party/lerobot`**（包含本项目所需兼容性修改，请按下方步骤安装） |
 | `gymnasium` | **1.2.1**（与 `orca-gym` 一致） |
 | GPU 视频编码 | NVIDIA GPU，驱动及 PyAV/FFmpeg 需支持 `av1_nvenc` |
 
@@ -46,7 +46,7 @@ lerobot ... requires gymnasium<1.0.0, but you have gymnasium 1.2.1
 pip install gymnasium==1.2.1
 ```
 
-说明：`third_party/lerobot` 是从本机可用环境整理出的干净副本（官方代码 + 数采所需补丁）。详情见 [third_party/README.md](third_party/README.md)。
+`third_party/lerobot` 基于 LeRobot 0.3.4，并包含本项目所需的兼容性修改。修改说明见 [third_party/README.md](third_party/README.md)。
 
 在线推理额外依赖 `openpi_client`，请在运行推理脚本前设置：
 
@@ -62,7 +62,7 @@ export OPENPI_CLIENT_SRC=<openpi-client源码路径>/src
 OrcaManipulation/
 ├── README.md
 ├── third_party/
-│   └── lerobot/                  # 自带 lerobot（含数采补丁）
+│   └── lerobot/                  # LeRobot 依赖
 ├── docs/
 │   ├── g1_omnipicker_collection.md   # 智元 · 采集
 │   ├── g1_omnipicker_inference.md    # 智元 · 推理

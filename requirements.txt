@@ -2,12 +2,12 @@
 orca-gym>=26.6.0
 numpy
 scipy
-# 以 orca-gym 为准锁定；覆盖 lerobot 声明的 gymnasium<1.0.0（本项目仅用 lerobot 数据集 API）
+# OrcaGym 运行环境要求 gymnasium 1.2.1；本项目仅使用 LeRobot 数据集 API
 gymnasium==1.2.1
 opencv-python
 av
 pyarrow
-# 使用仓库自带 third_party/lerobot（含数采补丁）。不要 pip install lerobot==0.3.4（网上没有这个包）
+# 安装仓库内置的 LeRobot 依赖
 -e ./third_party/lerobot
 mujoco
 numba

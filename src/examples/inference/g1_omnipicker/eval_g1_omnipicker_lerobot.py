@@ -1,34 +1,4 @@
-"""eval_g1_omnipicker_lerobot.py — G1 OmniPicker OpenPI 远程策略推理评估。
-
-连接由 serve_policy.py 启动的 WebSocket 策略服务器，在 OrcaLab 仿真中执行推理循环。
-结构对齐 eval_lerobot.py（青龙版本），逻辑替换为 G1 OmniPicker 适配。
-
-State / Action 布局（18 维，与数据集 observation.state/action 完全一致）：
-    [0:3]   l_pos_b        左臂末端位置（base 系，米）
-    [3:7]   l_quat_b       左臂末端四元数 xyzw（归一化）
-    [7:10]  r_pos_b        右臂末端位置
-    [10:14] r_quat_b       右臂末端四元数 xyzw
-    [14]    l_grip_inner_norm  左夹爪内侧归一化 [0,1]
-    [15]    l_grip_outer_norm  左夹爪外侧归一化 [0,1]
-    [16]    r_grip_inner_norm  右夹爪内侧归一化 [0,1]
-    [17]    r_grip_outer_norm  右夹爪外侧归一化 [0,1]
-
-夹爪量程 (-1, 2)，反归一化: val = norm * 3 - 1
-
-相机键：cam_head / cam_wrist_l / cam_wrist_r（3 路，与采集数据集一致）。
-
-运行环境：orcalab_lerobot
-
-用法：
-  conda activate orcalab_lerobot
-  cd src/examples/dataCollection
-
-  python eval_g1_omnipicker_lerobot.py \\
-      --task_config example.yaml \\
-      --host localhost --port 8010 \\
-      --prompt "按红色按钮" \\
-      --max_steps 500 --episodes 3
-"""
+"""在 OrcaLab 中运行 G1 OmniPicker OpenPI 远程策略推理。"""
 from __future__ import annotations
 
 import argparse
@@ -92,8 +62,9 @@ orca_logger = get_orca_logger(
     force_reinit=True,
 )
 
-# 从 conf 预取夹爪量程，供 denorm 使用
-_L_GRIP_RANGES = agent_conf.gripper_l["actuator_ranges"]  # [(min,max),(min,max)]
+# State/Action：左臂位置 3、左臂四元数 4、右臂位置 3、
+# 右臂四元数 4、左右夹爪归一化值各 2；四元数顺序为 xyzw。
+_L_GRIP_RANGES = agent_conf.gripper_l["actuator_ranges"]
 _R_GRIP_RANGES = agent_conf.gripper_r["actuator_ranges"]
 
 
@@ -344,7 +315,7 @@ def create_gripper(env, grip_conf):
 
 
 def build_initial_action_from_state(state: np.ndarray) -> dict:
-    """从首帧实测 18 维 state 构造初始末端目标，用于相机预热与首次推理前的 device 目标。"""
+    """从首帧 18 维观测状态构造初始末端目标。"""
     return parse_policy_action(state)
 
 
@@ -386,7 +357,7 @@ def main():
         config = load(f, Loader=Loader)
     scene_manager = SceneManager(args.orcagym_addr, config=config)
 
-    # storage 仅用于 obs_callback + build_state（构造实测 state），不落盘
+    # storage 仅用于 obs_callback 与 build_state，不落盘。
     storage = G1OmniPickerLeRobotStorage(dataset_path="/tmp/_eval_g1_scratch")
 
     manager = DataCollectionManager(
@@ -453,7 +424,7 @@ def main():
                 controller.reset()
             env.render()
 
-            # 初始末端目标由首帧实测 state 动态获取，不硬编码
+            # 从首帧观测状态初始化末端目标。
             _init_obs = storage.obs_callback(env)
             _init_state = storage.build_state(_init_obs)
             _init_action = build_initial_action_from_state(_init_state)
@@ -516,7 +487,7 @@ def main():
             truncated = False
 
             while step < args.max_steps and not truncated:
-                # state 由实测本体感知构造（与采集数据集 observation.state 一致）
+                # state 由本体感知构造，与采集数据集 observation.state 一致。
                 state = storage.build_state(storage.obs_callback(env))
                 action_chunk = policy_runner.infer_action_chunk(state)
 

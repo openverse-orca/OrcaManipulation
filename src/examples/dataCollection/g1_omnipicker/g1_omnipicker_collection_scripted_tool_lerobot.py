@@ -1,34 +1,4 @@
-"""G1 OmniPicker 工具整理脚本化自动采集 → LeRobot v2.1 格式。
-
-右臂从左到右依次抓取 5 个工具放入工具箱，全程单条 episode，
-自动插入安全过渡（抬升 → 高位水平移动 → 垂直下降）避免碰到相邻工具。
-左臂全程锁死。
-
-输入：5 个路点 YAML（默认 my_waypoint_tool1.yaml … my_waypoint_tool5.yaml），
-      每个支持 4 或 6 点位：
-        4 点：接近 / 抓取闭爪 / 箱上方 / 箱上松开
-        6 点：接近 / 抓取闭爪 / 放箱经由1 / 经由2 / 箱上方 / 箱上松开
-随机化（--randomize）流水线：
-  1) RNG 均匀排列 assignment[slot]=tool（拒绝采样：手电筒禁止 slot4）
-  2) _place_tools：工具只改槽位 y，保留自身 x/z/姿态
-  3) wp0/wp1 = 原 YAML 平移 delta；若存在合法补录 slotX_toolY 则用绝对位姿覆盖
-  4) 抓取顺序 = 槽位从左到右（slot0→slot4），因此「谁先被抓」随排列变化
-  5) 放箱路点（4点:wp2/wp3；6点:wp2..wp5）始终用该工具原 YAML（不随槽位变）
-
-控制：离线预构建轨迹（build_segmented_trajectory）。
-
-入箱检测（默认开）：每件工具全部路点结束后，待 EE 的 xy 投影已不在整箱矩形内，
-再检查该工具接触白名单——仅允许「箱子内表面」或「已入箱工具」；
-与机器人/货架工具/其它物体接触，或超时无接触 → 失败并换 seed 重采。
-
-用法：
-  cd src/examples/dataCollection
-  python g1_omnipicker_collection_scripted_tool_lerobot.py \\
-      --task_config example.yaml \\
-      --lerobot_out /path/to/out_dataset \\
-      --repo_id local/g1_omnipicker_tool \\
-      --randomize --num_episodes 1 --fps 20
-"""
+"""G1 OmniPicker 工具整理脚本化数据采集。"""
 import argparse
 import os
 import sys
@@ -89,13 +59,12 @@ orca_logger = get_orca_logger(
     force_reinit=True,
 )
 
-# 左臂初始关节角（与 record_g1_waypoints.py / tele_linit 一致）
 _L_INIT_JOINT_VALUES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-# 工具名称（按抓取顺序）
+# 顺序必须与 _TOOL_BODY_JOINT_NAMES 一致。
 _TOOL_NAMES = ["扳手", "螺丝刀", "电工刀(左)", "手电筒", "电工刀(右)"]
 
-# 工具参考位姿（G1 base 系）。随机化时仅交换槽位 y；每件工具保留自己的 x/z/姿态。
+# 基座坐标系；随机化仅修改槽位 Y。
 _TOOL_BODY_JOINT_NAMES = [
     "Group_Interactive_Spanner_task_spanner_joint",
     "Group_Interactive_Screwdriver_task_screwdriver_joint",
@@ -103,8 +72,7 @@ _TOOL_BODY_JOINT_NAMES = [
     "Group_Interactive_Flashlight_task_flashlight_joint",
     "Group_Interactive_ElectriciansKnife02_task_electriciansknife02_joint",
 ]
-# 工具参考位（当前 base 系）= 货架上工具的物理摆放锚点（_place_tools 用）。
-# 底座位移累计（base Y）：-0.141338 -0.068396 +0.014278（右移回补）。
+# _place_tools 使用的货架参考位置。
 _TOOL_REFERENCE_POS_B = np.asarray(
     [
         [0.5654831, -0.0693993, 0.1514528],
@@ -131,8 +99,7 @@ _TOOLBOX_BASE_BODY = "Group_Interactive_ToolBox_Base_bodyjoint"
 # 几何回退（仅用于箱底标定）：工具 COM 相对底面高度上限（米）
 _BOX_BOTTOM_Z_TOL = 0.10
 _BOX_BOTTOM_XY_MARGIN = 0.02
-# 入箱检查：EE xy 已出整箱矩形后，等待接触的最长时间（秒）；超时无接触 → 失败
-# 实测多数 1 步内出结果，末尾驻留不必太长
+# 末端离开箱体 XY 区域后的接触检测超时，单位秒。
 _PLACE_CHECK_TIMEOUT_S = 2.5
 # 末工具后撤离（保证 EE xy 出整箱矩形）的步数
 _PLACE_RETREAT_STEPS = 50
@@ -408,7 +375,7 @@ def _tool_resting_on_box_bottom(
 
 
 def _is_soft_world_contact(name: str, cat: str) -> bool:
-    """地面/世界平面接触：箱内工具常会连带报到，不能单独据此判失败。"""
+    """判断可忽略的世界平面接触。"""
     if cat != "other" or not name:
         return False
     return "world" in name.lower()
@@ -823,7 +790,7 @@ def _load_waypoint_yaml(path: str) -> dict:
 
 
 def _load_extra_slot_waypoints(path: str) -> dict:
-    """加载槽位补录 YAML（record_slot_waypoints.py 输出）。
+    """加载槽位路点 YAML。
 
     返回 dict[key] = {"wp0": {"pos", "quat", "grip"}, "wp1": {...}}
     key 形如 "slot0_tool1"。
@@ -849,7 +816,7 @@ def _load_extra_slot_waypoints(path: str) -> dict:
     return extras
 
 
-# 补录 wp 的 Y 与目标槽参考 Y 最大允许偏差（米）。超出视为录错槽，回退平移。
+# 槽位路点 wp 的 Y 与目标槽参考 Y 最大允许偏差（米）。超出则回退平移。
 _EXTRA_SLOT_Y_TOL = 0.05
 
 
@@ -859,7 +826,7 @@ def _apply_extra_slot_waypoints(
     tool_idx: int,
     extras: dict,
 ) -> tuple[dict, bool]:
-    """若存在合法的 slotX_toolY 补录，用其绝对 wp0/wp1 覆盖（放箱路点不变）。
+    """若存在合法的 slotX_toolY 路点，用其绝对 wp0/wp1 覆盖（放箱路点不变）。
 
     合法性：wp0/wp1 的 y 须接近该槽位参考 y（|_TOOL_REFERENCE_POS_B[slot].y| 差 < 5cm），
     否则判定录错槽，不覆盖，继续使用平移结果。
@@ -876,7 +843,7 @@ def _apply_extra_slot_waypoints(
         y = float(override[wp_name]["pos"][1])
         if abs(y - slot_y) > _EXTRA_SLOT_Y_TOL:
             orca_logger.warning(
-                f"[槽位补录] 拒绝 {key}：{wp_name}.y={y:.4f} 与 slot{slot_idx} "
+                f"[槽位路点] 拒绝 {key}：{wp_name}.y={y:.4f} 与 slot{slot_idx} "
                 f"参考y={slot_y:.4f} 偏差 {abs(y - slot_y)*1000:.0f}mm > "
                 f"{_EXTRA_SLOT_Y_TOL*1000:.0f}mm，回退平移"
             )
@@ -970,19 +937,17 @@ def _warp_waypoints(tool_spec: dict, delta_b: np.ndarray) -> dict:
     return warped
 
 
-# Robotiq 2F-85 最大张开宽度（米）；槽位5（最右，0-based slot4）抓取再偏右。
-# 实测：0.15×张开(12.8mm)命令有生效，但槽位5跟踪滞后≈35–45mm，实际几乎不动；
-# 0.5×张开(42.5mm)时实际曾到 y≈-0.558，接近理想抓取 y≈-0.562。
+# 槽位 5 的抓取位置使用夹爪最大开度比例计算 Y 方向补偿。
 _GRIPPER_OPEN_WIDTH_M = 0.085
 _SLOT5_GRASP_RIGHT_FRAC = 0.5
-_SLOT5_IDX = 4  # 日志「槽位5」= 最右侧
+_SLOT5_IDX = 4  # 最右侧槽位
 _SLOT5_GRASP_DY = -_SLOT5_GRASP_RIGHT_FRAC * _GRIPPER_OPEN_WIDTH_M  # 偏右 → y 减小
 
-# 扳手@槽位4（从左第4，0-based slot3）：跟踪常偏高/够不着，wp0/wp1 略向左(+y)、向下(-z)
+# 槽位 4 的扳手抓取位置补偿。
 _WRENCH_IDX = 0
 _SLOT4_IDX = 3
-_SLOT4_WRENCH_GRASP_DY = 0.008  # 左 8mm（先前 20mm 偏多）
-_SLOT4_WRENCH_GRASP_DZ = -0.035  # 下 35mm（先前 20mm 不够）
+_SLOT4_WRENCH_GRASP_DY = 0.008  # Y +8 mm
+_SLOT4_WRENCH_GRASP_DZ = -0.035  # Z -35 mm
 
 
 def _bias_grasp_waypoints(
@@ -1177,7 +1142,7 @@ def main() -> None:
         "--extra_slot_waypoints",
         type=str,
         default=os.path.join(base_dir, "my_slot_waypoints.yaml"),
-        help="槽位补录 YAML。命中且 Y 与槽位一致时用绝对 wp0/wp1；传空字符串禁用",
+        help="槽位路点 YAML。命中且 Y 与槽位一致时用绝对 wp0/wp1；传空字符串禁用",
     )
     parser.add_argument(
         "--seed", type=int, default=None,
@@ -1264,7 +1229,7 @@ def main() -> None:
             f"release={td['waypoints'][-1]['pos']}"
         )
 
-    # 槽位补录：加载后预检 Y 是否对齐槽位；不合格的 key 直接剔除
+    # 槽位路点：加载后预检 Y 是否对齐槽位；不合格的 key 直接剔除
     extra_slot_waypoints: dict = {}
     if args.extra_slot_waypoints:
         extra_path = os.path.abspath(os.path.expanduser(args.extra_slot_waypoints))
@@ -1274,7 +1239,7 @@ def main() -> None:
                 try:
                     slot_idx = int(key.split("_")[0][4:])
                 except (IndexError, ValueError):
-                    orca_logger.warning(f"[槽位补录] 无法解析 key，忽略: {key}")
+                    orca_logger.warning(f"[槽位路点] 无法解析 key，忽略: {key}")
                     continue
                 slot_y = float(_TOOL_REFERENCE_POS_B[slot_idx, 1])
                 bad = False
@@ -1282,25 +1247,25 @@ def main() -> None:
                     y = float(entry[wp_name]["pos"][1])
                     if abs(y - slot_y) > _EXTRA_SLOT_Y_TOL:
                         orca_logger.warning(
-                            f"[槽位补录] 剔除 {key}：{wp_name}.y={y:.4f} 偏离 "
+                            f"[槽位路点] 剔除 {key}：{wp_name}.y={y:.4f} 偏离 "
                             f"slot{slot_idx} 参考y={slot_y:.4f} "
-                            f"({abs(y - slot_y)*1000:.0f}mm)，请重录"
+                            f"({abs(y - slot_y)*1000:.0f}mm)，请重新录制"
                         )
                         bad = True
                         break
                 if not bad:
                     extra_slot_waypoints[key] = entry
             orca_logger.info(
-                f"槽位补录: {extra_path} → 有效 {len(extra_slot_waypoints)}/"
+                f"槽位路点: {extra_path} → 有效 {len(extra_slot_waypoints)}/"
                 f"{len(raw_extras)} 条 ({', '.join(sorted(extra_slot_waypoints.keys())) or '无'})"
             )
             print(
-                f"  槽位补录: 有效 {len(extra_slot_waypoints)}/{len(raw_extras)} 条",
+                f"  槽位路点: 有效 {len(extra_slot_waypoints)}/{len(raw_extras)} 条",
                 flush=True,
             )
         else:
-            orca_logger.warning(f"槽位补录文件不存在，跳过: {extra_path}")
-            print(f"  ⚠ 槽位补录文件不存在，跳过: {extra_path}", flush=True)
+            orca_logger.warning(f"槽位路点文件不存在，跳过: {extra_path}")
+            print(f"  ⚠ 槽位路点文件不存在，跳过: {extra_path}", flush=True)
 
     lerobot_out = os.path.abspath(os.path.expanduser(args.lerobot_out))
     num_episodes = args.num_episodes
@@ -1576,12 +1541,12 @@ def main() -> None:
                     print(f"  抓取: {pick_seq} | seed={episode_seed}", flush=True)
                     if override_hits:
                         msg = ", ".join(override_hits)
-                        orca_logger.info(f"[槽位补录] 采用绝对 wp0/wp1: {msg}")
-                        print(f"  [槽位补录] {msg}", flush=True)
+                        orca_logger.info(f"[槽位路点] 采用绝对 wp0/wp1: {msg}")
+                        print(f"  [槽位路点] {msg}", flush=True)
                     for tool_idx in range(5):
                         slot_idx = slot_for_tool[tool_idx]
                         src = (
-                            "补录"
+                            "路点"
                             if f"{_TOOL_NAMES[tool_idx]}@slot{slot_idx}" in override_hits
                             else "平移"
                         )
@@ -1614,7 +1579,7 @@ def main() -> None:
                     flush=True,
                 )
 
-                # 扳手@槽位4：wp0/wp1 略向左(+y)、向下(-z)，缓解跟踪够不着
+                # 槽位 4 扳手抓取路点补偿。
                 if int(slot_for_tool.get(_WRENCH_IDX, -1)) == _SLOT4_IDX:
                     w_before = episode_tool_data[_WRENCH_IDX]["waypoints"][1]["pos"]
                     episode_tool_data[_WRENCH_IDX] = _bias_grasp_waypoints(

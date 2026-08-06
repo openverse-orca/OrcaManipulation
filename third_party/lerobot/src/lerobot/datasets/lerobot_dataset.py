@@ -911,32 +911,9 @@ class LeRobotDataset(torch.utils.data.Dataset):
             self.episode_buffer = self.create_episode_buffer()
 
     def save_episode_data_only(self) -> int:
-        """
-        Save episode data (parquet + metadata) but **skip video encoding**.
+        """Save episode data and metadata without encoding videos.
 
-        This is the "fast half" of :meth:`save_episode` and is designed to be paired
-        with a background encoding thread::
-
-            episode_index = dataset.save_episode_data_only()
-            bg_encoder.submit(episode_index)   # encoding happens in background
-
-        Compared to :meth:`save_episode` this method:
-        - Flushes all pending PNG writes (``_wait_image_writer``)
-        - Writes the parquet table (``_save_episode_table``)
-        - Updates all in-memory and on-disk metadata (``meta.save_episode``)
-        - Resets ``episode_buffer`` so the next episode can start immediately
-        - **Does NOT** call ``encode_episode_videos`` — the caller is responsible
-        - **Does NOT** assert the video-file count (videos not yet encoded)
-
-        .. warning::
-            ``encode_episode_videos(0)`` writes ``meta.info`` via
-            ``meta.update_video_info()``.  To avoid a write race with
-            ``meta.save_episode()`` for episode 1, call
-            ``BackgroundVideoEncoder.ensure_ep0_done()`` before invoking this
-            method for any episode whose index is > 0.
-
-        Returns:
-            int: The episode index that still needs to be encoded.
+        Returns the saved episode index.
         """
         episode_buffer = self.episode_buffer
 
