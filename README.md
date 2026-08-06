@@ -20,6 +20,7 @@
 | `orca-gym` | 推荐与 OrcaLab 6.3 配套的 **26.6.x** |
 | `lerobot` | **使用仓库内置的 `third_party/lerobot`**（包含本项目所需兼容性修改，请按下方步骤安装） |
 | `gymnasium` | **1.2.1**（与 `orca-gym` 一致） |
+| 宇树 IK | **Pinocchio ≥3.4 + CasADi ≥3.6**（conda-forge；见下方，与开发环境对齐） |
 | GPU 视频编码 | NVIDIA GPU，驱动及 PyAV/FFmpeg 需支持 `av1_nvenc` |
 
 ---
@@ -29,10 +30,35 @@
 请在仓库根目录执行（会安装自带的 `third_party/lerobot`）：
 
 ```bash
-conda activate orcalab_lerobot
+conda activate orcalab_lerobot   # 或你自己的 conda 环境名
 cd OrcaManipulation
 pip install -r requirements.txt
 ```
+
+### 宇树 G1 额外步骤（必需）
+
+宇树遥操与脚本化采集都会加载 `G1_29_ArmIK`（Pinocchio + CasADi）。  
+**请用 conda-forge 安装真库**（与可跑通的开发环境一致：pinocchio 3.9 / casadi 3.7）：
+
+```bash
+# 若曾误执行 pip install pinocchio，先卸掉 PyPI 假包
+pip uninstall -y pinocchio
+
+conda install -c conda-forge "pinocchio>=3.4" "casadi>=3.6"
+# 等价：conda env update -n <你的环境名> -f environment-unitree.yml
+```
+
+自检（须全部成功）：
+
+```bash
+python -c "import pinocchio as pin; import casadi; from pinocchio import casadi as cpin; print(pin.__version__)"
+```
+
+**禁止** `pip install pinocchio`：PyPI 上的 `pinocchio==0.4.x` 是无关包，会出现  
+`ImportError: cannot import name 'casadi' from 'pinocchio'`。  
+仅当无法使用 conda 时，才用 PyPI 包名 **`pin`**（不是 `pinocchio`）：`pip install "pin>=3.4" "casadi>=3.6"`。
+
+TeleVuer 遥操还需安装 Unitree `televuer`（脚本化可不装），见 [docs/unitree_g1_collection.md](docs/unitree_g1_collection.md)。
 
 安装完成后若出现以下类似提示，可以忽略：
 
@@ -61,6 +87,8 @@ export OPENPI_CLIENT_SRC=<openpi-client源码路径>/src
 ```text
 OrcaManipulation/
 ├── README.md
+├── requirements.txt              # pip 依赖（含宇树 pin/casadi；勿装假包 pinocchio）
+├── environment-unitree.yml       # 宇树 Pinocchio/CasADi（conda-forge，推荐）
 ├── third_party/
 │   └── lerobot/                  # LeRobot 依赖
 ├── docs/
@@ -68,7 +96,6 @@ OrcaManipulation/
 │   ├── g1_omnipicker_inference.md    # 智元 · 推理
 │   ├── unitree_g1_collection.md      # 宇树 · 采集
 │   └── unitree_g1_inference.md       # 宇树 · 推理
-├── requirements.txt
 ├── pyproject.toml
 └── src/
     ├── conf/

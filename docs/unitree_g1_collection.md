@@ -4,6 +4,25 @@
 
 ---
 
+## 依赖（相对仓库根目录 README 的补充）
+
+在已执行 `pip install -r requirements.txt` 之后，宇树路径还需要：
+
+```bash
+# 1) Pinocchio + CasADi（遥操 / 脚本化均需要；禁止 pip install pinocchio）
+pip uninstall -y pinocchio 2>/dev/null
+conda install -c conda-forge "pinocchio>=3.4" "casadi>=3.6"
+python -c "import pinocchio as pin; from pinocchio import casadi as cpin; print(pin.__version__)"
+
+# 2) TeleVuer 遥操（仅遥操作采集需要；脚本化可跳过）
+# 将 <xr_teleoperate> 换成 Unitree xr_teleoperate 仓库本地路径
+pip install -e <xr_teleoperate>/teleop/televuer
+```
+
+若出现 `No module named 'pinocchio'` 或 `cannot import name 'casadi' from 'pinocchio'`，几乎都是未装 conda-forge 真库，或误装了 PyPI 假包 `pinocchio==0.4.x`。请按上面步骤重装后自检。
+
+---
+
 ## 场景与相机
 
 ### 加载场景

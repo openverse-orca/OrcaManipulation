@@ -15,6 +15,29 @@ termcolor>=2.4.0
 pyyaml
 h5py
 
+# ---------------------------------------------------------------------------
+# 宇树 G1 必需：Pinocchio + CasADi（双臂 IK / 脚本化与遥操均会 import）
+# 开发环境对照（orcalab_lerobot）：pinocchio 3.9.x + casadi 3.7.x（conda-forge）
+#
+# 【强烈推荐】conda-forge（与开发机一致，含 pinocchio.casadi）：
+#   conda install -c conda-forge "pinocchio>=3.4" "casadi>=3.6"
+#   或：conda env update -n <env> -f environment-unitree.yml
+#
+# 【禁止】pip install pinocchio
+#   PyPI 包名 pinocchio==0.4.x 是无关假包，会导致：
+#   ImportError: cannot import name 'casadi' from 'pinocchio'
+#   若已误装：pip uninstall -y pinocchio
+#
+# 【仅当无法使用 conda 时】PyPI 机器人库包名是 pin（不是 pinocchio）：
+#   pip install "pin>=3.4" "casadi>=3.6"
+# ---------------------------------------------------------------------------
+casadi>=3.6.0
+pin>=3.4.0
+
+# 宇树 TeleVuer 遥操额外依赖（脚本化可不装）：
+#   pip install -e <xr_teleoperate仓库>/teleop/televuer
+#   （包名 televuer，依赖 vuer / logging-mp 等；见 docs/unitree_g1_collection.md）
+
 # 可选：在线推理需要 openpi_client
 # 安装方式一：pip install openpi_client
 # 安装方式二：export OPENPI_CLIENT_SRC=<openpi-client源码路径>/src

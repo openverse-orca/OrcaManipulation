@@ -1,0 +1,15 @@
+# 宇树 G1 额外依赖（与可跑通的 orcalab_lerobot 开发环境对齐）
+# 在已创建的 conda 环境中执行：
+#   conda env update -n <你的环境名> -f environment-unitree.yml
+# 或：
+#   conda install -c conda-forge "pinocchio>=3.4" "casadi>=3.6"
+#
+# 切勿使用：pip install pinocchio
+# （PyPI 上的 pinocchio==0.4.x 是无关假包，没有 pinocchio.casadi）
+
+name: orcalab_lerobot
+channels:
+  - conda-forge
+dependencies:
+  - pinocchio>=3.4
+  - casadi>=3.6
