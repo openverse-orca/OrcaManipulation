@@ -8,12 +8,7 @@
 
 1. 请启动 OrcaLab 6.3，并加载布局 `unitree_button.json`。
 2. 请按采集文档配置两路相机（头 `7070`、右腕 `7080`）并启动仿真。
-3. 请设置 `openpi_client` 路径：
-
-```bash
-export OPENPI_CLIENT_SRC=<openpi-client源码路径>/src
-```
-
+3. 请确认已按仓库根目录 README 执行 `bash scripts/install_runtime.sh`。
 4. 请先启动策略服务（端口与下方 `--port` 一致，默认 `8010`）。
 
 ---
@@ -41,7 +36,7 @@ python -u eval_g1_pick_lerobot.py \
 
 ## 故障排查
 
-**现象**：找不到 `openpi_client`。**处理**：请确认已设置 `OPENPI_CLIENT_SRC`。
+**现象**：找不到 `openpi_client`。**处理**：请在仓库根目录重新执行 `bash scripts/install_runtime.sh`，不要添加外部源码路径。
 
 **现象**：相机超时。**处理**：请按采集文档重新配置相机端口与 Recording。
 

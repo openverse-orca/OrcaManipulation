@@ -25,8 +25,8 @@ discord = "https://discord.gg/s3KuuzsPFb"
 
 [project]
 name = "lerobot"
-version = "0.3.4"
-description = "🤗 LeRobot: State-of-the-art Machine Learning for Real-World Robotics in Pytorch"
+version = "0.3.4+orca.1"
+description = "LeRobot 0.3.4 dataset runtime patched for OrcaManipulation"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
@@ -56,37 +56,20 @@ classifiers = [
 ]
 keywords = ["lerobot", "huggingface", "robotics",  "machine learning", "artificial intelligence"]
 
+# This delivery uses LeRobot only for v2.1 dataset I/O. Training, policy,
+# physical-robot and Gym dependencies remain optional and must not make the
+# recorder installation pull an incompatible Gymnasium stack.
 dependencies = [
-
-    # Hugging Face dependencies
-    "datasets>=2.19.0,<=3.6.0", # TODO: Bumb dependency
-    "diffusers>=0.27.2",
-    "huggingface-hub[hf-transfer,cli]>=0.34.2",
-
-    # Core dependencies
-    "cmake>=3.29.0.1",
-    "einops>=0.8.0",
-    "opencv-python-headless>=4.9.0",
-    "av>=14.2.0",
-    "jsonlines>=4.0.0",
-    "packaging>=24.2",
-    "pynput>=1.7.7",
-    "pyserial>=3.5",
-    "wandb>=0.20.0",
-
-    "torch>=2.2.1,<2.8.0", # TODO: Bumb dependency
-    "torchcodec>=0.2.1,<0.6.0; sys_platform != 'win32' and (sys_platform != 'linux' or (platform_machine != 'aarch64' and platform_machine != 'arm64' and platform_machine != 'armv7l')) and (sys_platform != 'darwin' or platform_machine != 'x86_64')", # TODO: Bumb dependency
-    "torchvision>=0.21.0,<0.23.0", # TODO: Bumb dependency
-
-    "draccus==0.10.0", # TODO: Remove ==
-    "gymnasium>=0.29.1,<1.0.0", # TODO: Bumb dependency
-    "rerun-sdk>=0.21.0,<0.23.0", # TODO: Bumb dependency
-
-    # Support dependencies
-    "deepdiff>=7.0.1,<9.0.0",
-    "flask>=3.0.3,<4.0.0",
-    "imageio[ffmpeg]>=2.34.0,<3.0.0",
-    "termcolor>=2.4.0,<4.0.0",
+    "av==17.0.1",
+    "datasets==3.6.0",
+    "huggingface-hub==0.34.4",
+    "jsonlines==4.0.0",
+    "numpy==2.4.6",
+    "packaging==26.0",
+    "pillow==12.0.0",
+    "pyarrow==24.0.0",
+    "torch==2.7.1+cpu",
+    "torchvision==0.22.1+cpu",
 ]
 
 # Optional dependencies

@@ -157,7 +157,7 @@ def _selfcheck_trigger_normalize() -> None:
 
 
 class TeleVuerDevice(AbstractDevice):
-    """Live TeleVuer XR device. Requires optional `televuer` package."""
+    """Live TeleVuer XR device backed by the repository-vendored package."""
 
     VUER_PORT = 8012
 
@@ -175,6 +175,7 @@ class TeleVuerDevice(AbstractDevice):
         run_trigger_selfcheck: bool = True,
         cert_file: str | None = None,
         key_file: str | None = None,
+        host: str = "127.0.0.1",
     ):
         self.pose_mapper = pose_mapper or TvToOrcaPoseMapper()
         self.disconnect_timeout_s = float(disconnect_timeout_s)
@@ -211,16 +212,26 @@ class TeleVuerDevice(AbstractDevice):
         self._last_btn_log_t = 0.0
         self._last_child_fatal_log_t = 0.0
         self._child_was_alive = True
-        # Empty string "" disables TLS (Vuer skips cert resolution + SSL site).
-        # None = TeleVuer default path (~/.config/xr_teleoperate or package cert).
+        # Omitted paths select loopback-only HTTP/WS. TLS requires both explicit
+        # paths; no environment variable, HOME, or package lookup is performed.
+        if (cert_file is None) != (key_file is None):
+            raise ValueError("cert_file and key_file must be provided together")
+        if cert_file is None:
+            cert_file = ""
+            key_file = ""
+        elif bool(cert_file) != bool(key_file):
+            raise ValueError(
+                "cert_file and key_file must both be non-empty or both empty"
+            )
+        if not cert_file and host not in ("127.0.0.1", "localhost", "::1"):
+            raise ValueError(
+                f"host={host!r} requires cert_file and key_file; "
+                "plain HTTP is restricted to loopback"
+            )
         self._cert_file = cert_file
         self._key_file = key_file
-        self._tls_enabled = not (
-            isinstance(cert_file, str)
-            and isinstance(key_file, str)
-            and cert_file == ""
-            and key_file == ""
-        )
+        self._host = host
+        self._tls_enabled = bool(cert_file and key_file)
         self._visit_url_printed = False
 
         # Rate samples for heartbeat (cam/ctrl events over last window)
@@ -252,9 +263,10 @@ class TeleVuerDevice(AbstractDevice):
         must pass ?ws=wss://127.0.0.1:8012. Plain HTTP branch keeps the port.
         """
         port = self.VUER_PORT
+        addr = "127.0.0.1" if self._host in ("0.0.0.0", "::") else self._host
         if self._tls_enabled:
-            return f"https://127.0.0.1:{port}/?ws=wss://127.0.0.1:{port}"
-        return f"http://127.0.0.1:{port}/"
+            return f"https://{addr}:{port}/?ws=wss://{addr}:{port}"
+        return f"http://{addr}:{port}/"
 
     def _init_televuer(self, display_mode: str, img_shape: tuple[int, int], binocular: bool):
         try:
@@ -263,8 +275,8 @@ class TeleVuerDevice(AbstractDevice):
             from televuer.tv_wrapper import TeleVuerWrapper
         except ImportError as e:
             raise ImportError(
-                "televuer is not installed. Install the xr_teleoperate televuer "
-                "submodule (`pip install -e .../teleop/televuer`) or use --xr_backend pico."
+                "televuer is not installed. Run `bash scripts/install_runtime.sh` "
+                "from the delivery repository, or use --xr_backend pico."
             ) from e
 
         class CountingTeleVuer(TeleVuer):
@@ -310,12 +322,10 @@ class TeleVuerDevice(AbstractDevice):
             zmq=False,
             webrtc=False,
             arm_reference_mode="head_yaw",
+            cert_file=self._cert_file,
+            key_file=self._key_file,
+            host=self._host,
         )
-        # Only pass cert args when caller set them (None = TeleVuer default search).
-        if self._cert_file is not None:
-            wrap_kwargs["cert_file"] = self._cert_file
-        if self._key_file is not None:
-            wrap_kwargs["key_file"] = self._key_file
         try:
             self._tv_wrapper = TeleVuerWrapper(**wrap_kwargs)
             self._counting_tv = self._tv_wrapper.tvuer
@@ -346,8 +356,8 @@ class TeleVuerDevice(AbstractDevice):
         )
         if self._tls_enabled:
             print(
-                "[TV][LINK] NOTE: vuer 0.0.60 HTTPS getSocketURI drops :8012; "
-                "?ws=wss://127.0.0.1:8012 is required (or use --tv_no_tls).",
+                f"[TV][LINK] NOTE: vuer 0.0.60 HTTPS getSocketURI drops :{self.VUER_PORT}; "
+                "the ?ws= query above supplies it.",
                 flush=True,
             )
 
@@ -426,7 +436,10 @@ class TeleVuerDevice(AbstractDevice):
         return getattr(p, "exitcode", None)
 
     def port_bound(self, port: int | None = None) -> bool:
-        return _port_listening(port if port is not None else self.VUER_PORT)
+        probe_host = "127.0.0.1" if self._host in ("0.0.0.0", "::") else self._host
+        return _port_listening(
+            port if port is not None else self.VUER_PORT, host=probe_host
+        )
 
     def health_snapshot(self) -> dict:
         """Structured health dict for [HEALTH] heartbeat (USB-local diagnostics)."""

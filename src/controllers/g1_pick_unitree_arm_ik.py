@@ -19,7 +19,7 @@ from pathlib import Path
 import casadi
 import numpy as np
 import pinocchio as pin
-from pinocchio import casadi as cpin
+import pinocchio.casadi as cpin
 
 from utils.g1_pick_weighted_moving_filter import WeightedMovingFilter
 

@@ -209,3 +209,6 @@ marimo/_lsp/
 __marimo__/
 /src/examples/dataCollection/dataset/*
 /src/examples/dataCollection/aug_dataset/*
+
+# Pinocchio reduced-model cache, rebuilt on demand from assets/g1
+/src/examples/dataCollection/_ik_cache/

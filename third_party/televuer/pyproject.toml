@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "televuer"
+version = "4.0.0+orca.1"
+description = "Pinned Unitree TeleVuer runtime for OrcaManipulation"
+authors = [
+    { name = "silencht", email = "silencht@qq.com" }
+]
+requires-python = ">=3.12,<3.13"
+license = { text = "MIT" }
+
+# The vuer "all" extra is not used: it pins aiohttp==3.10.5, while the validated
+# delivery stack runs aiohttp 3.13.1. The extra's three packages are listed here.
+dependencies = [
+    "aiohttp==3.13.1",
+    "aiohttp-cors==0.8.1",
+    "killport==1.2.0",
+    "numpy==2.4.6",
+    "opencv-python==4.13.0.92",
+    "vuer==0.0.60",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

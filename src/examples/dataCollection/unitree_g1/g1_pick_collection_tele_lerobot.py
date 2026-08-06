@@ -714,6 +714,9 @@ class TeleopConfig:
     diag_joints_hz: float
     diag_log_dir: str
     tv_no_tls: bool
+    tv_cert_file: object       # str | None
+    tv_key_file: object        # str | None
+    tv_host: str
     arm_kp: float
     arm_kv: object            # float | None  (explicit override)
     arm_kv_ratio: float
@@ -764,6 +767,9 @@ class TeleopConfig:
             diag_joints_hz=args.diag_joints_hz,
             diag_log_dir=args.diag_log_dir,
             tv_no_tls=args.tv_no_tls,
+            tv_cert_file=args.tv_cert_file,
+            tv_key_file=args.tv_key_file,
+            tv_host=args.tv_host,
             arm_kp=args.arm_kp,
             arm_kv=args.arm_kv,
             arm_kv_ratio=args.arm_kv_ratio,
@@ -1643,12 +1649,29 @@ def main() -> None:
     parser.add_argument(
         "--tv_no_tls",
         action=argparse.BooleanOptionalAction,
-        default=False,
+        default=None,
         help=(
-            "TeleVuer USB-local 明文 HTTP/WS（免证书）。"
-            "推荐：127.0.0.1 是 secure context，WebXR 可用；"
-            "且避开 vuer 0.0.60 HTTPS getSocketURI 丢端口 bug。"
-            "开启后请打开 http://127.0.0.1:8012/（不是 https）"
+            "使用 USB/adb loopback 明文 HTTP/WS；未提供证书时默认开启。"
+            "兼容旧启动命令中的 --tv_no_tls。"
+        ),
+    )
+    parser.add_argument(
+        "--tv_cert_file",
+        default=None,
+        help="显式 TLS 证书路径；必须与 --tv_key_file 同时提供",
+    )
+    parser.add_argument(
+        "--tv_key_file",
+        default=None,
+        help="显式 TLS 私钥路径；必须与 --tv_cert_file 同时提供",
+    )
+    parser.add_argument(
+        "--tv_host",
+        default="127.0.0.1",
+        help=(
+            "TeleVuer 监听地址，默认 127.0.0.1（配合 adb reverse 的 USB 通道）。"
+            "改为其他地址时必须同时提供 --tv_cert_file/--tv_key_file，"
+            "因为 WebXR 只在安全上下文中进入沉浸式会话。"
         ),
     )
     parser.add_argument(
@@ -1676,6 +1699,27 @@ def main() -> None:
         help="臂+手 body 重力补偿比例 0~1（默认 1.0=全补偿；0 关闭）",
     )
     args = parser.parse_args()
+    cert_supplied = bool(args.tv_cert_file or args.tv_key_file)
+    if bool(args.tv_cert_file) != bool(args.tv_key_file):
+        parser.error("--tv_cert_file and --tv_key_file must be provided together")
+    if args.tv_no_tls is None:
+        args.tv_no_tls = not cert_supplied
+    elif args.tv_no_tls and cert_supplied:
+        parser.error("--tv_no_tls cannot be combined with TLS certificate paths")
+    elif not args.tv_no_tls and not cert_supplied:
+        parser.error("--no-tv_no_tls requires --tv_cert_file and --tv_key_file")
+    if cert_supplied:
+        args.tv_cert_file = os.path.abspath(os.path.expanduser(args.tv_cert_file))
+        args.tv_key_file = os.path.abspath(os.path.expanduser(args.tv_key_file))
+        for _label, _path in (("certificate", args.tv_cert_file), ("private key", args.tv_key_file)):
+            if not os.path.isfile(_path):
+                parser.error(f"TeleVuer TLS {_label} does not exist: {_path}")
+    if args.tv_no_tls and args.tv_host not in ("127.0.0.1", "localhost", "::1"):
+        parser.error(
+            f"--tv_host {args.tv_host} requires --tv_cert_file/--tv_key_file; "
+            "plain HTTP is restricted to loopback"
+        )
+
     if os.environ.get("G1_DIAG_HEALTH", "").strip() in ("1", "true", "TRUE", "yes", "YES"):
         args.diag_health = True
 
@@ -1762,8 +1806,9 @@ def main() -> None:
             display_mode="pass-through",
             img_shape=cam_hw_override,
             binocular=False,
-            cert_file="" if cfg.tv_no_tls else None,
-            key_file="" if cfg.tv_no_tls else None,
+            cert_file="" if cfg.tv_no_tls else cfg.tv_cert_file,
+            key_file="" if cfg.tv_no_tls else cfg.tv_key_file,
+            host=cfg.tv_host,
             log_buttons=False,
             evt_log=False,
         )

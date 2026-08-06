@@ -1,15 +1,24 @@
-# 宇树 G1 额外依赖（与可跑通的 orcalab_lerobot 开发环境对齐）
-# 在已创建的 conda 环境中执行：
-#   conda env update -n <你的环境名> -f environment-unitree.yml
-# 或：
-#   conda install -c conda-forge "pinocchio>=3.4" "casadi>=3.6"
+# OrcaManipulation 交付环境的 Conda 二进制基线。
 #
-# 切勿使用：pip install pinocchio
-# （PyPI 上的 pinocchio==0.4.x 是无关假包，没有 pinocchio.casadi）
+# 不要用这个文件更新已有环境；请从空环境创建：
+#   conda env create -f environment-unitree.yml
+#   conda activate orcalab_lerobot
+#   bash scripts/install_runtime.sh
+#
+# NumPy / SciPy / Pinocchio / CasADi 由 Conda 独占管理。不得再通过 pip
+# 安装 pin、pinocchio、libpinocchio、casadi、numpy 或 scipy。
 
 name: orcalab_lerobot
 channels:
   - conda-forge
+  - defaults
 dependencies:
-  - pinocchio>=3.4
-  - casadi>=3.6
+  # 与已验证开发环境的实际 import 版本和构建一致。
+  - defaults::python=3.12.13=h4d16e0c_1
+  - defaults::pip=26.0.1=pyhc872135_1
+  - conda-forge::numpy=2.4.6=py312h33ff503_0
+  - defaults::scipy=1.15.3=py312h525edd1_0
+  - conda-forge::casadi=3.7.2=py312h5f23809_4
+  - conda-forge::libpinocchio=3.9.0=h1c65005_1
+  - conda-forge::pinocchio-python=3.9.0=py312h5447bb0_1
+  - conda-forge::pinocchio=3.9.0=h7900ff3_1

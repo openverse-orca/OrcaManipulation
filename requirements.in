@@ -1,0 +1,66 @@
+# Python 3.12 / Linux x86-64 runtime inputs (direct dependencies only).
+#
+# Regenerate the fully resolved lock with:
+#   uv pip compile requirements.in --constraint constraints.txt \
+#     --python-version 3.12 --python-platform x86_64-unknown-linux-gnu \
+#     --generate-hashes --emit-index-url --index-strategy unsafe-best-match \
+#     --no-emit-package numpy --no-emit-package scipy \
+#     --no-emit-package argparse --output-file requirements.txt
+#
+# numpy and scipy are listed so the resolver sees the validated versions, but they
+# are excluded from the lock because Conda owns those builds; scripts/install_runtime.sh
+# refuses to continue unless the Conda builds are already present. Pinocchio and
+# CasADi must never be installed from pip.
+#
+# argparse is excluded because params-proto declares it: on Python 3.12 the PyPI
+# argparse 1.4.0 backport shadows the standard library module and removes
+# argparse.BooleanOptionalAction, which the teleoperation entry point uses.
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Build tools for the three repository-owned source distributions.
+setuptools==82.0.1
+wheel==0.47.0
+
+# Conda-owned numerical ABI (must already be present).
+numpy==2.4.6
+scipy==1.15.3
+
+# OrcaGym 26.6.3 runtime dependencies. OrcaGym itself is installed separately
+# with --no-deps because its published NumPy/SciPy metadata does not describe
+# the validated delivery stack.
+aiofiles==25.1.0
+grpcio==1.66.1
+grpcio-tools==1.66.1
+gymnasium==1.2.1
+mujoco==3.7.0
+
+# LeRobot v2.1 dataset I/O used by this repository.
+av==17.0.1
+datasets==3.6.0
+huggingface-hub==0.34.4
+jsonlines==4.0.0
+packaging==26.0
+pillow==12.0.0
+pyarrow==24.0.0
+torch==2.7.1+cpu
+torchvision==0.22.1+cpu
+
+# Project runtime.
+h5py==3.16.0
+numba==0.65.1
+opencv-python==4.13.0.92
+pyyaml==6.0.3
+termcolor==3.3.0
+typing-extensions==4.15.0
+
+# Vendored TeleVuer and OpenPI client runtime dependencies. The vuer "all" extra
+# is deliberately not used: it pins aiohttp==3.10.5, while the validated stack
+# runs aiohttp 3.13.1. The extra only adds the three packages listed here.
+aiohttp==3.13.1
+aiohttp-cors==0.8.1
+dm-tree==0.1.10
+killport==1.2.0
+msgpack==1.1.2
+vuer==0.0.60
+websockets==16.0

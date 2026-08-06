@@ -8,11 +8,7 @@
 
 1. 请启动 OrcaLab 6.3，并加载与任务对应的布局（`g1_button.json` 或 `g1_tool.json`）。
 2. 请按采集文档配置相机端口并启动仿真（`localhost:50051`）。
-3. 请设置 `openpi_client` 路径：
-
-```bash
-export OPENPI_CLIENT_SRC=<openpi-client源码路径>/src
-```
+3. 请确认已按仓库根目录 README 执行 `bash scripts/install_runtime.sh`。
 
 ---
 
@@ -31,8 +27,6 @@ python serve_policy.py \
 ### 按钮任务推理
 
 ```bash
-export OPENPI_CLIENT_SRC=~/openpi/packages/openpi-client/src
-
 python eval_g1_omnipicker_lerobot.py \
     --task_config ../../dataCollection/common/example.yaml \
     --host localhost \
@@ -46,8 +40,6 @@ python eval_g1_omnipicker_lerobot.py \
 ### 工具任务推理
 
 ```bash
-export OPENPI_CLIENT_SRC=~/openpi/packages/openpi-client/src
-
 python eval_g1_omnipicker_tool_lerobot.py \
     --task_config ../../dataCollection/common/example.yaml \
     --host localhost \
@@ -64,6 +56,6 @@ python eval_g1_omnipicker_tool_lerobot.py \
 
 ## 故障排查
 
-**现象**：找不到 `openpi_client`。**处理**：请确认已设置 `OPENPI_CLIENT_SRC` 且路径下存在可导入的包。
+**现象**：找不到 `openpi_client`。**处理**：请在仓库根目录重新执行 `bash scripts/install_runtime.sh`，不要添加外部源码路径。
 
 **现象**：相机超时。**处理**：请按采集文档重新配置相机端口与 Recording。

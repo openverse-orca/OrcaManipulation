@@ -4,22 +4,19 @@
 
 ---
 
-## 依赖（相对仓库根目录 README 的补充）
+## 环境
 
-在已执行 `pip install -r requirements.txt` 之后，宇树路径还需要：
+宇树路径不需要额外 checkout。请先在仓库根目录按 README 创建全新环境并执行：
 
 ```bash
-# 1) Pinocchio + CasADi（遥操 / 脚本化均需要；禁止 pip install pinocchio）
-pip uninstall -y pinocchio 2>/dev/null
-conda install -c conda-forge "pinocchio>=3.4" "casadi>=3.6"
-python -c "import pinocchio as pin; from pinocchio import casadi as cpin; print(pin.__version__)"
-
-# 2) TeleVuer 遥操（仅遥操作采集需要；脚本化可跳过）
-# 将 <xr_teleoperate> 换成 Unitree xr_teleoperate 仓库本地路径
-pip install -e <xr_teleoperate>/teleop/televuer
+conda activate orcalab_lerobot
+bash scripts/install_runtime.sh
 ```
 
-若出现 `No module named 'pinocchio'` 或 `cannot import name 'casadi' from 'pinocchio'`，几乎都是未装 conda-forge 真库，或误装了 PyPI 假包 `pinocchio==0.4.x`。请按上面步骤重装后自检。
+该脚本安装仓内 TeleVuer，并验证 Conda Pinocchio 3.9.0、CasADi 3.7.2 与 pinocchio.casadi。不要手工安装 pin/pinocchio。
+
+G1 的 IK 模型（`src/examples/dataCollection/assets/g1/`）随仓库提供，无需另外下载。
+首次启动会在 `src/examples/dataCollection/_ik_cache/` 生成约化模型缓存，耗时数秒。
 
 ---
 
@@ -90,11 +87,17 @@ python -u g1_pick_collection_tele_lerobot.py \
     --tv_ee_dx 0.03
 ```
 
-请等到终端打印出访问地址后再继续。关闭加密传输（`--tv_no_tls`）时，地址形如：
+请等到终端打印出访问地址后再继续。USB/adb reverse 模式默认只监听
+`127.0.0.1` 并使用 HTTP/WS；`--tv_no_tls` 仅为兼容旧命令，可以省略。地址形如：
 
 ```text
 http://127.0.0.1:8012/
 ```
+
+如需改走无线连接（头显直接访问本机 IP），必须同时传入
+`--tv_host <本机IP>`、`--tv_cert_file <cert.pem>` 与 `--tv_key_file <key.pem>`：
+WebXR 只在安全上下文中进入沉浸式会话，所以非回环地址必须启用 TLS。
+程序不会搜索环境变量、HOME 或源码目录中的证书。
 
 脚本还会打印操作提示。正常进入采集后，终端会周期性出现「正在采集第 N 集」。若只有连接类提示而没有该信息，请停止并检查终端报错。
 

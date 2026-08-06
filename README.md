@@ -11,74 +11,62 @@
 
 ---
 
-## 兼容环境
+## 已验证交付基线
 
-| 组件 | 版本 / 要求 |
-|------|-------------|
-| OrcaLab | **6.3** |
-| Python | **3.12 及以上** |
-| `orca-gym` | 推荐与 OrcaLab 6.3 配套的 **26.6.x** |
-| `lerobot` | **使用仓库内置的 `third_party/lerobot`**（包含本项目所需兼容性修改，请按下方步骤安装） |
-| `gymnasium` | **1.2.1**（与 `orca-gym` 一致） |
-| 宇树 IK | **Pinocchio ≥3.4 + CasADi ≥3.6**（conda-forge；见下方，与开发环境对齐） |
-| GPU 视频编码 | NVIDIA GPU，驱动及 PyAV/FFmpeg 需支持 `av1_nvenc` |
+此分支面向 **Linux x86-64**，以当前稳定运行环境的实际导入结果为准：
+
+| 组件 | 精确版本 |
+|------|----------|
+| OrcaLab / OrcaGym | 6.3 / 26.6.3 |
+| Python | 3.12.13 |
+| NumPy / SciPy | 2.4.6 / 1.15.3（Conda 管理） |
+| Pinocchio / CasADi | 3.9.0 / 3.7.2（Conda 管理） |
+| Gymnasium / MuJoCo | 1.2.1 / 3.7.0 |
+| PyTorch | 2.7.1+cpu，torchvision 0.22.1+cpu |
+| LeRobot / TeleVuer / OpenPI client | 仓库内 `third_party/` 固定源码 |
+| 宇树 IK 模型 | 仓库内 `src/examples/dataCollection/assets/g1/` |
+| 视频 | OpenCV 4.13.0.92 QT5、PyAV 17.0.1、`av1_nvenc` |
+
+系统仍需提供 OrcaLab 6.3、NVIDIA 驱动/GPU 和 ADB（TeleVuer 遥操）。
+三份场景 JSON 还引用 OrcaLab 资产命名空间
+`assets/e071469a36d3c8aa/...` 与 `assets/13951baeb514b4b9/...`；
+这些商业资产不在 Git 仓库中，交付机的 OrcaLab 资产库必须已包含它们。
+
+宇树 IK 所需的 G1 描述文件（`g1_body29_hand14.urdf` 与它引用的 49 个 STL）
+已随仓库提供，来源为 Unitree `unitree_ros` 的 `g1_description`（BSD-3-Clause，
+见该目录下的 `LICENSE`）。Pinocchio 建模会解析全部网格，缺一个就无法启动，
+所以不要裁剪该目录。
 
 ---
 
 ## 环境安装
 
-请在仓库根目录执行（会安装自带的 `third_party/lerobot`）：
+必须新建环境，不要在已有环境上执行 `conda env update`，也不要复制开发机的
+`site-packages`：
 
 ```bash
-conda activate orcalab_lerobot   # 或你自己的 conda 环境名
-cd OrcaManipulation
-pip install -r requirements.txt
+cd /path/to/OrcaManipulation
+conda env create -f environment-unitree.yml
+conda activate orcalab_lerobot
+bash scripts/install_runtime.sh
 ```
 
-### 宇树 G1 额外步骤（必需）
+`install_runtime.sh` 会先验证 Conda 管理的数值 ABI，再按哈希锁安装 pip wheel；
+`orca-gym==26.6.3` 因发布元数据与已验证 NumPy/SciPy 不一致而有意使用
+`--no-deps`；最后从本仓库以非 editable 方式安装 LeRobot、TeleVuer 和
+OpenPI client，并执行数据集写入、编码器、GUI 与来源路径自检。
 
-宇树遥操与脚本化采集都会加载 `G1_29_ArmIK`（Pinocchio + CasADi）。  
-**请用 conda-forge 安装真库**（与可跑通的开发环境一致：pinocchio 3.9 / casadi 3.7）：
+禁止单独执行 `pip install pin`、`pip install pinocchio`、`pip install casadi`
+或普通的 `pip install -r requirements.txt`。它们可能让 cmeel/PyPI 文件覆盖
+Conda 的 Pinocchio ABI。安装成功后的统一复检命令是：
 
 ```bash
-# 若曾误执行 pip install pinocchio，先卸掉 PyPI 假包
-pip uninstall -y pinocchio
-
-conda install -c conda-forge "pinocchio>=3.4" "casadi>=3.6"
-# 等价：conda env update -n <你的环境名> -f environment-unitree.yml
+python scripts/verify_environment.py
 ```
 
-自检（须全部成功）：
-
-```bash
-python -c "import pinocchio as pin; import casadi; from pinocchio import casadi as cpin; print(pin.__version__)"
-```
-
-**禁止** `pip install pinocchio`：PyPI 上的 `pinocchio==0.4.x` 是无关包，会出现  
-`ImportError: cannot import name 'casadi' from 'pinocchio'`。  
-仅当无法使用 conda 时，才用 PyPI 包名 **`pin`**（不是 `pinocchio`）：`pip install "pin>=3.4" "casadi>=3.6"`。
-
-TeleVuer 遥操还需安装 Unitree `televuer`（脚本化可不装），见 [docs/unitree_g1_collection.md](docs/unitree_g1_collection.md)。
-
-安装完成后若出现以下类似提示，可以忽略：
-
-```
-lerobot ... requires gymnasium<1.0.0, but you have gymnasium 1.2.1
-```
-
-本项目只使用 lerobot 的数据集读写能力，不依赖其 gymnasium 集成；运行时以 `orca-gym` 所需版本为准。`requirements.txt` 已显式锁定 `gymnasium==1.2.1`。若个别环境把 gymnasium 降级了，请执行：
-
-```bash
-pip install gymnasium==1.2.1
-```
-
-`third_party/lerobot` 基于 LeRobot 0.3.4，并包含本项目所需的兼容性修改。修改说明见 [third_party/README.md](third_party/README.md)。
-
-在线推理额外依赖 `openpi_client`，请在运行推理脚本前设置：
-
-```bash
-export OPENPI_CLIENT_SRC=<openpi-client源码路径>/src
-```
+`requirements.in` 是人工维护的顶层输入，`requirements.txt` 是 Linux/Python
+3.12 的哈希锁；正常交付安装只读取后者。仓内依赖的来源与本地修改见
+[third_party/README.md](third_party/README.md)。
 
 ---
 
@@ -87,10 +75,15 @@ export OPENPI_CLIENT_SRC=<openpi-client源码路径>/src
 ```text
 OrcaManipulation/
 ├── README.md
-├── requirements.txt              # pip 依赖（含宇树 pin/casadi；勿装假包 pinocchio）
-├── environment-unitree.yml       # 宇树 Pinocchio/CasADi（conda-forge，推荐）
+├── requirements.in               # pip 顶层输入
+├── requirements.txt              # 含哈希的 pip 锁
+├── constraints.txt               # 传递依赖锁定输入（仅生成锁时使用）
+├── environment-unitree.yml       # Conda 数值 ABI 精确构建
+├── scripts/                      # 安装与环境验证
 ├── third_party/
-│   └── lerobot/                  # LeRobot 依赖
+│   ├── lerobot/                  # LeRobot 数据集运行时
+│   ├── televuer/                 # TeleVuer XR 运行时
+│   └── openpi-client/            # OpenPI 推理客户端
 ├── docs/
 │   ├── g1_omnipicker_collection.md   # 智元 · 采集
 │   ├── g1_omnipicker_inference.md    # 智元 · 推理
@@ -108,6 +101,7 @@ OrcaManipulation/
     ├── task/
     └── examples/
         ├── dataCollection/
+        │   ├── assets/g1/              # 宇树 G1 URDF + STL（IK 必需）
         │   ├── common/                 # 共用 example.yaml / scripted 基座
         │   ├── g1_omnipicker/          # 智元采集入口与布局
         │   └── unitree_g1/             # 宇树采集入口与布局

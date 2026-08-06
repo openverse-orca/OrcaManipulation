@@ -39,17 +39,6 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# openpi_client 路径：优先 OPENPI_CLIENT_SRC 环境变量，其次探测常见位置
-_openpi_candidates = [
-    os.environ.get("OPENPI_CLIENT_SRC", ""),
-    os.path.expanduser("~/openpi/packages/openpi-client/src"),
-    os.path.expanduser("~/openpi-orca/packages/openpi-client/src"),
-]
-for _openpi_root in _openpi_candidates:
-    if _openpi_root and os.path.isdir(_openpi_root) and _openpi_root not in sys.path:
-        sys.path.insert(0, _openpi_root)
-        break
-
 from conf import g1_pick_conf
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from dataStorage.g1_pick_data_storage import G1PickLeRobotStorage
