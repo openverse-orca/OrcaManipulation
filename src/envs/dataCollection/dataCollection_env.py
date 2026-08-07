@@ -83,7 +83,7 @@ class DataCollectionEnv(OrcaGymLocalEnv):
         self.nq = self.model.nq
         self.nv = self.model.nv
 
-        self.set_default_joint_values(self.default_joint_values)    
+        self.set_default_joint_values(self.default_joint_values)
         self.mj_forward()
         self._render_time_step = 0
         obs = self._get_obs().copy()

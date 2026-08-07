@@ -531,6 +531,8 @@ class DataCollectionManager:
             self._clear_studio_override_ctrls()
         self.env.set_ctrl(self.ctrl)
         self.env.mj_forward()
+        _saved_finger_ctrl = {i: self.ctrl[i] for i in range(len(self.ctrl))
+                              if 'hand_' in str(getattr(self.env.model, 'actuator_id2name', lambda x: '')(i)).lower()}
 
         for controller in self.controllers:
             controller.reset()
@@ -551,6 +553,22 @@ class DataCollectionManager:
                     self._clear_studio_override_ctrls()
                 self._run_pre_fluid_step_hooks()
                 action = self.run_controllers()
+                # 手指：扳机释放时用 init_ctrl；扳机按下时在 init_ctrl(弯)~0(直)间插值，不出界
+                _lv = _rv = 0.0
+                _trig_path = os.environ.get("MJC_PBD_GRIP_TRIGGER_PATH", "")
+                if _trig_path:
+                    try:
+                        with open(_trig_path) as _f:
+                            _lv, _rv = map(float, _f.read().split())
+                    except Exception:
+                        pass
+                for i, init_val in _saved_finger_ctrl.items():
+                    if i >= len(action):
+                        continue
+                    _is_left = 'left_hand_' in str(getattr(self.env.model, 'actuator_id2name', lambda x: '')(i)).lower()
+                    _trig = _lv if _is_left else _rv
+                    # 扳机按下=抓握(更弯)；init_val×(1+0.5×trig)：松=基础弯 按=强弯
+                    action[i] = init_val * (1.0 + _trig * 0.5)
             t1 = time.perf_counter()
             should_step = True
             if self._fluid_coupling is not None:

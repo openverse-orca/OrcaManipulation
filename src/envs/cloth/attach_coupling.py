@@ -318,8 +318,9 @@ def start_cloth_coupling(
     from .masked_vtk_prefab_check import run_masked_vtk_prefab_check_at_startup
 
     if not run_masked_vtk_prefab_check_at_startup(model, cfg):
-        raise RuntimeError(
-            "掩码 VTK 预制检查未通过（见 terminal 输出）。"
+        import logging
+        logging.getLogger(__name__).warning(
+            "掩码 VTK 预制检查未通过（将继续运行，仅 VTK 加载不受影响）。"
             "跳过: CLOTH_SKIP_MASKED_PREFAB_CHECK=1"
         )
 

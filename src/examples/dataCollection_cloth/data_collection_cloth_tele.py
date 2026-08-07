@@ -309,7 +309,7 @@ def main():
     orca_logger.info("Creating data collection manager")
     mjc_prefix = (args.mjc_agent_prefix or "").strip() or None
     if mjc_prefix is None and agent_name == "g1_omnipicker":
-        mjc_prefix = "g1_omnipicker"
+        mjc_prefix = "g1_omnipicker_usda"
         orca_logger.info(f"Auto mjc-agent-prefix for g1_omnipicker: {mjc_prefix}")
     elif mjc_prefix is None and level == "test20260508" and agent_name == "openloong":
         mjc_prefix = "openloong_gripper_2f85_fix_base_usda"
