@@ -1,27 +1,28 @@
 # OpenPI 部署指南
 
-本文档面向需要基于本仓库采集数据、训练策略并部署 RTC 推理服务的工程师。本仓库（OrcaManipulation）负责机器人数据采集与在线推理客户端，策略训练与服务端推理由 [Physical Intelligence openpi](https://github.com/Physical-Intelligence/openpi) 框架承担。
+本文档面向需要基于本仓库采集数据、训练策略并部署推理服务的工程师。本仓库（OrcaManipulation）负责机器人数据采集与在线推理客户端，策略训练与推理服务由 [Physical Intelligence openpi](https://github.com/Physical-Intelligence/openpi) 框架承担。
+
+**如需启用 RTC 异步推理**（降低策略执行延迟），请在完成本文档主线流程后，参阅第 [9. RTC 异步推理（可选）](#9-rtc-异步推理可选) 节。
 
 ---
 
-## 概述
+## 主线部署流程
 
 ```
-OrcaManipulation           openpi（独立环境）
-─────────────              ────────────────────
+OrcaManipulation                    openpi（独立环境）
+─────────────────                   ──────────────────────
 数据采集（LeRobot v2.1）
-        │
-        ▼ HF_LEROBOT_HOME/<dataset>/
-                          训练 train.py
-                                │
-                                ▼ checkpoints/
-                          openpi-rtc-serve（RTC 推理服务）
-                                │ WebSocket
-        ▼
+        │ HF_LEROBOT_HOME/<dataset>
+        └─────────────────────────► 训练 train.py
+                                          │ checkpoints/
+                                          ▼
+                                    推理服务 serve_policy.py
+                                          │ WebSocket :8010
+        ◄─────────────────────────────────┘
 eval 推理脚本（本仓库）
 ```
 
-两套环境**不共享** Python 虚拟环境：采集与推理使用 `orcalab_lerobot`（Conda），训练与服务端使用 openpi 的 uv 环境。
+两套环境**不共享** Python 虚拟环境：采集与推理客户端使用 `orcalab_lerobot`（Conda），训练与推理服务使用 openpi 的 uv 环境。
 
 ---
 
@@ -41,7 +42,7 @@ eval 推理脚本（本仓库）
 
 ### 2.1 拉取并锁定版本
 
-> 请务必锁定到以下 commit，RTC 扩展包与该版本的内部 API 严格绑定，升级上游版本会导致服务启动失败。
+> 请务必锁定到以下 commit。本仓库的 RTC 扩展包（第 9 节）与该版本的内部 API 严格绑定；即便不使用 RTC，也建议固定版本以保证训练与推理行为的可复现性。
 
 ```bash
 git clone --recurse-submodules https://github.com/Physical-Intelligence/openpi.git
@@ -63,7 +64,7 @@ pip install uv
 GIT_LFS_SKIP_SMUDGE=1 uv sync
 ```
 
-> `GIT_LFS_SKIP_SMUDGE=1` 用于跳过 LeRobot 的 LFS 文件拉取。
+> `GIT_LFS_SKIP_SMUDGE=1` 用于跳过 LeRobot 子模块的 LFS 文件拉取。
 
 验证 JAX 可见 GPU：
 
@@ -71,29 +72,13 @@ GIT_LFS_SKIP_SMUDGE=1 uv sync
 uv run python -c "import jax; print(jax.devices())"
 ```
 
-### 2.4 安装 openpi-rtc RTC 扩展包
-
-将本仓库 `third_party/openpi-rtc/` 复制到 openpi 目录下，然后安装：
-
-```bash
-cp -r /path/to/OrcaManipulation/third_party/openpi-rtc /path/to/openpi/packages/openpi-rtc
-cd /path/to/openpi
-uv pip install -e packages/openpi-rtc
-```
-
-验证安装与兼容性：
-
-```bash
-uv run python -c "from openpi_rtc import check_openpi_compat; check_openpi_compat()"
-```
-
-输出 `兼容性校验通过` 则表示环境正确。
+正常输出类似 `[CudaDevice(id=0)]`。
 
 ---
 
 ## 3. 环境变量说明
 
-在 openpi 环境中运行训练或服务时，按需配置以下环境变量。
+在 openpi 环境中运行训练或推理服务时，按需配置以下环境变量。
 
 | 变量 | 作用 | 示例值 |
 |---|---|---|
@@ -103,9 +88,9 @@ uv run python -c "from openpi_rtc import check_openpi_compat; check_openpi_compa
 | `XLA_PYTHON_CLIENT_PREALLOCATE` | 推理时关闭 JAX 显存预分配（推荐设为 `false`） | `false` |
 | `XLA_PYTHON_CLIENT_ALLOCATOR` | 推理时使用平台分配器（推荐与上条同时使用） | `platform` |
 | `CUDA_VISIBLE_DEVICES` | 指定使用的 GPU 编号 | `0` 或 `1` |
-| `WANDB_MODE` | 控制 Weights & Biases 日志；离线训练时可设为 `offline` 或 `disabled` | `offline` |
+| `WANDB_MODE` | 控制 Weights & Biases 日志；离线环境可设为 `offline` 或 `disabled` | `offline` |
 
-建议在 shell 配置或训练启动脚本中统一设置，避免每次手动指定。
+建议在训练启动脚本中统一设置，避免每次手动指定。
 
 ---
 
@@ -131,7 +116,7 @@ uv run python -c "from openpi_rtc import check_openpi_compat; check_openpi_compa
 
 ### 已知问题：本地数据集加载
 
-上游 openpi（`981483d`）的 `src/openpi/training/data_loader.py` 默认从 HuggingFace Hub 解析数据集元信息，对纯本地数据集会报错。
+上游 openpi（`981483d`）的 `src/openpi/training/data_loader.py` 默认从 HuggingFace Hub 解析元信息，对纯本地数据集会报连接错误。
 
 请在 openpi 工作区手动应用以下补丁（一次性操作）：
 
@@ -220,37 +205,31 @@ class MyRobotInputs(transforms.DataTransformFn):
     action_horizon: int = 50  # 与 TrainConfig.model.action_horizon 一致
 
     def __call__(self, data: dict) -> dict:
-        # 从数据集键名映射到模型输入键名
-        # 模型标准输入键：state, images, prompt, (actions - 仅训练时)
-        # 'state': 关节角等本体感知信息，shape [action_dim]
-        # 'images': dict，键为相机名称，值为 uint8 RGB 图像
-        # 'prompt': 字符串，任务语言指令
+        # 模型标准输入键：state, images, prompt, actions（仅训练时）
         return {
-            "state": data["observation.state"],
+            "state": data["observation.state"],   # shape [action_dim]
             "images": {
                 "cam_head": data["observation.images.cam_head"],
                 "cam_wrist_r": data["observation.images.cam_wrist_r"],
             },
             "prompt": data.get("prompt", ""),
-            # 训练时需要提供 actions
-            "actions": data["action"][:self.action_horizon],
+            "actions": data["action"][:self.action_horizon],  # 训练时提供
         }
 ```
 
-**`XxxOutputs`（推理时使用）**：把模型输出的 `actions` 数组，映射回机器人控制格式：
+**`XxxOutputs`（推理时使用）**：把模型输出的 `actions` 数组映射回机器人控制格式：
 
 ```python
 @dataclasses.dataclass(frozen=True)
 class MyRobotOutputs(transforms.DataTransformFn):
     def __call__(self, data: dict) -> dict:
         # data["actions"]: shape [action_horizon, action_dim]
-        # 按机器人协议返回所需格式
         return {"actions": data["actions"]}
 ```
 
 ### 5.2 定义数据集配置（DataConfigFactory）
 
-在 `config.py` 中继承 `DataConfigFactory`，指定数据集 repo_id 和变换：
+在 `config.py` 中继承 `DataConfigFactory`，指定数据集 `repo_id` 和变换：
 
 ```python
 @dataclasses.dataclass(frozen=True)
@@ -275,22 +254,21 @@ class MyRobotDataConfig(DataConfigFactory):
 
 | 字段 | 说明 | 典型值 |
 |---|---|---|
-| `name` | 配置名称，全局唯一，训练和推理时用 `--config` 指定 | `"my_robot_task_lora"` |
-| `model` | 模型结构配置，含 `action_dim`（动作维度）、`action_horizon`（动作块长度） | 见下方 |
+| `name` | 配置名称，全局唯一，训练和推理时通过 `--config` 指定 | `"pi05_my_robot_lora"` |
+| `model` | 模型结构配置，含 `action_dim`（动作维度）、`action_horizon`（动作块长度） | 见下方示例 |
 | `data` | DataConfigFactory 实例 | `MyRobotDataConfig(repo_id="...")` |
-| `batch_size` | 训练批大小（LoRA 推荐 32，全量推荐 16 或更小） | `32` |
+| `batch_size` | 训练批大小（LoRA 推荐 32，全量微调推荐 16 或更小） | `32` |
 | `num_train_steps` | 总训练步数 | `30_000` |
-| `freeze_filter` | 冻结的参数过滤器（全量微调时留空，LoRA 时通过模型 config 获取） | 见下方 |
-| `exp_name` | 实验名，checkpoints 保存在 `checkpoints/<name>/<exp_name>/` 下 | CLI 传入 |
+| `freeze_filter` | 冻结参数过滤器（全量微调时留空，LoRA 时通过模型 config 获取） | 见下方示例 |
 
-**π₀.₅ LoRA 微调示例**：
+**π₀.₅ LoRA 微调示例**（请根据实际机器人修改 `action_dim` 和 `action_horizon`）：
 
 ```python
 TrainConfig(
     name="pi05_my_robot_lora",
     model=pi0_config.Pi0Config(
         pi05=True,
-        action_dim=28,          # 根据实际关节数修改
+        action_dim=28,          # 根据关节数修改
         action_horizon=50,      # 根据任务节奏修改
         paligemma_variant="gemma_2b_lora",
         action_expert_variant="gemma_300m_lora",
@@ -305,17 +283,15 @@ TrainConfig(
         paligemma_variant="gemma_2b_lora",
         action_expert_variant="gemma_300m_lora",
     ).get_freeze_filter(),
-    # LoRA 微调关闭 EMA
-    ema_decay=None,
+    ema_decay=None,  # LoRA 微调关闭 EMA
 )
 ```
 
-最后把该 `TrainConfig` 对象追加到 `_CONFIGS` 列表（文件末尾，`if len(...)` 校验之前）：
+将该对象追加到 `_CONFIGS` 列表末尾（`if len(...)` 校验语句之前）：
 
 ```python
 _CONFIGS = [
     ...
-    # 你的自定义配置
     TrainConfig(name="pi05_my_robot_lora", ...),
 ]
 ```
@@ -324,7 +300,7 @@ _CONFIGS = [
 
 ## 6. 计算归一化统计
 
-在开始训练之前，必须先计算数据集的归一化统计，以便模型对 state 和 action 正确归一化：
+训练之前必须先计算数据集的归一化统计：
 
 ```bash
 cd /path/to/openpi
@@ -351,17 +327,14 @@ uv run scripts/train.py pi05_my_robot_lora \
 ```
 
 - `--overwrite`：若已存在同名实验目录则覆盖，重跑时加此参数。
-- checkpoint 自动保存在 `checkpoints/pi05_my_robot_lora/my_experiment/<step>/`。
-- 训练进度默认同步到 Weights & Biases，离线环境请设置 `WANDB_MODE=offline`。
-- 显存使用量超出时，可降低 `batch_size` 或缩减 `action_horizon`。
+- checkpoint 保存在 `checkpoints/pi05_my_robot_lora/my_experiment/<step>/`。
+- 显存不足时，可降低 `batch_size` 或缩减 `action_horizon`。
 
 ---
 
 ## 8. 启动推理服务
 
-训练完成后，启动策略服务器等待来自本仓库推理脚本的连接。
-
-### 8.1 普通推理模式
+训练完成后，启动策略服务器，等待本仓库推理脚本的连接。
 
 ```bash
 cd /path/to/openpi
@@ -376,9 +349,50 @@ uv run scripts/serve_policy.py \
     --policy.dir=checkpoints/pi05_my_robot_lora/my_experiment/29999
 ```
 
-### 8.2 RTC 异步推理模式（推荐）
+服务器就绪后，日志会显示：
 
-RTC（Real-Time Control）模式通过软前缀伪逆引导，实现当前动作块执行期间提前计算下一块，大幅降低实际控制延迟。需要先按第 2.4 节安装 `openpi-rtc`。
+```
+Creating server (host: ..., ip: ...)
+server listening on 0.0.0.0:8010
+```
+
+此时可在本仓库的 eval 脚本中指定 `--host localhost --port 8010` 发起推理。
+
+---
+
+## 9. RTC 异步推理（可选）
+
+如需降低策略执行延迟，可启用 RTC（Real-Time Control）模式。RTC 通过软前缀伪逆引导，在当前动作块执行期间提前计算下一块，从而消除动作等待间隔。
+
+> 此步骤为可选。不使用 RTC 时，第 8 节的普通推理服务已可满足基本需求。
+
+### 9.1 安装 openpi-rtc
+
+将本仓库 `third_party/openpi-rtc/` 安装到 openpi 环境中：
+
+```bash
+# 将 openpi-rtc 目录拷贝到 openpi 的 packages/ 下
+cp -r /path/to/OrcaManipulation/third_party/openpi-rtc /path/to/openpi/packages/openpi-rtc
+
+# 在 openpi 的 pyproject.toml 中声明为 workspace 依赖
+# 在 [project] dependencies 列表中加入 "openpi-rtc"
+# 在 [tool.uv.sources] 中加入 openpi-rtc = { workspace = true }
+
+# 重新同步环境
+cd /path/to/openpi
+uv sync
+```
+
+验证安装：
+
+```bash
+uv run python -c "from openpi_rtc import check_openpi_compat; check_openpi_compat()"
+# 应输出：[openpi-rtc] 兼容性校验通过
+```
+
+### 9.2 启动 RTC 推理服务
+
+使用 `openpi-rtc-serve` 替代第 8 节的 `serve_policy.py`，其余参数（config、dir、port）完全一致：
 
 ```bash
 cd /path/to/openpi
@@ -396,6 +410,12 @@ uv run openpi-rtc-serve \
     --policy.dir=checkpoints/pi05_my_robot_lora/my_experiment/29999
 ```
 
+服务器就绪后，日志会额外显示：
+
+```
+RTC 已启用：H=50 s_min=25 d_init=4 guidance=10.0 steps=10 protocol_v=1
+```
+
 #### RTC 参数说明
 
 | 参数 | 默认值 | 说明 |
@@ -408,53 +428,28 @@ uv run openpi-rtc-serve \
 | `--rtc-initial-delay-steps` | `4` | 初始推理延迟先验值（策略 action 步数） |
 | `--rtc-delay-history-size` | `10` | 延迟历史窗口大小 |
 
-服务器成功启动后，日志会显示 `RTC 已启用` 并列出当前参数，随后进入等待状态：
+### 9.3 RTC 推理协议
 
-```
-RTC 已启用：H=50 s_min=25 d_init=4 guidance=10.0 steps=10 protocol_v=1
-启动服务器（host: ..., ip: ..., port: 8010）
-```
+RTC 服务兼容普通推理请求（不携带 `prev_actions` 时行为与第 8 节完全一致）。
 
----
-
-## 9. 与本仓库 eval 脚本对接
-
-本仓库的 eval 脚本（`src/examples/inference/`）使用 `third_party/openpi-client` 通过 WebSocket 与上述推理服务通信。
-
-### 9.1 普通推理协议
-
-发送标准 obs 字典（含 `state`、`images`、`prompt`），服务器返回 `actions`：
-
-```python
-from openpi_client import websocket_client_policy as _wsp
-client = _wsp.WebsocketClientPolicy(host="localhost", port=8010)
-response = client.infer(obs)
-# response["actions"]: shape [action_horizon, action_dim]
-```
-
-### 9.2 RTC 推理协议
-
-在 obs 中额外携带 `prev_actions` 和 `inference_delay` 字段，服务器走 RTC 软前缀引导路径：
+启用 RTC 时，eval 脚本在 obs 中额外传入以下字段：
 
 ```python
 obs_rtc = {
     **obs,
-    "prev_actions": prev_chunk_tail,  # shape [n, action_dim], 1 ≤ n ≤ action_horizon
+    "prev_actions": prev_chunk_tail,  # shape [n, action_dim]，1 ≤ n ≤ action_horizon
     "inference_delay": delay_steps,   # int，推理期间预计已执行的步数
 }
 response = client.infer(obs_rtc)
+# response["actions"]: shape [action_horizon, action_dim]
 ```
 
-连接建立时，服务器握手 metadata 中包含 `rtc` 段，可用于校验版本与参数：
+连接建立时握手 metadata 中包含 `rtc` 段，可用于校验参数：
 
 ```python
 metadata = client.get_server_metadata()
-rtc_meta = metadata["rtc"]
-# rtc_meta["protocol_version"] == 1
-# rtc_meta["action_horizon"]、rtc_meta["min_execution_horizon"] 等
+assert metadata["rtc"]["protocol_version"] == 1
 ```
-
-`prev_actions` 字段为当前正在执行的旧动作块中**尚未执行**的尾段；`inference_delay` 为发出推理请求时估计的延迟步数（满足 `0 ≤ inference_delay ≤ len(prev_actions)`）。
 
 ---
 
@@ -462,8 +457,8 @@ rtc_meta = metadata["rtc"]
 
 **显存不足（OOM）**
 
-- 训练时：降低 `batch_size`（LoRA 从 32 降到 16）；或降低 `XLA_PYTHON_CLIENT_MEM_FRACTION`（如 0.85）。
-- 推理时：确认 `XLA_PYTHON_CLIENT_PREALLOCATE=false` 已设置；检查是否有其他进程占用 GPU 显存（`nvidia-smi`）。
+- 训练时：降低 `batch_size`（LoRA 从 32 降到 16），或降低 `XLA_PYTHON_CLIENT_MEM_FRACTION`（如 0.85）。
+- 推理时：确认 `XLA_PYTHON_CLIENT_PREALLOCATE=false` 已设置，并用 `nvidia-smi` 检查是否有其他进程占用显存。
 
 **找不到 TrainConfig 名称**
 
@@ -471,7 +466,7 @@ rtc_meta = metadata["rtc"]
 ValueError: Config 'xxx' not found.
 ```
 
-请确认：①配置已追加到 `_CONFIGS` 列表；②配置名称拼写与 `--config` 参数完全一致（区分大小写）；③已重新安装或重新运行（`uv run` 会自动使用更新后的源码）。
+请确认：① 配置已追加到 `_CONFIGS` 列表；② 配置名称拼写与 `--policy.config` 参数完全一致（区分大小写）。
 
 **本地数据集报 Hub 连接错误**
 
@@ -487,15 +482,15 @@ requests.exceptions.ConnectionError: ...
 [openpi-rtc] 兼容性校验失败：...
 ```
 
-表示当前 openpi 版本与 `openpi-rtc` 不匹配。请确认：
+请确认 openpi 已锁定到正确版本：
 
 ```bash
 cd /path/to/openpi
 git rev-parse --short HEAD  # 应输出 981483d
 ```
 
-若不匹配，请执行 `git checkout 981483d` 并重新 `uv sync`。
+若不匹配，请执行 `git checkout 981483d && uv sync`。
 
 **推理时机械臂动作抖动或跟踪发散**
 
-请确认 eval 脚本使用开环积分（每步以上一步输出的绝对位置为基础叠加 Δq），而非每步用实测关节角重基。若使用 RTC 模式，请检查 `inference_delay` 的估计逻辑——过大的估计值会使引导权重异常。
+请确认 eval 脚本使用开环积分（每步以上一步输出的绝对位置为基础叠加 Δq），而非每步用实测关节角重基。若使用 RTC 模式，请检查 `inference_delay` 的估计逻辑。
