@@ -10,6 +10,7 @@
 | `lerobot/` | Hugging Face LeRobot 0.3.4 | Apache-2.0 | `0.3.4+orca.1` |
 | `televuer/` | Unitree xr_teleoperate `766de45e74373ae0ea66321d942ce538385655a5` | MIT | `4.0.0+orca.1` |
 | `openpi-client/` | Physical Intelligence openpi `981483dca0fd9acba698fea00aa6e52d56a66c58` 的 `packages/openpi-client` | Apache-2.0 | `0.1.0+orca.1` |
+| `openpi-rtc/` | 本项目自研，基于 openpi `981483dca0fd9acba698fea00aa6e52d56a66c58`，提供 RTC 软前缀伪逆引导服务端扩展 | Apache-2.0 | `0.1.0` |
 
 LeRobot 仅保留本项目使用的数据集运行依赖，并包含以下兼容修改：
 
@@ -29,3 +30,7 @@ TeleVuer 的交付修改：
 - 私钥和证书不进入仓库。
 
 OpenPI client 只包含远程策略通信客户端，不包含策略服务、模型或 checkpoint。
+
+OpenPI RTC（`openpi-rtc/`）是本项目自研的服务端扩展，在不修改任何 openpi 上游源码的
+前提下为 Pi0/Pi0.5 策略服务器启用 RTC 软前缀伪逆引导推理。需与宿主 openpi 环境（锁定
+commit `981483d`）配合使用，详见 `docs/openpi_deployment.md`。

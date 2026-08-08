@@ -9,6 +9,8 @@
 
 请按上表进入对应文档查看完整流程。下文说明两套机器人共用的环境配置与数据格式。
 
+如需基于本仓库采集的数据进行策略训练，并部署 RTC 异步推理服务，请参阅 [docs/openpi_deployment.md](docs/openpi_deployment.md)。
+
 ---
 
 ## 已验证交付基线
@@ -88,7 +90,8 @@ OrcaManipulation/
 │   ├── g1_omnipicker_collection.md   # 智元 · 采集
 │   ├── g1_omnipicker_inference.md    # 智元 · 推理
 │   ├── unitree_g1_collection.md      # 宇树 · 采集
-│   └── unitree_g1_inference.md       # 宇树 · 推理
+│   ├── unitree_g1_inference.md       # 宇树 · 推理
+│   └── openpi_deployment.md          # OpenPI 训练与 RTC 推理部署
 ├── pyproject.toml
 └── src/
     ├── conf/

@@ -1,0 +1,21 @@
+[project]
+name = "openpi-rtc"
+version = "0.1.0"
+description = "RTC (Real-Time Control) server-side extension for OpenPI Pi0/Pi0.5"
+readme = "README.md"
+requires-python = ">=3.10"
+# 所有运行时依赖（jax / flax / einops / numpy / tyro / typing-extensions /
+# openpi-client）均由宿主 openpi 环境提供，此处不重复声明，
+# 避免 pip/uv 因版本约束冲突意外升级或重装 JAX CUDA wheel。
+# 安装本包之前，请先按 README 配置好 openpi 环境。
+dependencies = []
+
+[project.scripts]
+openpi-rtc-serve = "openpi_rtc.serve:main_cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = ["pytest>=8.3.4"]
