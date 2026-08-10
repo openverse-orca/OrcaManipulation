@@ -48,6 +48,11 @@ torchvision==0.22.1+cpu
 
 # Project runtime.
 h5py==3.16.0
+# matplotlib is a runtime dependency of orca_gym.sensor.rgbd_camera (module-level,
+# unconditional import). orca-gym is installed with --no-deps, so its "sensors"
+# extra is never pulled in automatically; this entry ensures matplotlib and its
+# transitive deps appear in the hashed lock.
+matplotlib==3.10.7
 numba==0.65.1
 opencv-python==4.13.0.92
 pyyaml==6.0.3

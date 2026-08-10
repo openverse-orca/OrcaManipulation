@@ -6,7 +6,7 @@
 
 ## 环境
 
-宇树路径不需要额外 checkout。请先在仓库根目录按 README 创建全新环境并执行：
+请先在仓库根目录按 README 创建全新环境并执行：
 
 ```bash
 conda activate orcalab_lerobot
@@ -67,7 +67,7 @@ conda activate orcalab_lerobot
 cd src/examples/dataCollection/unitree_g1
 ```
 
-启动遥操作采集脚本（请将输出目录与 `repo_id` 换成你自己的路径与名称）：
+启动遥操作采集脚本（请将输出目录与 `repo_id` 替换为实际的路径和名称）：
 
 ```bash
 python -u g1_pick_collection_tele_lerobot.py \

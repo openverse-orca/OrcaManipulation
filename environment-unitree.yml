@@ -13,7 +13,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  # 与已验证开发环境的实际 import 版本和构建一致。
+  # 以下版本与构建已通过完整运行验证。
   - defaults::python=3.12.13=h4d16e0c_1
   - defaults::pip=26.0.1=pyhc872135_1
   - conda-forge::numpy=2.4.6=py312h33ff503_0

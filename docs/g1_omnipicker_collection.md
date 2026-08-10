@@ -344,4 +344,4 @@ TrainConfig(
 
 **现象**：续采报错或只见连接提示，无「正在采集」日志。**原因**：上次异常退出导致 meta / parquet / mp4 不一致。**处理**：请用备份覆盖数据集后再续采，或不加 `--resume` 覆写重采。
 
-**现象**：脚本报模块找不到。**原因**：未激活正确的 conda 环境，或依赖未安装。**处理**：请确认已激活 `orcalab_lerobot` 并执行了 `pip install -r requirements.txt`。
+**现象**：脚本报模块找不到。**原因**：未激活正确的 conda 环境，或依赖未安装。**处理**：请确认已激活 `orcalab_lerobot`，并在仓库根目录重新执行 `bash scripts/install_runtime.sh`。

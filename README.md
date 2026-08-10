@@ -13,38 +13,67 @@
 
 ---
 
-## 已验证交付基线
+## 前置：OrcaLab 与资产订阅
 
-此分支面向 **Linux x86-64**，以当前稳定运行环境的实际导入结果为准：
+运行本项目前，请先完成以下两步。
 
-| 组件 | 精确版本 |
-|------|----------|
-| OrcaLab / OrcaGym | 6.3 / 26.6.3 |
-| Python | 3.12.13 |
-| NumPy / SciPy | 2.4.6 / 1.15.3（Conda 管理） |
-| Pinocchio / CasADi | 3.9.0 / 3.7.2（Conda 管理） |
+**1. 安装 OrcaLab 6.3**
+
+本项目所有场景均依赖 OrcaLab 6.3 提供的仿真服务。请从 OrcaLab 官方渠道获取并安装 6.3 版本。
+
+**2. 订阅场景资产**
+
+登录 OrcaLab 资产库，订阅以下三个资产包（每个资产在打开场景时会自动加载）：
+
+- `SouthGrid_Competition_2026`
+- `G1_omnipicker`
+- `G1_Picker_SouthGrid`
+
+若场景无法加载或物体不显示，请先检查以上资产包是否均已订阅。
+
+---
+
+## 获取代码
+
+```bash
+git clone -b g1_lerobot https://github.com/openverse-orca/OrcaManipulation.git
+cd OrcaManipulation
+```
+
+克隆后，请确认根目录下存在以下文件和目录，否则说明获取的不是本交付包：
+
+```
+environment-unitree.yml
+requirements.txt
+scripts/
+third_party/
+src/
+```
+
+---
+
+## 兼容环境
+
+以下为经过完整验证的运行环境，必须满足全部要求方可运行。
+
+| 组件 | 版本 / 要求 |
+|------|-------------|
+| OrcaLab / OrcaGym | **6.3 / 26.6.3** |
+| Python | **3.12.13** |
+| NumPy / SciPy | 2.4.6 / 1.15.3（由 Conda 管理，不可用 pip 覆盖） |
+| Pinocchio / CasADi | 3.9.0 / 3.7.2（由 Conda 管理，不可用 pip 覆盖） |
 | Gymnasium / MuJoCo | 1.2.1 / 3.7.0 |
 | PyTorch | 2.7.1+cpu，torchvision 0.22.1+cpu |
 | LeRobot / TeleVuer / OpenPI client | 仓库内 `third_party/` 固定源码 |
 | 宇树 IK 模型 | 仓库内 `src/examples/dataCollection/assets/g1/` |
-| 视频 | OpenCV 4.13.0.92 QT5、PyAV 17.0.1、`av1_nvenc` |
-
-系统仍需提供 OrcaLab 6.3、NVIDIA 驱动/GPU 和 ADB（TeleVuer 遥操）。
-三份场景 JSON 还引用 OrcaLab 资产命名空间
-`assets/e071469a36d3c8aa/...` 与 `assets/13951baeb514b4b9/...`；
-这些商业资产不在 Git 仓库中，交付机的 OrcaLab 资产库必须已包含它们。
-
-宇树 IK 所需的 G1 描述文件（`g1_body29_hand14.urdf` 与它引用的 49 个 STL）
-已随仓库提供，来源为 Unitree `unitree_ros` 的 `g1_description`（BSD-3-Clause，
-见该目录下的 `LICENSE`）。Pinocchio 建模会解析全部网格，缺一个就无法启动，
-所以不要裁剪该目录。
+| GPU 视频编码 | **NVIDIA Ada-Lovelace 架构（RTX 40 系）及以上**，需安装对应驱动；RTX 30 系及更早显卡不支持 AV1 NVENC，无法使用视频录制功能 |
+| ADB（仅 TeleVuer 遥操作） | 用于 Pico 头显端口转发；安装方式：`sudo apt install adb`（Debian/Ubuntu），或从 [Android Platform Tools](https://developer.android.com/tools/releases/platform-tools) 下载 |
 
 ---
 
 ## 环境安装
 
-必须新建环境，不要在已有环境上执行 `conda env update`，也不要复制开发机的
-`site-packages`：
+必须新建 Conda 环境；请勿在已有环境上执行 `conda env update`，也不要将本机其他环境的 `site-packages` 目录复制过来：
 
 ```bash
 cd /path/to/OrcaManipulation
@@ -54,21 +83,30 @@ bash scripts/install_runtime.sh
 ```
 
 `install_runtime.sh` 会先验证 Conda 管理的数值 ABI，再按哈希锁安装 pip wheel；
-`orca-gym==26.6.3` 因发布元数据与已验证 NumPy/SciPy 不一致而有意使用
-`--no-deps`；最后从本仓库以非 editable 方式安装 LeRobot、TeleVuer 和
-OpenPI client，并执行数据集写入、编码器、GUI 与来源路径自检。
+`orca-gym==26.6.3` 使用 `--no-deps` 安装（其发布元数据所声明的 NumPy/SciPy 版本与本交付栈不一致）；最后从仓库内 `third_party/` 以非 editable 方式安装 LeRobot、TeleVuer 和 OpenPI client，并执行数据集写入、编码器、GUI 与资产路径自检。
 
-禁止单独执行 `pip install pin`、`pip install pinocchio`、`pip install casadi`
-或普通的 `pip install -r requirements.txt`。它们可能让 cmeel/PyPI 文件覆盖
-Conda 的 Pinocchio ABI。安装成功后的统一复检命令是：
+以下命令**禁止单独执行**，否则可能让 pip/cmeel 安装的 Pinocchio 覆盖 Conda 提供的版本：
+
+```bash
+# 禁止：
+pip install pin
+pip install pinocchio
+pip install casadi
+pip install -r requirements.txt   # 不要单独运行，应通过 install_runtime.sh 调用
+```
+
+安装完成后，运行统一复检命令确认环境正常：
 
 ```bash
 python scripts/verify_environment.py
 ```
 
-`requirements.in` 是人工维护的顶层输入，`requirements.txt` 是 Linux/Python
-3.12 的哈希锁；正常交付安装只读取后者。仓内依赖的来源与本地修改见
-[third_party/README.md](third_party/README.md)。
+该命令会验证所有关键包版本、Pinocchio 来源、相机库导入链路、AV1 NVENC GPU 编码能力以及 Unitree G1 IK 模型完整性。全部通过后打印 `Environment verification OK`。
+
+宇树 IK 所需的 G1 描述文件（`g1_body29_hand14.urdf` 与它引用的 49 个 STL）
+已随仓库提供，来源为 Unitree `unitree_ros` 的 `g1_description`（BSD-3-Clause，
+见该目录下的 `LICENSE`）。Pinocchio 建模会解析全部网格，缺一个就无法启动，
+所以不要删减该目录中的文件。
 
 ---
 
@@ -77,9 +115,9 @@ python scripts/verify_environment.py
 ```text
 OrcaManipulation/
 ├── README.md
-├── requirements.in               # pip 顶层输入
-├── requirements.txt              # 含哈希的 pip 锁
-├── constraints.txt               # 传递依赖锁定输入（仅生成锁时使用）
+├── requirements.txt              # 含哈希的 pip 锁（安装时使用）
+├── requirements.in               # pip 顶层输入（维护锁时使用，安装时无需关注）
+├── constraints.txt               # 传递依赖锁定输入（维护锁时使用）
 ├── environment-unitree.yml       # Conda 数值 ABI 精确构建
 ├── scripts/                      # 安装与环境验证
 ├── third_party/
@@ -158,5 +196,5 @@ OrcaManipulation/
 ```
 
 - 默认相机分辨率为 480×640，默认帧率为 20 FPS。
-- 视频编码为 MP4（`av1_nvenc`）。
+- 视频编码为 MP4（`av1_nvenc`），需要 Ada-Lovelace 架构 GPU。
 - `action` 与 `observation.state` 的维度及字段含义因机器人而异，详见各机器人文档。

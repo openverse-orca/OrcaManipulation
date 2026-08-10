@@ -119,11 +119,48 @@ def main() -> None:
     if "QT5" not in gui_line:
         raise RuntimeError(f"OpenCV GUI build required for eval preview, got: {gui_line!r}")
 
-    # This descriptor check does not require an active GPU, but verifies that
-    # PyAV/FFmpeg exposes the encoder requested by the data writer.
-    av.codec.Codec("av1_nvenc", "w")
+    # Verify that the camera-pipeline import chain works end-to-end. This catches
+    # the missing matplotlib dependency: orca_gym.sensor.rgbd_camera has a
+    # module-level unconditional `import matplotlib`, so the import below fails
+    # immediately if matplotlib is absent from the environment.
+    import orca_gym.environment  # noqa: F401
+    from orca_gym.sensor.rgbd_camera import CameraWrapper  # noqa: F401
 
     import numpy as np
+
+    # Verify av1_nvenc with an actual encode, not just a codec descriptor lookup.
+    # The descriptor check does not require an active GPU; the encode does.
+    # av1_nvenc requires Ada-Lovelace (RTX 40-series) or newer hardware.
+    av.codec.Codec("av1_nvenc", "w")
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as _nvenc_tmp:
+        _nvenc_tmp_path = _nvenc_tmp.name
+    try:
+        _container = av.open(_nvenc_tmp_path, "w")
+        _stream = _container.add_stream("av1_nvenc", rate=20)
+        # av1_nvenc requires a minimum of 256×256; smaller frames are rejected.
+        _stream.width = 256
+        _stream.height = 256
+        _stream.pix_fmt = "yuv420p"
+        _frame = av.VideoFrame(256, 256, "yuv420p")
+        for _pl in _frame.planes:
+            _pl.update(bytes(_pl.buffer_size))
+        for _pkt in _stream.encode(_frame):
+            _container.mux(_pkt)
+
+        for _pkt in _stream.encode():
+            _container.mux(_pkt)
+        _container.close()
+    except Exception as _nvenc_err:
+        raise RuntimeError(
+            f"av1_nvenc GPU encode failed: {_nvenc_err}\n"
+            "av1_nvenc requires an NVIDIA Ada-Lovelace GPU (RTX 40-series) or newer. "
+            "Older GPUs (RTX 30-series and below) do not support AV1 NVENC."
+        ) from _nvenc_err
+    finally:
+        import os
+
+        if os.path.exists(_nvenc_tmp_path):
+            os.unlink(_nvenc_tmp_path)
 
     payload = {"state": [1.0, 2.0], "image": np.zeros((2, 2, 3), dtype="uint8")}
     restored = msgpack_numpy.unpackb(msgpack_numpy.packb(payload))
