@@ -7,7 +7,7 @@
 
 用法：
   python -u g1_pick_collection_tele_lerobot_gripper_test.py \\
-      --level default --task_config example.yaml \\
+      --level default --task_config ../../common/example.yaml \\
       --scene_json uni_test2.json \\
       --agent_name g1_pick_with_gripper_usda_1 \\
       --task \"抓取测试\" \\
@@ -1840,7 +1840,7 @@ class EpisodeRunner:
 def main() -> None:
     parser = argparse.ArgumentParser(description="g1_pick VR 遥操作采集 → LeRobot v2.1")
     parser.add_argument("--level", type=str, default="default", help="场景名称")
-    parser.add_argument("--task_config", default="example.yaml", help="任务配置 YAML")
+    parser.add_argument("--task_config", default="../../common/example.yaml", help="任务配置 YAML")
     parser.add_argument(
         "--lerobot_out",
         default=DEFAULT_LEROBOT_OUT,
