@@ -19,7 +19,7 @@ from pathlib import Path
 import casadi
 import numpy as np
 import pinocchio as pin
-import pinocchio.casadi as cpin
+from pinocchio import casadi as cpin
 
 from utils.g1_pick_weighted_moving_filter import WeightedMovingFilter
 
@@ -81,7 +81,13 @@ _DEFAULT_ROTATION_WEIGHT = 0.6
 
 
 class G1_29_ArmIK:
-    """Dual-arm CasADi IK for G1 29DoF (14 arm DOF after locking)."""
+    """Dual-arm CasADi IK for G1 29DoF (14 arm DOF after locking).
+
+    ``fixed_left_q`` (opt-in): when provided, left-arm 7 DOF become Opti
+    parameters (not decision variables). IPOPT only solves the right arm
+    (7 DOF). ``solve_ik`` still returns a 14-vector with the left half filled
+    from ``fixed_left_q``. Default ``None`` keeps the legacy 14-DOF joint solve.
+    """
 
     def __init__(
         self,
@@ -92,10 +98,15 @@ class G1_29_ArmIK:
         Visualization: bool = False,
         max_reach: float = _DEFAULT_MAX_REACH,
         rotation_weight: float = _DEFAULT_ROTATION_WEIGHT,
+        fixed_left_q: list[float] | np.ndarray | None = None,
     ):
         np.set_printoptions(precision=5, suppress=True, linewidth=200)
 
         self.Visualization = bool(Visualization)
+        if fixed_left_q is None:
+            self._fixed_left_q: np.ndarray | None = None
+        else:
+            self._fixed_left_q = np.asarray(fixed_left_q, dtype=np.float64).reshape(7).copy()
         assets = Path(model_dir) if model_dir is not None else _DEFAULT_ASSETS
         urdf = Path(urdf_path) if urdf_path is not None else assets / "g1_body29_hand14.urdf"
         cache_root = Path(cache_dir) if cache_dir is not None else _DEFAULT_CACHE_DIR
@@ -184,26 +195,69 @@ class G1_29_ArmIK:
         self.q_ref[10] = _EL_STRAIGHT
 
         self.opti = casadi.Opti()
-        self.var_q = self.opti.variable(nq)
-        self.var_q_last = self.opti.parameter(nq)
-        self.param_tf_l = self.opti.parameter(4, 4)
-        self.param_tf_r = self.opti.parameter(4, 4)
-        self.translational_cost = casadi.sumsqr(
-            self.translational_error(self.var_q, self.param_tf_l, self.param_tf_r)
-        )
-        self.rotation_cost = casadi.sumsqr(
-            self.rotational_error(self.var_q, self.param_tf_l, self.param_tf_r)
-        )
-        self.regularization_cost = casadi.sumsqr(self.var_q - self.q_ref)
-        self.smooth_cost = casadi.sumsqr(self.var_q - self.var_q_last)
+        self._right_only = self._fixed_left_q is not None
 
-        self.opti.subject_to(
-            self.opti.bounded(
-                self.reduced_robot.model.lowerPositionLimit,
-                self.var_q,
-                self.reduced_robot.model.upperPositionLimit,
+        if self._right_only:
+            # Left arm fixed as parameter; IPOPT only decides right 7 DOF.
+            self.param_q_l = self.opti.parameter(7)
+            self.var_q_r = self.opti.variable(7)
+            self.var_q = casadi.vertcat(self.param_q_l, self.var_q_r)  # symbolic 14
+            self.var_q_last = self.opti.parameter(7)  # right-arm smooth ref only
+            self.param_tf_r = self.opti.parameter(4, 4)
+            self.param_tf_l = None  # unused; left EE cost not constructed
+
+            # Right-only FK error (left q fixed → left EE error is constant / wasted)
+            self.translational_error_r = casadi.Function(
+                "translational_error_r",
+                [self.cq, self.cTf_r],
+                [
+                    self.cdata.oMf[self.R_hand_id].translation - self.cTf_r[:3, 3],
+                ],
             )
-        )
+            self.rotational_error_r = casadi.Function(
+                "rotational_error_r",
+                [self.cq, self.cTf_r],
+                [
+                    cpin.log3(
+                        self.cdata.oMf[self.R_hand_id].rotation @ self.cTf_r[:3, :3].T
+                    ),
+                ],
+            )
+            self.translational_cost = casadi.sumsqr(
+                self.translational_error_r(self.var_q, self.param_tf_r)
+            )
+            self.rotation_cost = casadi.sumsqr(
+                self.rotational_error_r(self.var_q, self.param_tf_r)
+            )
+            q_ref_r = self.q_ref[7:14]
+            self.regularization_cost = casadi.sumsqr(self.var_q_r - q_ref_r)
+            self.smooth_cost = casadi.sumsqr(self.var_q_r - self.var_q_last)
+            lo = np.asarray(self.reduced_robot.model.lowerPositionLimit, dtype=np.float64).reshape(-1)
+            hi = np.asarray(self.reduced_robot.model.upperPositionLimit, dtype=np.float64).reshape(-1)
+            self.opti.subject_to(self.opti.bounded(lo[7:14], self.var_q_r, hi[7:14]))
+        else:
+            self.var_q = self.opti.variable(nq)
+            self.var_q_last = self.opti.parameter(nq)
+            self.param_tf_l = self.opti.parameter(4, 4)
+            self.param_tf_r = self.opti.parameter(4, 4)
+            self.param_q_l = None
+            self.var_q_r = None
+            self.translational_cost = casadi.sumsqr(
+                self.translational_error(self.var_q, self.param_tf_l, self.param_tf_r)
+            )
+            self.rotation_cost = casadi.sumsqr(
+                self.rotational_error(self.var_q, self.param_tf_l, self.param_tf_r)
+            )
+            self.regularization_cost = casadi.sumsqr(self.var_q - self.q_ref)
+            self.smooth_cost = casadi.sumsqr(self.var_q - self.var_q_last)
+            self.opti.subject_to(
+                self.opti.bounded(
+                    self.reduced_robot.model.lowerPositionLimit,
+                    self.var_q,
+                    self.reduced_robot.model.upperPositionLimit,
+                )
+            )
+
         # Position-first; stronger ori than legacy 0.25 to shrink nullspace wobble.
         # Do NOT add an elbow-straightening term here. Measured nullspace at a
         # fixed 6-DOF EE pose has an elbow component of only 0.032-0.051 (it is
@@ -238,6 +292,9 @@ class G1_29_ArmIK:
         # Warm-start + smooth reference: last *command*, not measured q.
         self.init_data = np.zeros(nq, dtype=np.float64)
         self._q_last_cmd = np.zeros(nq, dtype=np.float64)
+        if self._fixed_left_q is not None:
+            self.init_data[:7] = self._fixed_left_q
+            self._q_last_cmd[:7] = self._fixed_left_q
         # Lower lag after fixing var_q_last to last command.
         self.smooth_filter = WeightedMovingFilter(np.array([0.90, 0.07, 0.03]), 14)
         self._data = self.reduced_robot.model.createData()
@@ -262,6 +319,8 @@ class G1_29_ArmIK:
     def reset_state(self, q: np.ndarray) -> None:
         """Re-anchor warm-start and smooth reference (clutch / episode reset)."""
         q = np.asarray(q, dtype=np.float64).reshape(-1).copy()
+        if self._fixed_left_q is not None:
+            q[:7] = self._fixed_left_q
         self.init_data = q
         self._q_last_cmd = q.copy()
         self.smooth_filter.reset()
@@ -348,20 +407,34 @@ class G1_29_ArmIK:
         oscillation). Use ``reset_state(q)`` on clutch/reset instead.
         On solver failure, falls back to measured q if provided, else last cmd.
         """
-        # Warm-start and smooth ref: previous command only.
-        self.opti.set_initial(self.var_q, self.init_data)
-        self.opti.set_value(self.var_q_last, self._q_last_cmd)
-
         left_wrist = np.asarray(left_wrist, dtype=np.float64)
         right_wrist = np.asarray(right_wrist, dtype=np.float64)
-        self.opti.set_value(self.param_tf_l, left_wrist)
-        self.opti.set_value(self.param_tf_r, right_wrist)
+
+        if self._right_only:
+            # Warm-start / smooth ref: right arm only; left is a fixed parameter.
+            self.opti.set_value(self.param_q_l, self._fixed_left_q)
+            self.opti.set_initial(self.var_q_r, self.init_data[7:14])
+            self.opti.set_value(self.var_q_last, self._q_last_cmd[7:14])
+            self.opti.set_value(self.param_tf_r, right_wrist)
+            # left_wrist intentionally ignored (left q fixed → EE not optimized)
+        else:
+            # Warm-start and smooth ref: previous command only.
+            self.opti.set_initial(self.var_q, self.init_data)
+            self.opti.set_value(self.var_q_last, self._q_last_cmd)
+            self.opti.set_value(self.param_tf_l, left_wrist)
+            self.opti.set_value(self.param_tf_r, right_wrist)
 
         try:
             self.opti.solve()
-            sol_q_raw = np.asarray(
-                self.opti.value(self.var_q), dtype=np.float64
-            ).reshape(-1)
+            if self._right_only:
+                sol_r = np.asarray(
+                    self.opti.value(self.var_q_r), dtype=np.float64
+                ).reshape(7)
+                sol_q_raw = np.concatenate([self._fixed_left_q, sol_r])
+            else:
+                sol_q_raw = np.asarray(
+                    self.opti.value(self.var_q), dtype=np.float64
+                ).reshape(-1)
             # Warm was set before solve; record before overwrite.
             self._last_warm_el = (
                 float(self._q_last_cmd[3]),
@@ -371,6 +444,8 @@ class G1_29_ArmIK:
 
             self.smooth_filter.add_data(sol_q_raw)
             sol_q = np.asarray(self.smooth_filter.filtered_data, dtype=np.float64).copy()
+            if self._fixed_left_q is not None:
+                sol_q[:7] = self._fixed_left_q  # filter must not drift fixed left
             self._last_cmd_el = (float(sol_q[3]), float(sol_q[10]))
 
             if current_lr_arm_motor_dq is not None:
@@ -395,4 +470,7 @@ class G1_29_ArmIK:
                 q_fb = np.asarray(current_lr_arm_motor_q, dtype=np.float64).reshape(-1)
             else:
                 q_fb = self._q_last_cmd.copy()
+            if self._fixed_left_q is not None and q_fb.size >= 7:
+                q_fb = q_fb.copy()
+                q_fb[:7] = self._fixed_left_q
             return q_fb, np.zeros(self.reduced_robot.model.nv, dtype=np.float64)

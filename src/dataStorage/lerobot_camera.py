@@ -309,6 +309,65 @@ def extract_frames_from_mp4(
             cap.release()
 
 
+def iter_frames_from_mp4(
+    episode_video_dir: str,
+    camera_map: dict,
+    wall_timestamps_s: list,
+    ep_start_wall_s: float,
+    target_hw: tuple,
+):
+    """生成器版本的 MP4 帧提取：逐帧 yield，峰值内存降到单帧级别。
+
+    接口与 extract_frames_from_mp4 完全一致，但改为 yield 而非 return list。
+    每次 yield 一个 {lerobot_key: (H,W,3) uint8 ndarray}，消费方处理完后
+    该帧即可被 GC 回收，整集全帧不再同时驻留内存。
+
+    消费示例::
+
+        for i, images in enumerate(iter_frames_from_mp4(...)):
+            process(images)
+    """
+    H, W = target_hw
+    video_subdir = os.path.join(episode_video_dir, "video")
+
+    captures: dict[str, tuple] = {}
+    for env_name, (key, _port) in camera_map.items():
+        mp4_path = os.path.join(video_subdir, f"{env_name}.mp4")
+        if not os.path.exists(mp4_path):
+            print(f"[WARN] MP4 未找到，该路将输出黑帧: {mp4_path}", flush=True)
+            continue
+        cap = cv2.VideoCapture(mp4_path)
+        if not cap.isOpened():
+            print(f"[WARN] MP4 无法打开，该路将输出黑帧: {mp4_path}", flush=True)
+            continue
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        captures[env_name] = (key, cap, total, fps)
+
+    try:
+        for wall_t in wall_timestamps_s:
+            elapsed = max(0.0, wall_t - ep_start_wall_s)
+            images: dict = {}
+            for env_name, (key, cap, total, fps) in captures.items():
+                frame_idx = min(int(elapsed * fps), total - 1)
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    if frame.shape[0] != H or frame.shape[1] != W:
+                        frame = cv2.resize(frame, (W, H), interpolation=cv2.INTER_AREA)
+                    images[key] = np.ascontiguousarray(frame, dtype=np.uint8)
+                else:
+                    images[key] = np.zeros((H, W, 3), dtype=np.uint8)
+            for env_name, (key, _port) in camera_map.items():
+                if env_name not in captures and key not in images:
+                    images[key] = np.zeros((H, W, 3), dtype=np.uint8)
+            yield images
+    finally:
+        for _, (_, cap, _, _) in captures.items():
+            cap.release()
+
+
 def probe_mp4_hw(episode_video_dir: str, camera_map: dict, default_hw: tuple = DEFAULT_HW) -> tuple:
     """从录制完成的 MP4 首帧探测真实分辨率 (H, W)，失败回退 default_hw。
 
