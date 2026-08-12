@@ -481,7 +481,7 @@ class G1PickQScriptedDevice(AbstractDevice):
         if self.t >= len(self.q_traj):
             return
         if self.t == 0:
-            self.task_status.update_task_status(True, reason="scripted_start")
+            self.task_status.update_task_status(True)
         phase = self.phases[self.t]
         # push/hold 启用积分；approach/retract 关闭避免转移过程 windup
         self.q_ctrl.set_integral_enabled(phase in ("push", "hold"))
@@ -507,7 +507,7 @@ class G1PickQScriptedDevice(AbstractDevice):
                 pass
 
         if self.t == len(self.q_traj) - 1:
-            self.task_status.update_task_status(True, reason="scripted_end")
+            self.task_status.update_task_status(True)
         self.t += 1
 
 

@@ -1201,7 +1201,7 @@ class ControllerWiring:
             tsc = TaskStatusController(env, g1_pick_conf.base_body)
 
             def _tv_task_toggle(_pressed: bool = True):
-                tsc.update_task_status(True, reason="left_squeeze")
+                tsc.update_task_status(True)
 
             xr_device.bind_task_toggle_event(_tv_task_toggle)
             manager.set_task_status_controller(tsc)
