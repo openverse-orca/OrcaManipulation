@@ -52,7 +52,14 @@ localhost:50051
 ### 1. 连接头显并做端口转发
 
 1. 请用 USB 连接 Pico 头显，确认 `adb devices` 能看到设备。
-2. 请执行端口转发：
+2. **第一次遥操作之前**（每台 Pico 只需做一次；恢复出厂后需重做）：请禁用房间标定向导。否则进入 VR 时会强制弹出标定流程，WebXR 无法启动：
+
+```bash
+# 将 <序列号> 替换为 adb devices 列出的设备序列号
+adb -s <序列号> shell pm disable-user --user 0 com.pvr.roomcapture
+```
+
+3. 请执行端口转发：
 
 ```bash
 adb reverse tcp:8012 tcp:8012
