@@ -955,7 +955,7 @@ class G1PickQScriptedDevice(AbstractDevice):
         if self._end_requested:
             return
         self._end_requested = True
-        self.task_status.update_task_status(True, reason=reason)
+        self.task_status.update_task_status(True)
 
     def _sample_buttons(self) -> None:
         if self.button_baseline is None or self.button_press_signs is None:
@@ -1122,7 +1122,7 @@ class G1PickQScriptedDevice(AbstractDevice):
             return
         if not self._started:
             self._started = True
-            self.task_status.update_task_status(True, reason="scripted_start")
+            self.task_status.update_task_status(True)
 
         # 兜底补压：沿接触方向再推一小段，检测到目标按钮位移即停
         if self._overpush_active and self._overpush_target is not None:
