@@ -133,12 +133,15 @@ python -u g1_pick_collection_scripted_button_lerobot.py \
     --task_config ../common/example.yaml \
     --scene_json unitree_button.json \
     --agent_name unitree_humanoid_robot_1 \
-    --pose_candidates pose_g1_pick_button_candidates.yaml \
+    --pose_candidates pose_g1_pick_button \
     --lerobot_out <数据集输出目录> \
     --repo_id <数据集仓库名> \
     --counts 5,5,5,5 \
-    --fps 20 --clock wall --cameras head,wrist_r
+    --fps 20 --clock wall --cameras head,wrist_r \
+    --cam_resolution 480x640
 ```
+
+`--pose_candidates` 默认使用目录 `pose_g1_pick_button/`（每色一个 YAML）。也可指定旧版单文件 `pose_g1_pick_button_candidates.yaml`。臂部刚度、积分、到位检测与补压等控制参数已内置默认值；如需调整，请通过脚本 `--help` 查看对应选项。
 
 
 ---

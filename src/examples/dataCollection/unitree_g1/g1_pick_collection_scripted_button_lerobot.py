@@ -1,14 +1,31 @@
-"""宇树 G1 四色按钮脚本化数据采集。"""
+"""宇树 g1_pick 四色按钮脚本化自动采集 → LeRobot v2.1。
+
+``--pose_candidates`` 默认读目录 ``pose_g1_pick_button/``（一色一文件，waypoints）。
+每色的 3 个路点是一条连续路线（``--waypoint_mode route``，默认）：
+
+  当前姿态 → wp1 → wp2（approach；末段 settle 等到位，默认仅 approach）
+  wp2 → wp3（push，不 settle，按钮开始即确认）
+  在 wp3 hold
+  wp3 → wp2（retract）
+
+``--waypoint_mode last|cycle`` 仅旧回放兼容（单点当接触）。
+
+控制对齐 ``g1_pick_collection_tele_lerobot`` 的执行层：Unitree position 执行器 +
+臂 kp/gravcomp + 锁腿/pin，按录制路点做关节空间轨迹回放。
+不做 OmniPicker 式 EE -X / 离线 IK 造接近点。
+"""
 from __future__ import annotations
 
 import argparse
 import csv
+import logging
 import os
 import random
 import signal
 import sys
 import time
 import traceback
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +38,10 @@ if project_root not in sys.path:
 base_dir = os.path.dirname(os.path.realpath(__file__))
 if base_dir not in sys.path:
     sys.path.insert(0, base_dir)
+
+DEFAULT_RUNNING_LOG_DIR = os.path.join(base_dir, "runninglog")
+_RUNNING_LOG_FP = None
+_RUNNING_LOG_PATH: str | None = None
 
 from conf import g1_pick_conf
 from controllers.controller_task import TaskStatusController
@@ -38,8 +59,10 @@ from devices.abstract_device import AbstractDevice
 from orca_gym.log.orca_log import OrcaLog, get_orca_logger
 from scene.scene_manager import SceneManager
 from task.abstract_task import EmptyTask
+from utils.g1_pick_ee_pose_log import format_ee_pose_line, fmt_xyz
 
 import g1_pick_collection_tele_lerobot as tele  # noqa: E402
+from g1_pick_button_waypoints_io import load_pose_candidates  # noqa: E402
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
 STREAM_TRIGGER_PATH = "/tmp/g1_pick_scripted_button_lerobot_stream"
@@ -58,6 +81,54 @@ orca_logger = get_orca_logger(
     force_reinit=True,
 )
 
+
+class _TeeStream:
+    """同时写到控制台与运行日志文件。"""
+
+    def __init__(self, *streams):
+        self._streams = streams
+
+    def write(self, data):
+        for s in self._streams:
+            try:
+                s.write(data)
+                s.flush()
+            except Exception:
+                pass
+
+    def flush(self):
+        for s in self._streams:
+            try:
+                s.flush()
+            except Exception:
+                pass
+
+    def isatty(self):
+        return False
+
+
+def _setup_running_log(path: str) -> str:
+    """tee stdout/stderr + orca StreamHandler 到 txt，返回绝对路径。"""
+    global _RUNNING_LOG_FP, _RUNNING_LOG_PATH
+    path = os.path.abspath(os.path.expanduser(path))
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    fp = open(path, "a", encoding="utf-8", buffering=1)
+    fp.write(f"# started {datetime.now().isoformat(timespec='seconds')}\n")
+    fp.write(f"# argv: {' '.join(sys.argv)}\n\n")
+    fp.flush()
+    _RUNNING_LOG_FP = fp
+    _RUNNING_LOG_PATH = path
+    sys.stdout = _TeeStream(sys.__stdout__, fp)
+    sys.stderr = _TeeStream(sys.__stderr__, fp)
+    lg = logging.getLogger("G1PickButtonScripted")
+    for h in lg.handlers:
+        # StreamHandler 含子类；跳过已写文件的 FileHandler/RotatingFileHandler
+        if isinstance(h, logging.StreamHandler) and not isinstance(
+            h, logging.FileHandler
+        ):
+            h.stream = sys.stdout
+    return path
+
 _COLOR_NAMES = {
     "red": "红色",
     "green": "绿色",
@@ -65,6 +136,12 @@ _COLOR_NAMES = {
     "blue": "蓝色",
 }
 _COLOR_ORDER = ["red", "green", "yellow", "blue"]
+_BUTTON_JOINT_BY_COLOR = {
+    "red": "Group_Static_ElectricalCabinet_button01_joint",
+    "green": "Group_Static_ElectricalCabinet_button02_joint",
+    "yellow": "Group_Static_ElectricalCabinet_Button04_joint",
+    "blue": "Group_Static_ElectricalCabinet_Button03_joint",
+}
 ARM_DIM = 14
 _ARM_SHORT_NAMES = (
     list(g1_pick_conf.l_arm["positions_names"])
@@ -87,6 +164,11 @@ class G1PickQTargetController:
         i_max: float = 0.3,
         dt: float = 0.005,
         force_sat_ratio: float = 0.95,
+        vff: float = 1.0,
+        vff_max: float = 0.08,
+        diag_ee: bool = False,
+        diag_ee_every: int = 10,
+        arm_ik: G1_29_ArmIK | None = None,
     ):
         short_names = (
             list(g1_pick_conf.l_arm["positions_names"])
@@ -115,8 +197,14 @@ class G1PickQTargetController:
         self.i_max = float(i_max)
         self.dt = float(dt)
         self.force_sat_ratio = float(force_sat_ratio)
+        self.vff = float(vff)
+        self.vff_max = float(max(0.0, vff_max))
         self._I = np.zeros(ARM_DIM, dtype=np.float64)
         self._integral_enabled = False
+        self._q_tgt_prev: np.ndarray | None = None
+        self._ff = np.zeros(ARM_DIM, dtype=np.float64)
+        self._freeze = np.zeros(ARM_DIM, dtype=bool)
+        self._diag_seq = 0
 
         gym = getattr(env, "gym", None) or getattr(
             getattr(env, "unwrapped", env), "gym", None
@@ -129,6 +217,9 @@ class G1PickQTargetController:
         self._force_lim = np.zeros(ARM_DIM, dtype=np.float64)
         self._ctrl_lo = np.full(ARM_DIM, -np.inf, dtype=np.float64)
         self._ctrl_hi = np.full(ARM_DIM, np.inf, dtype=np.float64)
+        self._kp = np.zeros(ARM_DIM, dtype=np.float64)
+        self._kv = np.zeros(ARM_DIM, dtype=np.float64)
+        self._kv_over_kp = np.zeros(ARM_DIM, dtype=np.float64)
         self._bind_mj_addrs()
 
         self._diag_fh = None
@@ -136,6 +227,23 @@ class G1PickQTargetController:
         self._diag_meta: dict = {}
         self._ep_rows: list[dict] = []
         self.last_diag: dict | None = None
+
+        # 详细末端位姿（仅诊断，不参与控制）：tgtFK / measFK / MuJoCo site
+        self.diag_ee = bool(diag_ee)
+        self.diag_ee_every = max(1, int(diag_ee_every))
+        self._arm_ik = arm_ik
+        self._ee_l = env.site(g1_pick_conf.l_arm["ee_site_name"])
+        self._ee_r = env.site(g1_pick_conf.r_arm["ee_site_name"])
+        self._base = env.body(g1_pick_conf.base_body)
+        self._T_contact_l: np.ndarray | None = None
+        self._T_contact_r: np.ndarray | None = None
+        if self.diag_ee and self._arm_ik is None:
+            try:
+                self._arm_ik = G1_29_ArmIK()
+                orca_logger.info("[EE] 已加载 G1_29_ArmIK 仅用于 FK 诊断")
+            except Exception as e:
+                orca_logger.warning(f"[EE] ArmIK 初始化失败，仅打 site: {e}")
+                self._arm_ik = None
 
     def _bind_mj_addrs(self) -> None:
         import mujoco
@@ -186,7 +294,29 @@ class G1PickQTargetController:
         orca_logger.info(
             f"[DIAG] 绑定臂关节 qadr={n_ok}/{ARM_DIM}  "
             f"force_lim={self._force_lim.tolist()}  "
-            f"ki={self.ki} i_max={self.i_max}"
+            f"ki={self.ki} i_max={self.i_max} vff={self.vff}"
+        )
+        self.refresh_gains()
+
+    def refresh_gains(self) -> None:
+        """从 live mjModel 回读臂 actuator kp/kv（每集重刷增益后调用）。"""
+        if self._mj is None:
+            return
+        mj = self._mj
+        for i in range(ARM_DIM):
+            aid = self.ctrl_index[i]
+            kp = float(mj.actuator_gainprm[aid, 0])
+            kv = float(-mj.actuator_biasprm[aid, 2])
+            self._kp[i] = kp
+            self._kv[i] = kv
+            self._kv_over_kp[i] = (kv / kp) if abs(kp) > 1e-9 else 0.0
+        r = slice(7, 14)
+        orca_logger.info(
+            f"[ARM-GAIN] readback R_arm "
+            f"kp={self._kp[r].tolist()} "
+            f"kv={self._kv[r].tolist()} "
+            f"kv/kp={self._kv_over_kp[r].tolist()} "
+            f"vff={self.vff} vff_max={self.vff_max}"
         )
 
     def set_target_q(self, q: np.ndarray) -> None:
@@ -205,13 +335,129 @@ class G1PickQTargetController:
             "phase": str(phase),
         }
 
+    def set_contact_q_for_ee(self, q_contact: np.ndarray | None) -> None:
+        """记录接触 waypoint 的 FK 目标，供 [EE] 与 site 对比。"""
+        self._T_contact_l = None
+        self._T_contact_r = None
+        if q_contact is None or self._arm_ik is None:
+            return
+        try:
+            q14 = np.asarray(q_contact, dtype=np.float64).reshape(-1)[:ARM_DIM]
+            self._T_contact_l, self._T_contact_r = self._arm_ik.fk_ee(q14)
+        except Exception as e:
+            orca_logger.warning(f"[EE] contact FK 失败: {e}")
+
+    def _read_ee_site_pos_quat_B(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        try:
+            data = self.env.query_site_pos_and_quat_B(
+                [self._ee_l, self._ee_r], [self._base]
+            )
+            pl = np.asarray(data[self._ee_l]["xpos"], dtype=np.float64).reshape(3)
+            pr = np.asarray(data[self._ee_r]["xpos"], dtype=np.float64).reshape(3)
+            ql = np.asarray(data[self._ee_l]["xquat"], dtype=np.float64).reshape(4)
+            qr = np.asarray(data[self._ee_r]["xquat"], dtype=np.float64).reshape(4)
+            return pl, pr, ql, qr
+        except Exception:
+            nan3 = np.full(3, np.nan)
+            nan4 = np.full(4, np.nan)
+            return nan3, nan3.copy(), nan4, nan4.copy()
+
+    def _emit_ee_pose_log(
+        self,
+        *,
+        q_tgt_arm: np.ndarray,
+        q_meas_arm: np.ndarray,
+        step: int,
+        phase: str,
+        force: bool = False,
+        diag_seq: int | None = None,
+    ) -> None:
+        if not self.diag_ee:
+            return
+        # 用控制器内部单调计数做采样门，避免 settle/hold 期间 step 冻结导致静默
+        seq = int(self._diag_seq if diag_seq is None else diag_seq)
+        if not force and seq > 0 and (seq % self.diag_ee_every) != 0:
+            return
+        tag = "[EE]"
+        note = f"phase={phase}"
+        site_l, site_r, quat_l, quat_r = self._read_ee_site_pos_quat_B()
+        lines: list[str] = []
+        T_tgt_l = T_tgt_r = T_meas_l = T_meas_r = None
+        if self._arm_ik is not None:
+            try:
+                T_tgt_l, T_tgt_r = self._arm_ik.fk_ee(q_tgt_arm)
+                T_meas_l, T_meas_r = self._arm_ik.fk_ee(q_meas_arm)
+            except Exception as e:
+                orca_logger.warning(f"[EE] FK 失败: {e}")
+        if T_tgt_l is not None:
+            lines += [
+                format_ee_pose_line(
+                    tag=tag, step=step, side="L", source="tgtFK", T=T_tgt_l
+                ),
+                format_ee_pose_line(
+                    tag=tag, step=step, side="R", source="tgtFK", T=T_tgt_r
+                ),
+            ]
+        if T_meas_l is not None:
+            lines += [
+                format_ee_pose_line(
+                    tag=tag, step=step, side="L", source="measFK", T=T_meas_l
+                ),
+                format_ee_pose_line(
+                    tag=tag, step=step, side="R", source="measFK", T=T_meas_r
+                ),
+            ]
+        lines += [
+            format_ee_pose_line(
+                tag=tag, step=step, side="L", source="site", pos=site_l, quat_xyzw=quat_l
+            ),
+            format_ee_pose_line(
+                tag=tag, step=step, side="R", source="site", pos=site_r, quat_xyzw=quat_r
+            ),
+        ]
+        # 跟踪误差：指令 FK vs 实测 FK；接触 waypoint FK vs site（按按钮主要看右臂）
+        if T_tgt_l is not None and T_meas_l is not None:
+            epl = float(np.linalg.norm(T_tgt_l[:3, 3] - T_meas_l[:3, 3]))
+            epr = float(np.linalg.norm(T_tgt_r[:3, 3] - T_meas_r[:3, 3]))
+            lines.append(
+                f"{tag} #{step} err |e_pos|L/R={epl:.4f}/{epr:.4f}m "
+                f"{note} tgtFK-measFK"
+            )
+            d_site_l = site_l - T_tgt_l[:3, 3]
+            d_site_r = site_r - T_tgt_r[:3, 3]
+            lines.append(
+                f"{tag} #{step} site-tgtFK "
+                f"L={fmt_xyz(d_site_l)} (|d|={np.linalg.norm(d_site_l):.4f}) "
+                f"R={fmt_xyz(d_site_r)} (|d|={np.linalg.norm(d_site_r):.4f}) "
+                f"{note}"
+            )
+        if self._T_contact_r is not None:
+            d_c = site_r - self._T_contact_r[:3, 3]
+            lines.append(
+                f"{tag} #{step} site-contactFK R={fmt_xyz(d_c)} "
+                f"(|d|={float(np.linalg.norm(d_c)):.4f}) {note}"
+            )
+            lines.append(
+                format_ee_pose_line(
+                    tag=tag,
+                    step=step,
+                    side="R",
+                    source="contactFK",
+                    T=self._T_contact_r,
+                )
+            )
+        for line in lines:
+            orca_logger.info(line)
+
     def begin_diag_csv(self, path: str | None) -> None:
         if not path:
             return
         path = os.path.abspath(os.path.expanduser(path))
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         self._diag_fh = open(path, "w", newline="", encoding="utf-8")
-        fields = ["ep", "color", "step", "phase"]
+        fields = ["ep", "color", "step", "phase", "diag_seq"]
         for n in self.arm_short_names:
             fields += [
                 f"q_tgt_{n}",
@@ -219,6 +465,7 @@ class G1PickQTargetController:
                 f"err_{n}",
                 f"force_{n}",
                 f"I_{n}",
+                f"ff_{n}",
                 f"ctrl_{n}",
             ]
         self._diag_writer = csv.DictWriter(self._diag_fh, fieldnames=fields)
@@ -264,15 +511,32 @@ class G1PickQTargetController:
     def reset(self) -> None:
         self._I[:] = 0.0
         self._integral_enabled = False
+        self._q_tgt_prev = None
+        self._ff[:] = 0.0
+        self._freeze[:] = False
 
     def run_controller(self) -> dict[int, float]:
         q_tgt = self._q.astype(np.float64)
         ctrl = q_tgt.copy()
         q_meas = self.read_arm_q()
         force = self.read_arm_force()
+        err = q_tgt[:ARM_DIM] - q_meas
 
+        # 速度前馈：抵消 position 执行器匀速段滞后 e = (kv/kp)*qdot
+        if self._q_tgt_prev is None or self.dt <= 0.0:
+            qdot_tgt = np.zeros(ARM_DIM, dtype=np.float64)
+        else:
+            qdot_tgt = (q_tgt[:ARM_DIM] - self._q_tgt_prev) / self.dt
+        if self.vff > 0.0:
+            ff = self.vff * self._kv_over_kp * qdot_tgt
+            if self.vff_max > 0.0:
+                ff = np.clip(ff, -self.vff_max, self.vff_max)
+        else:
+            ff = np.zeros(ARM_DIM, dtype=np.float64)
+        self._ff = ff
+
+        self._freeze[:] = False
         if self.ki > 0.0 and self._integral_enabled:
-            err = q_tgt[:ARM_DIM] - q_meas
             dI = self.ki * err * self.dt
             # anti-windup：力饱和或 ctrl 已贴边且误差同向 → 冻结该关节积分
             for i in range(ARM_DIM):
@@ -283,23 +547,28 @@ class G1PickQTargetController:
                     if force[i] * err[i] > 0:
                         freeze = True
                 trial = float(np.clip(self._I[i] + dI[i], -self.i_max, self.i_max))
-                trial_ctrl = q_tgt[i] + trial
+                trial_ctrl = q_tgt[i] + trial + ff[i]
                 if trial_ctrl <= self._ctrl_lo[i] + 1e-9 and err[i] < 0:
                     freeze = True
                 if trial_ctrl >= self._ctrl_hi[i] - 1e-9 and err[i] > 0:
                     freeze = True
+                self._freeze[i] = freeze
                 if not freeze:
                     self._I[i] = trial
-            ctrl[:ARM_DIM] = q_tgt[:ARM_DIM] + self._I
-            ctrl[:ARM_DIM] = np.clip(ctrl[:ARM_DIM], self._ctrl_lo, self._ctrl_hi)
 
-        err_now = q_tgt[:ARM_DIM] - q_meas
+        ctrl[:ARM_DIM] = q_tgt[:ARM_DIM] + self._I + ff
+        ctrl[:ARM_DIM] = np.clip(ctrl[:ARM_DIM], self._ctrl_lo, self._ctrl_hi)
+        self._q_tgt_prev = q_tgt[:ARM_DIM].copy()
+
+        err_now = err
         meta = self._diag_meta
+        self._diag_seq += 1
         row = {
             "ep": meta.get("ep", -1),
             "color": meta.get("color", ""),
             "step": meta.get("step", -1),
             "phase": meta.get("phase", ""),
+            "diag_seq": int(self._diag_seq),
         }
         for i, n in enumerate(self.arm_short_names):
             row[f"q_tgt_{n}"] = float(q_tgt[i])
@@ -307,6 +576,7 @@ class G1PickQTargetController:
             row[f"err_{n}"] = float(err_now[i])
             row[f"force_{n}"] = float(force[i])
             row[f"I_{n}"] = float(self._I[i])
+            row[f"ff_{n}"] = float(ff[i])
             row[f"ctrl_{n}"] = float(ctrl[i])
         self.last_diag = {
             "q_tgt": q_tgt[:ARM_DIM].copy(),
@@ -314,20 +584,38 @@ class G1PickQTargetController:
             "err": err_now.copy(),
             "force": force.copy(),
             "I": self._I.copy(),
+            "ff": ff.copy(),
+            "qdot_tgt": qdot_tgt.copy(),
+            "freeze": self._freeze.copy(),
             "ctrl": ctrl[:ARM_DIM].copy(),
             "phase": row["phase"],
             "step": row["step"],
+            "diag_seq": int(self._diag_seq),
         }
         if meta.get("phase"):
             self._ep_rows.append(row)
             if self._diag_writer is not None:
                 self._diag_writer.writerow(row)
                 self._diag_fh.flush()
+            phase = str(row["phase"])
+            step = int(row["step"])
+            # 相位首帧强制打一次，其余按 diag_ee_every（基于单调计数）
+            force_ee = step == 0 or (
+                self._ep_rows[-2]["phase"] != phase if len(self._ep_rows) >= 2 else False
+            )
+            self._emit_ee_pose_log(
+                q_tgt_arm=q_tgt[:ARM_DIM],
+                q_meas_arm=q_meas,
+                step=step,
+                phase=phase,
+                force=force_ee,
+                diag_seq=self._diag_seq,
+            )
 
         return {self.ctrl_index[i]: float(ctrl[i]) for i in range(STATE_DIM)}
 
     def summarize_episode(self) -> str:
-        """分段汇总：push 末 / hold 前 20% / hold 后 20% 误差 + 力饱和比。"""
+        """分段汇总：approach/settle/push/hold 误差 + 力饱和比 + 指令速度。"""
         rows = self._ep_rows
         if not rows:
             return "[DIAG] 本集无诊断行"
@@ -344,6 +632,15 @@ class G1PickQTargetController:
             )
             return e.mean(axis=0)
 
+        def _max_abs_err(rs: list[dict]) -> np.ndarray:
+            if not rs:
+                return np.zeros(ARM_DIM)
+            e = np.stack(
+                [[abs(r[f"err_{n}"]) for n in self.arm_short_names] for r in rs],
+                axis=0,
+            )
+            return e.max(axis=0)
+
         def _max_abs_force(rs: list[dict]) -> np.ndarray:
             if not rs:
                 return np.zeros(ARM_DIM)
@@ -353,6 +650,24 @@ class G1PickQTargetController:
             )
             return f.max(axis=0)
 
+        def _peak_qdot_cmd(rs: list[dict]) -> float:
+            """相邻诊断行指令峰值 |Δq|/dt（右臂）。"""
+            if len(rs) < 2 or self.dt <= 0:
+                return 0.0
+            peak = 0.0
+            for a, b in zip(rs[:-1], rs[1:]):
+                d = np.array(
+                    [
+                        float(b[f"q_tgt_{n}"]) - float(a[f"q_tgt_{n}"])
+                        for n in self.arm_short_names[7:14]
+                    ],
+                    dtype=np.float64,
+                )
+                peak = max(peak, float(np.max(np.abs(d)) / self.dt))
+            return peak
+
+        approach = _phase_rows("approach")
+        settle = _phase_rows("settle")
         push = _phase_rows("push")
         hold = _phase_rows("hold")
         push_tail = push[-max(1, len(push) // 10) :] if push else []
@@ -362,29 +677,32 @@ class G1PickQTargetController:
         e_push = _mean_abs_err(push_tail)
         e_h0 = _mean_abs_err(hold_head)
         e_h1 = _mean_abs_err(hold_tail)
-        f_max = _max_abs_force(hold if hold else push)
+        e_app = _max_abs_err(approach[-max(1, len(approach) // 5) :] if approach else [])
+        e_set = _max_abs_err(settle[-max(1, len(settle) // 5) :] if settle else [])
+        f_max = _max_abs_force(hold if hold else (push if push else approach))
         sat = np.zeros(ARM_DIM)
         for i in range(ARM_DIM):
             lim = self._force_lim[i]
             sat[i] = (f_max[i] / lim) if lim > 0 else 0.0
 
-        # ctrl 是否贴边（hold 段）
-        clipped = []
-        for i, n in enumerate(self.arm_short_names):
-            if not hold:
-                break
-            ctrls = [r[f"ctrl_{n}"] for r in hold]
-            if any(
-                c <= self._ctrl_lo[i] + 1e-6 or c >= self._ctrl_hi[i] - 1e-6
-                for c in ctrls
-            ):
-                clipped.append(n)
+        # ctrl 是否贴边（仅在有 hold 段时判定）
+        clipped: list[str] = []
+        if hold:
+            for i, n in enumerate(self.arm_short_names):
+                ctrls = [r[f"ctrl_{n}"] for r in hold]
+                if any(
+                    c <= self._ctrl_lo[i] + 1e-6 or c >= self._ctrl_hi[i] - 1e-6
+                    for c in ctrls
+                ):
+                    clipped.append(n)
 
         # 判定提示
         r_idx = list(range(7, 14))
         r_max_h0 = float(e_h0[r_idx].max()) if hold else float("nan")
         r_max_h1 = float(e_h1[r_idx].max()) if hold else float("nan")
         r_max_push = float(e_push[r_idx].max()) if push else float("nan")
+        r_max_app = float(e_app[r_idx].max()) if approach else float("nan")
+        r_max_set = float(e_set[r_idx].max()) if settle else float("nan")
         sat_max = float(sat[r_idx].max()) if ARM_DIM else 0.0
         # 末 5 步斜率：接近平坦且残差仍大 → 稳态；仍陡降 → 慢收敛
         flat_asymp = False
@@ -415,11 +733,34 @@ class G1PickQTargetController:
         else:
             verdict = "hold 段数据不足"
 
+        qdot_app = _peak_qdot_cmd(approach)
+        qdot_push = _peak_qdot_cmd(push)
+        kv_over_kp_r = float(np.median(self._kv_over_kp[7:14])) if ARM_DIM else 0.0
+        lag_app = kv_over_kp_r * qdot_app
+        lag_push = kv_over_kp_r * qdot_push
+
         lines = [
             f"[DIAG] push末 |err|_Rmax={r_max_push:.4f}  "
             f"hold前20%={r_max_h0:.4f}  hold后20%={r_max_h1:.4f}  "
             f"force_sat_Rmax={sat_max:.2f}  → {verdict}",
+            f"[DIAG] approach末 |err|_Rmax={r_max_app:.4f}  "
+            f"settle末={r_max_set:.4f}  "
+            f"qdot_cmd_peak approach/push={qdot_app:.3f}/{qdot_push:.3f}rad/s  "
+            f"理论滞后(kv/kp*qdot)={lag_app:.4f}/{lag_push:.4f}rad  "
+            f"vff={self.vff}",
         ]
+        # approach / settle 主导关节（没进 push 也能定位）
+        for label, e_arr, rs in (
+            ("approach", e_app, approach),
+            ("settle", e_set, settle),
+        ):
+            if not rs:
+                continue
+            i_dom = int(7 + np.argmax(e_arr[7:14]))
+            lines.append(
+                f"[DIAG] {label} 主导关节 {self.arm_short_names[i_dom]}: "
+                f"|err|_max={e_arr[i_dom]:.4f}rad"
+            )
         # 右臂逐关节
         detail = []
         for i in r_idx:
@@ -428,22 +769,87 @@ class G1PickQTargetController:
                 f"{n}: e_h1={e_h1[i]:.4f} sat={sat[i]:.2f}"
             )
         lines.append("[DIAG] R_arm " + " | ".join(detail))
-        if clipped:
+        if not hold:
+            lines.append("[DIAG] ctrl 贴边判定：无 hold 数据")
+        elif clipped:
             lines.append(f"[DIAG] ctrl 贴边关节: {', '.join(clipped)}")
         else:
             lines.append("[DIAG] ctrl 未贴边")
-        # 积分状态
+        # 积分 / 前馈状态
         if self.ki > 0:
             Iabs = np.abs(self._I)
             lines.append(
                 f"[DIAG] I_max={float(Iabs.max()):.4f} "
                 f"I_R={self._I[7:14].tolist()}"
             )
+        if self.vff > 0:
+            lines.append(
+                f"[DIAG] ff_R_last={self._ff[7:14].tolist()} "
+                f"kv/kp_R={self._kv_over_kp[7:14].tolist()}"
+            )
         return "\n".join(lines)
 
 
+def _read_button_slide_q(env) -> dict[str, float]:
+    """读取当前 local MuJoCo 的四色按钮 slide qpos（返回独立标量）。"""
+    names = list(_BUTTON_JOINT_BY_COLOR.values())
+    raw = env.query_joint_qpos(names)
+    missing = [name for name in names if name not in raw]
+    if missing:
+        raise RuntimeError(f"button qpos missing: {missing}")
+    return {
+        color: float(
+            np.array(raw[joint_name], dtype=np.float64, copy=True).reshape(-1)[0]
+        )
+        for color, joint_name in _BUTTON_JOINT_BY_COLOR.items()
+    }
+
+
+def _infer_button_press_signs(
+    env, baseline: dict[str, float]
+) -> dict[str, float]:
+    """由本集 hard-limit 的长行程侧推断压入方向（+1 或 -1）。"""
+    import mujoco
+
+    gym = getattr(env, "gym", None) or getattr(
+        getattr(env, "unwrapped", env), "gym", None
+    )
+    if gym is None or not hasattr(gym, "_mjModel"):
+        raise RuntimeError("env.gym._mjModel unavailable")
+    mj = gym._mjModel
+    signs: dict[str, float] = {}
+    for color, joint_name in _BUTTON_JOINT_BY_COLOR.items():
+        jid = mujoco.mj_name2id(
+            mj, mujoco.mjtObj.mjOBJ_JOINT, joint_name
+        )
+        if jid < 0:
+            raise RuntimeError(f"button joint missing: {joint_name}")
+        lo, hi = (float(x) for x in mj.jnt_range[jid])
+        q0 = float(baseline[color])
+        neg_span = q0 - lo
+        pos_span = hi - q0
+        if max(neg_span, pos_span) < 1e-4 or abs(pos_span - neg_span) < 1e-4:
+            raise RuntimeError(
+                f"ambiguous button range {joint_name}: "
+                f"[{lo:+.6f}, {hi:+.6f}], q0={q0:+.6f}"
+            )
+        signs[color] = 1.0 if pos_span > neg_span else -1.0
+    return signs
+
+
+def _button_press_displacement(
+    q: dict[str, float],
+    baseline: dict[str, float],
+    signs: dict[str, float],
+) -> dict[str, float]:
+    return {
+        color: float(signs[color]) * (float(q[color]) - float(baseline[color]))
+        for color in _COLOR_ORDER
+    }
+
+
 class G1PickQScriptedDevice(AbstractDevice):
-    """逐步下发预计算 q 轨迹，并在首末帧切换 TaskStatus。"""
+    """逐步下发 q 轨迹，在相位边界闭环等待并监控真实按钮位移。"""
 
     def __init__(
         self,
@@ -452,8 +858,24 @@ class G1PickQScriptedDevice(AbstractDevice):
         q_traj: np.ndarray,
         phases: list[str] | None = None,
         q_contact: np.ndarray | None = None,
+        q_precontact: np.ndarray | None = None,
         ep: int = 0,
         color: str = "",
+        settle_tol: float = 0.01,
+        settle_consecutive: int = 3,
+        settle_max_steps: int = 200,
+        settle_strict: bool = False,
+        settle_log_every: int = 20,
+        settle_phases: tuple[str, ...] = ("approach",),
+        button_baseline: dict[str, float] | None = None,
+        button_press_signs: dict[str, float] | None = None,
+        button_press_threshold: float = 0.003,
+        button_press_consecutive: int = 3,
+        wrong_button_threshold: float = 0.001,
+        button_outward_tolerance: float = 0.001,
+        require_button_press: bool = True,
+        overpush: float = 0.02,
+        overpush_max_steps: int = 40,
     ):
         super().__init__()
         self.q_ctrl = q_ctrl
@@ -465,6 +887,8 @@ class G1PickQScriptedDevice(AbstractDevice):
         else:
             self.phases = list(phases)
             assert len(self.phases) == len(self.q_traj)
+        if len(self.q_traj) == 0:
+            raise ValueError("q trajectory 不能为空")
         self.t = 0
         self.ep = int(ep)
         self.color = str(color)
@@ -473,42 +897,353 @@ class G1PickQScriptedDevice(AbstractDevice):
             if q_contact is None
             else np.asarray(q_contact, dtype=np.float32).reshape(STATE_DIM)
         )
+        self.q_precontact = (
+            None
+            if q_precontact is None
+            else np.asarray(q_precontact, dtype=np.float32).reshape(STATE_DIM)
+        )
         self.hold_err_max: float | None = None
         self.hold_err_r_max: float | None = None
         self.hold_err_last: float | None = None
 
-    def update(self):
-        if self.t >= len(self.q_traj):
-            return
-        if self.t == 0:
-            self.task_status.update_task_status(True)
-        phase = self.phases[self.t]
-        # push/hold 启用积分；approach/retract 关闭避免转移过程 windup
-        self.q_ctrl.set_integral_enabled(phase in ("push", "hold"))
-        self.q_ctrl.set_diag_context(
-            ep=self.ep, color=self.color, step=self.t, phase=phase
-        )
-        target = self.q_traj[self.t]
-        self.q_ctrl.set_target_q(target)
+        self.settle_tol = max(0.0, float(settle_tol))
+        self.settle_consecutive = max(1, int(settle_consecutive))
+        self.settle_max_steps = max(0, int(settle_max_steps))
+        self.settle_strict = bool(settle_strict)
+        self.settle_log_every = max(1, int(settle_log_every))
+        self.settle_phases: frozenset[str] = frozenset(settle_phases)
+        self.settle_timeout_count = 0
+        self._settle_idx: int | None = None
+        self._settle_wait = 0
+        self._settle_stable = 0
+        self._started = False
+        self._end_requested = False
+        self._finish_pending = False
+        self.finished = False
+        self.failed_reason: str | None = None
 
-        # 保压段跟踪误差（使用控制器当前关节角）。
-        if phase == "hold" and self.q_contact is not None:
+        self.button_baseline = (
+            None
+            if button_baseline is None
+            else {c: float(button_baseline[c]) for c in _COLOR_ORDER}
+        )
+        self.button_press_signs = (
+            None
+            if button_press_signs is None
+            else {c: float(button_press_signs[c]) for c in _COLOR_ORDER}
+        )
+        self.button_press_threshold = max(0.0, float(button_press_threshold))
+        self.button_press_consecutive = max(1, int(button_press_consecutive))
+        self.wrong_button_threshold = max(0.0, float(wrong_button_threshold))
+        self.button_outward_tolerance = max(
+            0.0, float(button_outward_tolerance)
+        )
+        self.require_button_press = bool(require_button_press)
+        self.overpush = max(0.0, float(overpush))
+        self.overpush_max_steps = max(0, int(overpush_max_steps))
+        self._overpush_active = False
+        self._overpush_wait = 0
+        self._overpush_target: np.ndarray | None = None
+        self._button_peak = {c: 0.0 for c in _COLOR_ORDER}
+        self._button_outward_peak = {c: 0.0 for c in _COLOR_ORDER}
+        self._button_current = {c: 0.0 for c in _COLOR_ORDER}
+        self._button_target_consecutive = 0
+        self._button_target_max_consecutive = 0
+        self._button_sample_error: str | None = None
+
+    def _request_end(self, reason: str) -> None:
+        if self._end_requested:
+            return
+        self._end_requested = True
+        self.task_status.update_task_status(True, reason=reason)
+
+    def _sample_buttons(self) -> None:
+        if self.button_baseline is None or self.button_press_signs is None:
+            self._button_sample_error = "button baseline/sign unavailable"
+            return
+        try:
+            q = _read_button_slide_q(self.q_ctrl.env)
+            press = _button_press_displacement(
+                q, self.button_baseline, self.button_press_signs
+            )
+        except Exception as e:
+            if self._button_sample_error is None:
+                orca_logger.error(f"[BUTTON] qpos 采样失败: {e}")
+            self._button_sample_error = str(e)
+            return
+
+        for c in _COLOR_ORDER:
+            p = float(press[c])
+            self._button_current[c] = p
+            self._button_peak[c] = max(self._button_peak[c], max(0.0, p))
+            self._button_outward_peak[c] = max(
+                self._button_outward_peak[c], max(0.0, -p)
+            )
+        if self._button_current[self.color] >= self.button_press_threshold:
+            self._button_target_consecutive += 1
+        else:
+            self._button_target_consecutive = 0
+        self._button_target_max_consecutive = max(
+            self._button_target_max_consecutive,
+            self._button_target_consecutive,
+        )
+
+    def button_result(self) -> dict:
+        wrong = {c: self._button_peak[c] for c in _COLOR_ORDER if c != self.color}
+        wrong_color = max(wrong, key=wrong.get) if wrong else ""
+        wrong_peak = float(wrong.get(wrong_color, 0.0))
+        outward_peak = float(max(self._button_outward_peak.values(), default=0.0))
+        available = self._button_sample_error is None
+        success = (
+            available
+            and self._button_target_max_consecutive
+            >= self.button_press_consecutive
+            and wrong_peak < self.wrong_button_threshold
+            and outward_peak <= self.button_outward_tolerance
+        )
+        return {
+            "available": available,
+            "success": bool(success),
+            "target_color": self.color,
+            "target_peak_m": float(self._button_peak.get(self.color, 0.0)),
+            "target_max_consecutive": int(self._button_target_max_consecutive),
+            "wrong_color": wrong_color,
+            "wrong_peak_m": wrong_peak,
+            "outward_peak_m": outward_peak,
+            "sample_error": self._button_sample_error,
+        }
+
+    def _set_target(
+        self, index: int, *, override_q: np.ndarray | None = None, phase: str | None = None
+    ) -> tuple[str, np.ndarray]:
+        if phase is None:
+            phase = self.phases[index]
+        self.q_ctrl.set_integral_enabled(
+            phase in ("approach", "settle", "push", "hold", "overpush")
+        )
+        self.q_ctrl.set_diag_context(
+            ep=self.ep, color=self.color, step=index, phase=phase
+        )
+        target = (
+            np.asarray(override_q, dtype=np.float32).reshape(STATE_DIM)
+            if override_q is not None
+            else self.q_traj[index]
+        )
+        self.q_ctrl.set_target_q(target)
+        return phase, target
+
+    def _update_hold_error(self, phase: str) -> None:
+        if phase not in ("hold", "overpush") or self.q_contact is None:
+            return
+        try:
+            q_meas = self.q_ctrl.read_arm_q()
+            err = np.abs(q_meas - self.q_contact[0:14].astype(np.float64))
+            e_max = float(err.max())
+            e_r = float(err[7:14].max())
+            self.hold_err_last = e_max
+            if self.hold_err_max is None or e_max > self.hold_err_max:
+                self.hold_err_max = e_max
+            if self.hold_err_r_max is None or e_r > self.hold_err_r_max:
+                self.hold_err_r_max = e_r
+        except Exception:
+            pass
+
+    def _log_settle_status(self, phase: str, err_r: float, target: np.ndarray) -> None:
+        if self._settle_wait % self.settle_log_every != 0:
+            return
+        diag = self.q_ctrl.last_diag
+        names = self.q_ctrl.arm_short_names
+        try:
+            q_meas = self.q_ctrl.read_arm_q()
+            err_vec = np.abs(q_meas[7:14] - target[7:14].astype(np.float64))
+            i_dom = int(np.argmax(err_vec))
+            jname = names[7 + i_dom]
+            if diag is not None:
+                e = float(diag["err"][7 + i_dom])
+                I = float(diag["I"][7 + i_dom])
+                c = float(diag["ctrl"][7 + i_dom])
+                f = float(diag["force"][7 + i_dom])
+                fr = bool(diag.get("freeze", np.zeros(ARM_DIM, dtype=bool))[7 + i_dom])
+                ff = float(diag.get("ff", np.zeros(ARM_DIM))[7 + i_dom])
+            else:
+                e = float(err_vec[i_dom])
+                I = c = f = ff = float("nan")
+                fr = False
+            orca_logger.info(
+                f"[SETTLE] {phase} wait={self._settle_wait}/{self.settle_max_steps} "
+                f"R_arm_max={err_r:.4f}rad tol={self.settle_tol:.4f} "
+                f"dom={jname} err={e:+.4f} I={I:+.4f} ff={ff:+.4f} "
+                f"ctrl={c:+.4f} force={f:+.3f} freeze={fr}"
+            )
+        except Exception as e:
+            orca_logger.info(
+                f"[SETTLE] {phase} wait={self._settle_wait} "
+                f"R_arm_max={err_r:.4f}rad (detail failed: {e})"
+            )
+
+    def _begin_overpush_if_needed(self) -> bool:
+        """hold 末未达按压阈值时，沿 wp_pre→wp_contact 方向补压一次。"""
+        if self.overpush <= 0.0 or self.overpush_max_steps <= 0:
+            return False
+        if self.q_contact is None or self.q_precontact is None:
+            return False
+        if self._button_sample_error is not None:
+            return False
+        peak = float(self._button_peak.get(self.color, 0.0))
+        if peak >= self.button_press_threshold:
+            return False
+        d = (
+            self.q_contact[7:14].astype(np.float64)
+            - self.q_precontact[7:14].astype(np.float64)
+        )
+        nrm = float(np.linalg.norm(d))
+        if nrm < 1e-6:
+            return False
+        direction = d / nrm
+        q_extra = self.q_contact.copy()
+        q_extra[7:14] = (
+            self.q_contact[7:14].astype(np.float64) + self.overpush * direction
+        ).astype(np.float32)
+        self._overpush_target = q_extra
+        self._overpush_active = True
+        self._overpush_wait = 0
+        orca_logger.warning(
+            f"[OVERPUSH] hold 末按钮 peak={peak:.4f}m < "
+            f"thr={self.button_press_threshold:.4f}m，"
+            f"沿 wp_pre→contact 补压 {self.overpush:.3f}rad "
+            f"(max {self.overpush_max_steps} steps)"
+        )
+        return True
+
+    def update(self):
+        # update() 在 env.step() 之前执行，因此这里看到的是上一物理步结果。
+        self._sample_buttons()
+        if self._end_requested:
+            return
+        if not self._started:
+            self._started = True
+            self.task_status.update_task_status(True, reason="scripted_start")
+
+        # 兜底补压：沿接触方向再推一小段，检测到目标按钮位移即停
+        if self._overpush_active and self._overpush_target is not None:
+            phase, target = self._set_target(
+                min(self.t, len(self.q_traj) - 1),
+                override_q=self._overpush_target,
+                phase="overpush",
+            )
+            self._update_hold_error(phase)
+            self._overpush_wait += 1
+            pressed = (
+                self._button_current.get(self.color, 0.0)
+                >= self.button_press_threshold
+            )
+            if pressed or self._overpush_wait >= self.overpush_max_steps:
+                orca_logger.info(
+                    f"[OVERPUSH] 结束: wait={self._overpush_wait} "
+                    f"peak={self._button_peak.get(self.color, 0.0):.4f}m "
+                    f"pressed={pressed}"
+                )
+                self._overpush_active = False
+                self._finish_pending = True
+            return
+
+        # 最后一目标至少执行并录制一个完整 physics tick，再结束本集。
+        if self._finish_pending:
+            # hold 末仍未按到 → 尝试一次 overpush 兜底
+            if (
+                not self._overpush_active
+                and self._overpush_target is None
+                and self._begin_overpush_if_needed()
+            ):
+                self._finish_pending = False
+                return
+            self.finished = True
+            result = self.button_result()
+            if self.require_button_press and not result["success"]:
+                self.failed_reason = (
+                    "button verification failed: "
+                    f"target={result['target_peak_m']:.4f}m/"
+                    f"{result['target_max_consecutive']}ticks "
+                    f"wrong={result['wrong_color']}:{result['wrong_peak_m']:.4f}m "
+                    f"outward={result['outward_peak_m']:.4f}m "
+                    f"error={result['sample_error']}"
+                )
+                self._request_end("button_verify_failed")
+            else:
+                self._request_end("scripted_end_verified")
+            return
+
+        if self._settle_idx is not None:
+            idx = self._settle_idx
+            phase, target = self._set_target(idx)
+            self._update_hold_error(phase)
             try:
                 q_meas = self.q_ctrl.read_arm_q()
-                err = np.abs(q_meas - self.q_contact[0:14].astype(np.float64))
-                e_max = float(err.max())
-                e_r = float(err[7:14].max())
-                self.hold_err_last = e_max
-                if self.hold_err_max is None or e_max > self.hold_err_max:
-                    self.hold_err_max = e_max
-                if self.hold_err_r_max is None or e_r > self.hold_err_r_max:
-                    self.hold_err_r_max = e_r
-            except Exception:
-                pass
+                err_r = float(
+                    np.max(np.abs(q_meas[7:14] - target[7:14].astype(np.float64)))
+                )
+            except Exception as e:
+                err_r = float("inf")
+                orca_logger.warning(f"[SETTLE] 读取右臂关节失败: {e}")
+            self._settle_wait += 1
+            self._log_settle_status(phase, err_r, target)
+            if err_r <= self.settle_tol:
+                self._settle_stable += 1
+            else:
+                self._settle_stable = 0
+            if self._settle_stable >= self.settle_consecutive:
+                orca_logger.info(
+                    f"[SETTLE] {phase} 通过: R_arm_max={err_r:.4f}rad "
+                    f"stable={self._settle_stable} wait={self._settle_wait}"
+                )
+                self.t = idx + 1
+                self._settle_idx = None
+                self._settle_wait = 0
+                self._settle_stable = 0
+            elif self._settle_wait >= self.settle_max_steps:
+                msg = (
+                    f"{phase} settle timeout: R_arm_max={err_r:.4f}rad "
+                    f"> tol={self.settle_tol:.4f}rad after "
+                    f"{self._settle_wait} steps"
+                )
+                self.settle_timeout_count += 1
+                if self.settle_strict:
+                    self.failed_reason = msg
+                    orca_logger.error(f"[SETTLE] {msg}")
+                    self._request_end("settle_timeout")
+                else:
+                    orca_logger.warning(
+                        f"[SETTLE] {msg} → 继续执行后续相位 "
+                        f"(strict 可用 --settle_strict)"
+                    )
+                    self.t = idx + 1
+                    self._settle_idx = None
+                    self._settle_wait = 0
+                    self._settle_stable = 0
+            return
 
-        if self.t == len(self.q_traj) - 1:
-            self.task_status.update_task_status(True)
+        phase, target = self._set_target(self.t)
+        self._update_hold_error(phase)
+        is_settle_boundary = (
+            self.settle_max_steps > 0
+            and phase in self.settle_phases
+            and self.t + 1 < len(self.q_traj)
+            and self.phases[self.t + 1] != phase
+        )
+        if is_settle_boundary:
+            self._settle_idx = self.t
+            self._settle_wait = 0
+            self._settle_stable = 0
+            orca_logger.info(
+                f"[SETTLE] {phase} 末端开始等待: "
+                f"tol={self.settle_tol:.4f}rad consecutive={self.settle_consecutive} "
+                f"max={self.settle_max_steps} strict={self.settle_strict}"
+            )
+            return
+
         self.t += 1
+        if self.t >= len(self.q_traj):
+            self._finish_pending = True
 
 
 # ---------------------------------------------------------------------------
@@ -576,7 +1311,7 @@ def _prompt_counts(fallback: dict[str, int]) -> dict[str, int] | None:
     print(f"{'─' * W}", flush=True)
     print("  本次采集计划：", flush=True)
     for c in _COLOR_ORDER:
-        print(f"    {_COLOR_NAMES[c]:>3}色按钮：{counts[c]:>4} 集", flush=True)
+        print(f"    {_COLOR_NAMES[c]:>3}按钮：{counts[c]:>4} 集", flush=True)
     print(f"    {'合计':>5}：{total:>4} 集", flush=True)
     print(f"{'═' * W}\n", flush=True)
     if total == 0:
@@ -585,47 +1320,58 @@ def _prompt_counts(fallback: dict[str, int]) -> dict[str, int] | None:
     return counts
 
 
+def _smoothstep01(t: np.ndarray) -> np.ndarray:
+    """S 曲线时间缩放：消掉段首尾速度阶跃，使速度前馈连续。"""
+    t = np.clip(np.asarray(t, dtype=np.float64), 0.0, 1.0)
+    return (t * t * (3.0 - 2.0 * t)).astype(np.float32)
+
+
 def _lerp_q(a: np.ndarray, b: np.ndarray, n: int) -> np.ndarray:
     a = np.asarray(a, dtype=np.float32).reshape(STATE_DIM)
     b = np.asarray(b, dtype=np.float32).reshape(STATE_DIM)
     if n <= 1:
         return b.reshape(1, STATE_DIM).copy()
     t = np.linspace(0.0, 1.0, int(n), dtype=np.float32)[:, None]
-    return ((1.0 - t) * a + t * b).astype(np.float32)
+    s = _smoothstep01(t)
+    return ((1.0 - s) * a + s * b).astype(np.float32)
 
 
-def compute_approach_q(
-    arm_ik: G1_29_ArmIK,
-    q_contact: np.ndarray,
-    approach_back: float,
-) -> tuple[np.ndarray, dict]:
-    """接触点 EE 沿 -X 后撤 approach_back，再 IK 得预备关节角。
+def _lerp_q_path(points: list[np.ndarray], n: int) -> np.ndarray:
+    """沿多个关节路点插值，并保证每个给定路点都被轨迹精确经过。"""
+    if not points:
+        raise ValueError("q path 至少需要一个点")
+    pts = np.stack(
+        [np.asarray(q, dtype=np.float32).reshape(STATE_DIM) for q in points],
+        axis=0,
+    )
+    if len(pts) == 1:
+        return np.tile(pts, (max(1, int(n)), 1)).astype(np.float32)
 
-    - 接触 q 原样保留（尤其左臂/双手），只重算右臂接近位
-    - 左臂 EE 目标固定为接触时 FK，右臂位置 x -= approach_back
-    """
-    qc = np.asarray(q_contact, dtype=np.float32).reshape(STATE_DIM).copy()
-    q_arm = qc[0:14].astype(np.float64)
-    arm_ik.reset_state(q_arm)
-    T_l, T_r = arm_ik.fk_ee(q_arm)
-    T_r_app = T_r.copy()
-    T_r_app[0, 3] -= float(approach_back)
-    sol_q, _ = arm_ik.solve_ik(T_l, T_r_app, current_lr_arm_motor_q=q_arm)
-    sol_q = np.asarray(sol_q, dtype=np.float32).reshape(14)
+    # 每段至少一个 interval；剩余步数按该段最大关节变化量分配。
+    n_out = max(int(n), len(pts))
+    n_seg = len(pts) - 1
+    intervals = n_out - 1
+    alloc = np.ones(n_seg, dtype=np.int32)
+    extra = intervals - n_seg
+    if extra > 0:
+        weights = np.max(np.abs(np.diff(pts, axis=0)), axis=1).astype(np.float64)
+        if float(weights.sum()) <= 1e-12:
+            alloc += extra // n_seg
+            alloc[: extra % n_seg] += 1
+        else:
+            quota = extra * weights / float(weights.sum())
+            whole = np.floor(quota).astype(np.int32)
+            alloc += whole
+            left = int(extra - int(whole.sum()))
+            if left:
+                order = np.argsort(-(quota - whole), kind="stable")
+                alloc[order[:left]] += 1
 
-    q_app = qc.copy()
-    # 左臂锁在接触录制姿态；右臂用 IK 预备位；手保持接触手型
-    q_app[0:7] = qc[0:7]
-    q_app[7:14] = sol_q[7:14]
-    q_app[14:28] = qc[14:28]
-
-    info = {
-        "contact_R_pos": T_r[:3, 3].copy(),
-        "approach_R_pos": T_r_app[:3, 3].copy(),
-        "approach_back": float(approach_back),
-        "dq_R_arm": float(np.linalg.norm(q_app[7:14] - qc[7:14])),
-    }
-    return q_app, info
+    out = [pts[0].copy()]
+    for i, n_interval in enumerate(alloc.tolist()):
+        segment = _lerp_q(pts[i], pts[i + 1], n_interval + 1)
+        out.extend(segment[1:])
+    return np.stack(out, axis=0).astype(np.float32)
 
 
 def _enforce_max_dq_with_phases(
@@ -650,6 +1396,26 @@ def _enforce_max_dq_with_phases(
     return np.stack(out, axis=0), out_ph
 
 
+def compute_approach_q_joint(
+    q_start: np.ndarray,
+    q_contact: np.ndarray,
+    approach_alpha: float,
+) -> tuple[np.ndarray, dict]:
+    """关节空间预备点：start→contact 按 alpha 插值（右臂）；左臂/手锁接触录制值。"""
+    q0 = np.asarray(q_start, dtype=np.float32).reshape(STATE_DIM).copy()
+    qc = np.asarray(q_contact, dtype=np.float32).reshape(STATE_DIM).copy()
+    a = float(np.clip(approach_alpha, 0.0, 1.0))
+    qa = qc.copy()
+    qa[7:14] = ((1.0 - a) * q0[7:14] + a * qc[7:14]).astype(np.float32)
+    qa[0:7] = qc[0:7]
+    qa[14:28] = qc[14:28]
+    info = {
+        "approach_alpha": a,
+        "dq_R_arm": float(np.linalg.norm(qa[7:14] - qc[7:14])),
+    }
+    return qa, info
+
+
 def build_button_q_trajectory(
     q_start: np.ndarray,
     q_contact: np.ndarray,
@@ -661,15 +1427,11 @@ def build_button_q_trajectory(
     steps_retract: int = 30,
     max_dq_step: float = 0.03,
 ) -> tuple[np.ndarray, list[str]]:
-    """4 段按压：start→approach → contact → hold(contact) → approach。
-
-    返回 (traj, phases)，phases ∈ {approach, push, hold, retract}。
-    """
+    """4 段按压（纯关节）：start→approach → contact → hold → approach。"""
     q0 = np.asarray(q_start, dtype=np.float32).reshape(STATE_DIM).copy()
     qc = np.asarray(q_contact, dtype=np.float32).reshape(STATE_DIM).copy()
     qa = np.asarray(q_approach, dtype=np.float32).reshape(STATE_DIM).copy()
 
-    # 全程左臂锁接触录制值；接近段起手部用接触手型
     q0[0:7] = qc[0:7]
     qa[0:7] = qc[0:7]
     qa[14:28] = qc[14:28]
@@ -687,6 +1449,98 @@ def build_button_q_trajectory(
         + ["retract"] * len(seg4)
     )
     return _enforce_max_dq_with_phases(traj, phases, max_dq_step)
+
+
+def build_button_q_waypoint_trajectory(
+    q_start: np.ndarray,
+    q_waypoints: list[np.ndarray],
+    *,
+    approach_alpha: float = 0.75,
+    steps_approach: int = 50,
+    steps_settle: int = 20,
+    steps_push: int = 32,
+    steps_hold: int = 40,
+    steps_retract: int = 30,
+    max_dq_step: float = 0.03,
+) -> tuple[np.ndarray, list[str], dict]:
+    """构建按钮按压轨迹。
+
+    - 单点（默认 contact 文件）：``approach_alpha`` 关节插值得预接触点，
+      start→approach→contact→hold→retract。
+    - 多点 route：当前→wp1→…→wp[-2] approach，wp[-2]→wp[-1] push，
+      hold 在 wp[-1]，retract 回 wp[-2]。
+    """
+    if not q_waypoints:
+        raise ValueError("waypoint 路线不能为空")
+    route = [
+        np.asarray(q, dtype=np.float32).reshape(STATE_DIM).copy()
+        for q in q_waypoints
+    ]
+    q_contact = route[-1].copy()
+    q0 = np.asarray(q_start, dtype=np.float32).reshape(STATE_DIM).copy()
+
+    # 按钮路线只使用录制的右臂变化；左臂和双手全程固定在最终录制姿态
+    q0[0:7] = q_contact[0:7]
+    q0[14:28] = q_contact[14:28]
+    for q in route:
+        q[0:7] = q_contact[0:7]
+        q[14:28] = q_contact[14:28]
+
+    if len(route) == 1:
+        q_approach, info = compute_approach_q_joint(
+            q0, q_contact, approach_alpha
+        )
+        traj, phases = build_button_q_trajectory(
+            q0,
+            q_contact,
+            q_approach,
+            steps_approach=steps_approach,
+            steps_push=steps_push,
+            steps_hold=steps_hold,
+            steps_retract=steps_retract,
+            max_dq_step=max_dq_step,
+        )
+        info.update(
+            {
+                "route_points": 1,
+                "route_mode": "single_fallback",
+                "q_precontact": q_approach,
+                "q_contact": q_contact,
+            }
+        )
+        return traj, phases, info
+
+    q_pre = route[-2].copy()
+    seg1 = _lerp_q_path([q0, *route[:-1]], steps_approach)
+    seg_settle = np.tile(
+        q_pre.reshape(1, STATE_DIM), (max(0, int(steps_settle)), 1)
+    )
+    seg2 = _lerp_q(q_pre, route[-1], steps_push)
+    seg3 = np.tile(
+        route[-1].reshape(1, STATE_DIM), (max(1, int(steps_hold)), 1)
+    )
+    seg4 = _lerp_q(route[-1], q_pre, steps_retract)
+    parts = [seg1]
+    phases: list[str] = ["approach"] * len(seg1)
+    if len(seg_settle) > 0:
+        parts.append(seg_settle)
+        phases += ["settle"] * len(seg_settle)
+    parts.extend([seg2, seg3, seg4])
+    phases += (
+        ["push"] * len(seg2)
+        + ["hold"] * len(seg3)
+        + ["retract"] * len(seg4)
+    )
+    traj = np.vstack(parts).astype(np.float32)
+    traj, phases = _enforce_max_dq_with_phases(traj, phases, max_dq_step)
+    info = {
+        "route_points": len(route),
+        "route_mode": "sequence",
+        "dq_R_push": float(np.linalg.norm(route[-1][7:14] - q_pre[7:14])),
+        "q_precontact": q_pre,
+        "q_contact": q_contact,
+    }
+    return traj, phases, info
 
 
 def _install_xml_patch(env, agent_name: str, arm_gravcomp: float) -> None:
@@ -801,8 +1655,18 @@ def main() -> None:
     parser.add_argument("--agent_name", default="unitree_humanoid_robot_1")
     parser.add_argument(
         "--pose_candidates",
-        default=os.path.join(base_dir, "pose_g1_pick_button_candidates.yaml"),
-        help="候选关节角 YAML（默认 pose_g1_pick_button_candidates.yaml）",
+        default=os.path.join(base_dir, "pose_g1_pick_button"),
+        help="waypoint 目录（pose_g1_pick_button/）或旧版单 YAML",
+    )
+    parser.add_argument(
+        "--waypoint_mode",
+        choices=("route", "last", "cycle"),
+        default="route",
+        help=(
+            "route=每色全部路点连成 wp1→…→wpN 路线（默认）；"
+            "last=只取最后一个路点当接触；"
+            "cycle=多点轮换接触"
+        ),
     )
     parser.add_argument(
         "--counts", default="5,5,5,5",
@@ -822,38 +1686,38 @@ def main() -> None:
     parser.add_argument(
         "--steps_approach",
         type=int,
-        default=50,
-        help="接近段步数（默认 50；目标单集视频约 7–8s）",
+        default=60,
+        help="接近段步数（默认 60；vff+smoothstep 下精度已足够，无需更多步数）",
     )
     parser.add_argument(
         "--steps_push",
         type=int,
-        default=32,
-        help="前推接触段步数（默认 32）",
+        default=40,
+        help="前推接触段步数（默认 40；按钮在 push 开始即确认，无需放慢）",
     )
     parser.add_argument(
         "--steps_hold",
         type=int,
-        default=40,
-        help="保压段步数（默认 40；配合 arm_ki 收敛）",
+        default=15,
+        help="保压段步数（默认 15；button_press_consecutive=3 步确认即可，无需更长）",
     )
     parser.add_argument(
         "--steps_retract",
         type=int,
-        default=30,
-        help="后撤段步数（默认 30）",
+        default=20,
+        help="后撤段步数（默认 20；无精度要求，快速退出）",
     )
     parser.add_argument(
-        "--approach_back",
+        "--approach_alpha",
         type=float,
-        default=0.12,
-        help="接触 EE 沿 -X 后撤距离，单位米，默认 0.12",
+        default=0.75,
+        help="关节空间预备点：start→contact 插值比例（默认 0.75；1=直接到接触）",
     )
     parser.add_argument(
         "--max_dq_step",
         type=float,
-        default=0.03,
-        help="轨迹单步最大 |Δq|（rad）；默认 0.03",
+        default=0.020,
+        help="轨迹单步最大 |Δq|（rad）；默认 0.020（vff 补偿速度滞后后可放宽，防止轨迹被过度展开）",
     )
     parser.add_argument(
         "--realtime",
@@ -864,45 +1728,170 @@ def main() -> None:
     parser.add_argument("--clock", choices=("sim", "wall"), default="wall")
     parser.add_argument("--cameras", default="head,wrist_r")
     parser.add_argument("--cam_resolution", default="480x640")
-    parser.add_argument("--arm_kp", type=float, default=250.0)
+    parser.add_argument(
+        "--arm_kp",
+        type=float,
+        default=200.0,
+        help="臂部 position 执行器 kp（默认 200；提高按压段跟踪刚度）",
+    )
     parser.add_argument("--arm_kv", type=float, default=None)
-    parser.add_argument("--arm_kv_ratio", type=float, default=0.11)
+    parser.add_argument(
+        "--arm_kv_ratio",
+        type=float,
+        default=0.12,
+        help="kv=ratio*kp（默认 0.12；配合更高 kp 保持阻尼）",
+    )
     parser.add_argument("--arm_gravcomp", type=float, default=1.0)
     parser.add_argument(
         "--arm_ki",
         type=float,
-        default=10.0,
-        help="命令空间积分增益（默认 10；设 0 关闭）。诊断确认稳态误差后默认开启",
+        default=30.0,
+        help="命令空间积分增益（默认 30；approach/push/hold 启用）",
     )
     parser.add_argument(
         "--arm_i_max",
         type=float,
-        default=0.3,
-        help="积分限幅 |I|_max（rad，默认 0.3）",
+        default=0.45,
+        help="积分限幅 |I|_max（rad，默认 0.45）",
+    )
+    parser.add_argument(
+        "--arm_vff",
+        type=float,
+        default=1.0,
+        help="速度前馈系数（默认 1.0=完整抵消 kv/kp*qdot 滞后；0=关闭做 A/B）",
+    )
+    parser.add_argument(
+        "--arm_vff_max",
+        type=float,
+        default=0.40,
+        help="速度前馈限幅 |ff|_max（rad，默认 0.40；max_dq=0.020 时 qdot_peak≈3 rad/s 需要 0.33 rad 补偿）",
     )
     parser.add_argument(
         "--diag_csv",
         default="",
         help="逐步诊断 CSV 路径（空=不写文件；仍打印每集汇总）",
     )
+    parser.add_argument(
+        "--diag_ee",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="打印详细末端位姿（tgtFK/measFK/site；默认开）",
+    )
+    parser.add_argument(
+        "--diag_ee_every",
+        type=int,
+        default=10,
+        help="末端位姿日志间隔步数（相位切换仍强制打印；默认 10）",
+    )
+    parser.add_argument(
+        "--running_log",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="是否把终端/orca 日志同步写入 runninglog txt（默认开）",
+    )
+    parser.add_argument(
+        "--log_file",
+        default="",
+        help="运行日志 txt 路径（空=runninglog/g1_pick_scripted_button_<时间戳>.txt）",
+    )
+    parser.add_argument(
+        "--settle_tol",
+        type=float,
+        default=0.01,
+        help="相位末右臂到位阈值（rad，默认 0.01）",
+    )
+    parser.add_argument(
+        "--settle_consecutive",
+        type=int,
+        default=3,
+        help="到位连续满足步数（默认 3）",
+    )
+    parser.add_argument(
+        "--settle_max_steps",
+        type=int,
+        default=20,
+        help="approach settle 最长等待步数（默认 20；超时后 strict=False 则继续）",
+    )
+    parser.add_argument(
+        "--settle_phases",
+        default="approach",
+        help="触发 settle gate 的相位，逗号分隔（默认 approach；push 已移除，按钮在 push 开始即确认）",
+    )
+    parser.add_argument(
+        "--settle_strict",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="settle 超时是否整集失败（默认关=告警后继续 push/hold）",
+    )
+    parser.add_argument(
+        "--settle_log_every",
+        type=int,
+        default=20,
+        help="settle 等待期间诊断日志间隔（默认 20）",
+    )
+    parser.add_argument(
+        "--require_button_press",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="未按到目标按钮则不保存本集（默认开）",
+    )
+    parser.add_argument(
+        "--button_press_threshold",
+        type=float,
+        default=0.003,
+        help="目标按钮压入行程阈值（m，默认 0.003）",
+    )
+    parser.add_argument(
+        "--button_press_consecutive",
+        type=int,
+        default=3,
+        help="压入行程连续满足步数（默认 3）",
+    )
+    parser.add_argument(
+        "--overpush",
+        type=float,
+        default=0.02,
+        help="hold 末未达按压阈值时沿 wp_pre→contact 补压量（rad，默认 0.02；0=关闭）",
+    )
+    parser.add_argument(
+        "--overpush_max_steps",
+        type=int,
+        default=40,
+        help="补压最长步数（默认 40；检测到按钮位移即停）",
+    )
     args = parser.parse_args()
 
+    if args.running_log:
+        log_path = args.log_file.strip()
+        if not log_path:
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_path = os.path.join(
+                DEFAULT_RUNNING_LOG_DIR,
+                f"g1_pick_scripted_button_{stamp}.txt",
+            )
+        log_path = _setup_running_log(log_path)
+        orca_logger.info(f"运行日志 → {log_path}")
+
     cand_path = os.path.abspath(os.path.expanduser(args.pose_candidates))
-    with open(cand_path, "r", encoding="utf-8") as f:
-        cand_spec = safe_load(f)
-    buttons: dict = cand_spec["buttons"]
-    approach_back = float(cand_spec.get("approach_back", args.approach_back))
+    try:
+        buttons, _approach_back_unused = load_pose_candidates(cand_path)
+    except Exception as e:
+        orca_logger.error(f"加载 pose_candidates 失败: {cand_path} ({e})")
+        return
+    if not (0.0 <= float(args.approach_alpha) <= 1.0):
+        orca_logger.error("--approach_alpha 须在 [0,1]")
+        return
 
     for color in _COLOR_ORDER:
         cands = (buttons.get(color) or {}).get("candidates") or []
         if not cands:
-            orca_logger.error(f"候选文件缺少 {color} 的 candidates: {cand_path}")
-            return
+            orca_logger.warning(f"{color} waypoints 为空: {cand_path}")
+            continue
         for i, c in enumerate(cands):
             q = c.get("q")
             if q is None or len(q) != STATE_DIM:
                 orca_logger.error(
-                    f"{color} candidates[{i}] 需要长度为 {STATE_DIM} 的 q"
+                    f"{color} waypoints[{i}] 需要长度为 {STATE_DIM} 的 q"
                 )
                 return
 
@@ -920,16 +1909,26 @@ def main() -> None:
     print("=" * 62, flush=True)
     print("  宇树 g1_pick 四色按钮自动化采集", flush=True)
     print(f"  场景: {args.scene_json}  agent: {args.agent_name}", flush=True)
-    print(f"  候选文件: {cand_path}", flush=True)
+    print(f"  waypoint: {cand_path}", flush=True)
+    for _c in _COLOR_ORDER:
+        print(
+            f"    {_c}: {len((buttons.get(_c) or {}).get('candidates') or [])} 点",
+            flush=True,
+        )
     print(f"  输出目录: {lerobot_out}", flush=True)
     print(
-        f"  approach_back={approach_back:.3f}m  arm_kp={args.arm_kp:.0f}  "
-        f"arm_ki={args.arm_ki:g}  max_dq={args.max_dq_step:.3f}",
+        f"  traj=joint  approach_alpha={args.approach_alpha:.2f}  "
+        f"waypoint_mode={args.waypoint_mode}  "
+        f"arm_kp={args.arm_kp:.0f}  "
+        f"arm_ki={args.arm_ki:g}  arm_vff={args.arm_vff:g}  "
+        f"max_dq={args.max_dq_step:.3f}",
         flush=True,
     )
     print(
         f"  steps: approach={args.steps_approach} push={args.steps_push} "
         f"hold={args.steps_hold} retract={args.steps_retract}  "
+        f"settle_max={args.settle_max_steps} strict={args.settle_strict}  "
+        f"overpush={args.overpush:g}  "
         f"realtime={'on' if args.realtime else 'off'}",
         flush=True,
     )
@@ -962,6 +1961,15 @@ def main() -> None:
 
     with open(os.path.abspath(os.path.join(base_dir, args.task_config)), "r", encoding="utf-8") as f:
         scene_config = load(f, Loader=Loader)
+    # 宇树运行时覆盖共享 example.yaml 里的智元前缀，避免污染初始关节元数据
+    dc = scene_config.setdefault("data_collection", {})
+    unitree_prefix = f"{args.agent_name}_"
+    old_prefix = dc.get("agent_joint_prefix")
+    dc["agent_joint_prefix"] = unitree_prefix
+    if old_prefix and old_prefix != unitree_prefix:
+        orca_logger.info(
+            f"覆盖 agent_joint_prefix: {old_prefix!r} → {unitree_prefix!r}"
+        )
     scene_manager = SceneManager(args.orcagym_addr, config=scene_config)
     script_name = os.path.basename(sys.argv[0]) if sys.argv else os.path.basename(__file__)
     scene_manager.show_ui_message(1, "脚本控制：g1_pick 四色按钮采集", "0xffff00", showtime=5)
@@ -1024,6 +2032,10 @@ def main() -> None:
         ki=args.arm_ki,
         i_max=args.arm_i_max,
         dt=ctrl_dt,
+        vff=args.arm_vff,
+        vff_max=args.arm_vff_max,
+        diag_ee=args.diag_ee,
+        diag_ee_every=args.diag_ee_every,
     )
     if args.diag_csv:
         q_ctrl.begin_diag_csv(args.diag_csv)
@@ -1033,7 +2045,6 @@ def main() -> None:
     tele.limit_cabinet_button_slides(
         env, args.agent_name, toward_robot_m=0.0, into_panel_m=0.05
     )
-    arm_ik = G1_29_ArmIK(Visualization=False)
 
     task_status = TaskStatusController(env, g1_pick_conf.base_body, is_controller=False)
     manager.set_task_status_controller(task_status)
@@ -1119,21 +2130,52 @@ def main() -> None:
     )
 
     n_success = 0
+    n_fail = 0
+    wp_cursor: dict[str, int] = {c: 0 for c in _COLOR_ORDER}
     try:
         with writer:
             for ep_idx, color in enumerate(color_seq):
                 btn = buttons[color]
                 task_str = str(btn["task"])
                 candidates = btn["candidates"]
-                chosen = rng.choice(candidates)
-                q_contact = np.asarray(chosen["q"], dtype=np.float32).reshape(STATE_DIM)
+                if not candidates:
+                    orca_logger.error(f"{color} waypoints 为空，跳过本集")
+                    continue
+
+                all_qs = [
+                    np.asarray(c["q"], dtype=np.float32).reshape(STATE_DIM)
+                    for c in candidates
+                ]
+                if args.waypoint_mode == "route":
+                    route_qs = all_qs
+                    q_contact = route_qs[-1].copy()
+                    route_tag = (
+                        f"route 1→{len(route_qs)} (contact=wp{len(route_qs)})"
+                    )
+                elif args.waypoint_mode == "cycle":
+                    wp_i = wp_cursor[color] % len(all_qs)
+                    wp_cursor[color] += 1
+                    route_qs = [all_qs[wp_i]]
+                    q_contact = route_qs[0].copy()
+                    route_tag = f"cycle wp{wp_i + 1}/{len(all_qs)}"
+                else:
+                    # last（默认）：每色只用最后一个/唯一接触点
+                    route_qs = [all_qs[-1]]
+                    q_contact = route_qs[0].copy()
+                    route_tag = (
+                        f"contact wp{len(all_qs)}/{len(all_qs)}"
+                        if len(all_qs) > 1
+                        else "contact"
+                    )
 
                 print(
-                    f"\n>>> 第 {ep_idx + 1}/{total_episodes} 条 | {task_str}",
+                    f"\n>>> 第 {ep_idx + 1}/{total_episodes} 条 | {task_str} "
+                    f"| {route_tag}",
                     flush=True,
                 )
                 orca_logger.info(
                     f"=== Episode {ep_idx + 1}/{total_episodes} | {task_str} | "
+                    f"{route_tag} | "
                     f"R_pitch={q_contact[7]:+.3f} elbow={q_contact[10]:+.3f} ==="
                 )
                 storage.set_task(task_str)
@@ -1153,10 +2195,11 @@ def main() -> None:
                     orca_logger.info("update_scene 失败，停止")
                     break
                 env.set_default_joint_values(default_joint_values)
-                # spawn_scene 可能冲掉 position gains / pin，每集重刷
+                # spawn_scene 可能冲掉 position gains / pin，每集重刷（pin 已幂等）
                 tele.apply_arm_position_gains(
                     env, kp=args.arm_kp, kv=args.arm_kv, kv_ratio=args.arm_kv_ratio
                 )
+                q_ctrl.refresh_gains()  # 速度前馈依赖 live kp/kv
                 tele.pin_floating_base(env, args.agent_name)
                 tele.limit_cabinet_button_slides(
                     env, args.agent_name, toward_robot_m=0.0, into_panel_m=0.05
@@ -1189,46 +2232,94 @@ def main() -> None:
                 q_start[0:7] = q_contact[0:7]
                 q_start[14:28] = q_contact[14:28]
 
-                q_approach, app_info = compute_approach_q(
-                    arm_ik, q_contact, approach_back
-                )
-                q_traj, phases = build_button_q_trajectory(
+                q_traj, phases, route_info = build_button_q_waypoint_trajectory(
                     q_start,
-                    q_contact,
-                    q_approach,
+                    route_qs,
+                    approach_alpha=args.approach_alpha,
                     steps_approach=args.steps_approach,
+                    steps_settle=0,
                     steps_push=args.steps_push,
                     steps_hold=args.steps_hold,
                     steps_retract=args.steps_retract,
                     max_dq_step=args.max_dq_step,
                 )
-                cpos = app_info["contact_R_pos"]
-                apos = app_info["approach_R_pos"]
-                n_ph = {p: phases.count(p) for p in ("approach", "push", "hold", "retract")}
+                q_contact = np.asarray(
+                    route_info.get("q_contact", q_contact), dtype=np.float32
+                ).reshape(STATE_DIM)
+                q_precontact = route_info.get("q_precontact")
+                if q_precontact is not None:
+                    q_precontact = np.asarray(
+                        q_precontact, dtype=np.float32
+                    ).reshape(STATE_DIM)
+                n_ph = {
+                    p: phases.count(p)
+                    for p in ("approach", "settle", "push", "hold", "retract")
+                    if phases.count(p)
+                }
+                # 各段指令峰值速度（用于对照理论滞后）
+                def _peak_cmd_speed(traj_arr, ph_list, phase_name: str) -> float:
+                    idx = [i for i, p in enumerate(ph_list) if p == phase_name]
+                    if len(idx) < 2 or ctrl_dt <= 0:
+                        return 0.0
+                    peak = 0.0
+                    for a, b in zip(idx[:-1], idx[1:]):
+                        if b != a + 1:
+                            continue
+                        d = traj_arr[b, 7:14] - traj_arr[a, 7:14]
+                        peak = max(peak, float(np.max(np.abs(d)) / ctrl_dt))
+                    return peak
+
+                qdot_app = _peak_cmd_speed(q_traj, phases, "approach")
+                qdot_push = _peak_cmd_speed(q_traj, phases, "push")
+                kv_ratio_est = float(np.median(q_ctrl._kv_over_kp[7:14]))
                 orca_logger.info(
                     f"轨迹步数={len(q_traj)} phases={n_ph} "
-                    f"approach_back={approach_back:.3f}m "
-                    f"R_EE contact=[{cpos[0]:.3f},{cpos[1]:.3f},{cpos[2]:.3f}] "
-                    f"approach=[{apos[0]:.3f},{apos[1]:.3f},{apos[2]:.3f}] "
-                    f"|Δq_R|={app_info['dq_R_arm']:.3f}"
+                    f"route_mode={route_info.get('route_mode')} "
+                    f"points={route_info.get('route_points')} "
+                    f"|Δq_R_push|={float(route_info.get('dq_R_push', route_info.get('dq_R_arm', 0.0))):.3f} "
+                    f"qdot_cmd_peak approach/push={qdot_app:.3f}/{qdot_push:.3f}rad/s "
+                    f"理论滞后={kv_ratio_est * qdot_app:.4f}/{kv_ratio_est * qdot_push:.4f}rad "
+                    f"vff={args.arm_vff}"
                 )
+
+                try:
+                    button_baseline = _read_button_slide_q(env)
+                    button_signs = _infer_button_press_signs(env, button_baseline)
+                except Exception as e:
+                    orca_logger.error(f"[BUTTON] 基线读取失败: {e}")
+                    button_baseline = None
+                    button_signs = None
 
                 task_status.reset()
                 q_ctrl.clear_episode_rows()
+                q_ctrl.set_contact_q_for_ee(q_contact)
                 device = G1PickQScriptedDevice(
                     q_ctrl,
                     task_status,
                     q_traj,
                     phases=phases,
                     q_contact=q_contact,
+                    q_precontact=q_precontact,
                     ep=ep_idx + 1,
                     color=color,
+                    settle_tol=args.settle_tol,
+                    settle_consecutive=args.settle_consecutive,
+                    settle_max_steps=args.settle_max_steps,
+                    settle_strict=args.settle_strict,
+                    settle_log_every=args.settle_log_every,
+                    settle_phases=tuple(p.strip() for p in args.settle_phases.split(",") if p.strip()),
+                    button_baseline=button_baseline,
+                    button_press_signs=button_signs,
+                    button_press_threshold=args.button_press_threshold,
+                    button_press_consecutive=args.button_press_consecutive,
+                    require_button_press=args.require_button_press,
+                    overpush=args.overpush,
+                    overpush_max_steps=args.overpush_max_steps,
                 )
                 manager.set_device(device)
                 try:
                     manager.run_episode()
                 finally:
-                    # 即使中断也打印诊断汇总
                     if device.hold_err_max is not None:
                         orca_logger.info(
                             f"接触跟踪 hold |Δq|_max={device.hold_err_max:.4f} "
@@ -1240,6 +2331,31 @@ def main() -> None:
                         orca_logger.info(line)
                         print(line, flush=True)
 
+                btn_res = device.button_result()
+                orca_logger.info(
+                    f"[BUTTON] target={color} peak={btn_res['target_peak_m']:.4f}m "
+                    f"ticks={btn_res['target_max_consecutive']} "
+                    f"wrong={btn_res['wrong_color']}:{btn_res['wrong_peak_m']:.4f}m "
+                    f"success={btn_res['success']} available={btn_res['available']}"
+                )
+                if device.failed_reason:
+                    orca_logger.warning(f"[FAIL] {device.failed_reason}")
+
+                ok = (not args.require_button_press) or bool(btn_res["success"])
+                if not ok:
+                    n_fail += 1
+                    try:
+                        storage.clear_data()
+                    except Exception as e:
+                        orca_logger.warning(f"丢弃失败集缓冲时出错: {e}")
+                    print(
+                        f">>> [✗] Episode {ep_idx + 1}/{total_episodes}  {task_str}  "
+                        f"未按到按钮，跳过保存 "
+                        f"(peak={btn_res['target_peak_m']:.4f}m)",
+                        flush=True,
+                    )
+                    continue
+
                 storage.save_data(
                     task_info=manager.task.get_task_info(),
                     scene_info=manager.scene_manager.get_scene_info(),
@@ -1247,11 +2363,12 @@ def main() -> None:
                 )
                 n_success += 1
                 print(
-                    f">>> [✓] Episode {n_success}/{total_episodes}  {task_str}  已保存",
+                    f">>> [✓] Episode {n_success}/{total_episodes}  {task_str}  已保存 "
+                    f"(press={btn_res['target_peak_m']:.4f}m)",
                     flush=True,
                 )
                 orca_logger.info(
-                    f"[✓] {task_str}  {n_success}/{total_episodes} "
+                    f"[✓] {task_str}  成功{n_success}/失败{n_fail} "
                     f"（writer {writer.num_episodes} 集 / {writer.num_frames} 帧）"
                 )
 
@@ -1279,6 +2396,8 @@ def main() -> None:
         print(f"  数据位于: {lerobot_out}", flush=True)
         if args.diag_csv:
             print(f"  诊断 CSV: {os.path.abspath(os.path.expanduser(args.diag_csv))}", flush=True)
+        if _RUNNING_LOG_PATH:
+            print(f"  运行日志: {_RUNNING_LOG_PATH}", flush=True)
         print(f"{'=' * 62}", flush=True)
         try:
             env.close()
@@ -1295,4 +2414,12 @@ if __name__ == "__main__":
         OrcaLog.get_instance().error(f"Unexpected error: {e}\n{traceback.format_exc()}")
     finally:
         orca_logger.info("Exiting program")
+        if _RUNNING_LOG_FP is not None:
+            try:
+                _RUNNING_LOG_FP.write(
+                    f"\n# finished {datetime.now().isoformat(timespec='seconds')}\n"
+                )
+                _RUNNING_LOG_FP.close()
+            except Exception:
+                pass
         os._exit(0)

@@ -1,0 +1,50 @@
+# 由 record_g1_pick_button_waypoints.py 自动生成  2026-08-06 12:49:26
+# 宇树 g1_pick 按钮接触 waypoint（yellow）
+# q: [0:7]L臂 [7:14]R臂 [14:21]L手 [21:28]R手
+# 触发：左右 squeeze 同按边沿采样
+
+color: yellow
+task: "按黄色按钮"
+approach_back: 0.1200
+joint_dim: 28
+joint_names:
+  - left_shoulder_pitch_joint
+  - left_shoulder_roll_joint
+  - left_shoulder_yaw_joint
+  - left_elbow_joint
+  - left_wrist_roll_joint
+  - left_wrist_pitch_joint
+  - left_wrist_yaw_joint
+  - right_shoulder_pitch_joint
+  - right_shoulder_roll_joint
+  - right_shoulder_yaw_joint
+  - right_elbow_joint
+  - right_wrist_roll_joint
+  - right_wrist_pitch_joint
+  - right_wrist_yaw_joint
+  - left_hand_thumb_0_joint
+  - left_hand_thumb_1_joint
+  - left_hand_thumb_2_joint
+  - left_hand_middle_0_joint
+  - left_hand_middle_1_joint
+  - left_hand_index_0_joint
+  - left_hand_index_1_joint
+  - right_hand_thumb_0_joint
+  - right_hand_thumb_1_joint
+  - right_hand_thumb_2_joint
+  - right_hand_middle_0_joint
+  - right_hand_middle_1_joint
+  - right_hand_index_0_joint
+  - right_hand_index_1_joint
+
+waypoints:
+  # 黄色 waypoint 1  时间: 12:48:59
+  - q: [-0.0262, 0.0163, -0.0027, 0.3001, -0.0164, -0.3030, 0.0123, -0.1392, -0.1086, -0.0107, 0.1983, -0.0157, -0.1607, 0.0232, -0.0017, -0.0017, -0.0002, -0.0001, -0.0000, -0.0001, -0.0000, -1.1164, -0.9578, -1.6211, 0.0014, 0.0002, 0.0020, 0.0003]
+    # R_arm≈ pitch=-0.139 roll=-0.109 yaw=-0.011 elbow=0.198
+  # 黄色 waypoint 2  时间: 12:49:03
+  - q: [-0.0286, 0.0165, -0.0032, 0.3113, -0.0171, -0.3158, 0.0127, -0.2157, -0.1584, -0.0141, 0.2495, -0.0123, -0.1186, 0.0652, -0.0017, -0.0017, -0.0002, -0.0008, -0.0001, -0.0009, -0.0001, -1.1158, -0.9566, -1.6224, 0.0006, 0.0000, 0.0011, 0.0001]
+    # R_arm≈ pitch=-0.216 roll=-0.158 yaw=-0.014 elbow=0.250
+  # 黄色 waypoint 3  时间: 12:49:21
+  - q: [-0.0319, 0.0138, -0.0047, 0.3113, -0.0170, -0.3163, 0.0125, -0.3978, -0.2922, -0.0336, 0.4014, 0.0231, 0.0213, 0.1999, -0.0017, 0.0004, 0.0001, -0.0030, -0.0005, -0.0031, -0.0005, -1.0925, -0.9361, -1.6510, 0.0846, 0.0217, 0.0745, 0.0192]
+    # R_arm≈ pitch=-0.398 roll=-0.292 yaw=-0.034 elbow=0.401
+
