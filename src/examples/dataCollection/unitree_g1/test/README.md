@@ -1,7 +1,6 @@
-# G1 + OmniPicker 夹爪遥操作数据采集（测试版）
+# G1 + OmniPicker 夹爪遥操作（测试目录）
 
-本目录为 **支链测试脚本**，对应 G1 机械臂 + OmniPicker 夹爪（双指夹爪）的 VR 遥操作数据采集流程。  
-主链路共用模块（`lerobot_data_storage`、`g1_pick_unitree_arm_ik` 等）位于上级目录。
+本目录提供 G1 机械臂 + OmniPicker 双指夹爪的 VR 遥操作：纯跟手（不落盘）与数据采集两套入口。共用模块位于仓库 `src/`。
 
 ---
 
@@ -9,10 +8,13 @@
 
 ```
 test/
-├── g1_pick_collection_tele_lerobot_gripper_test.py   # 采集主脚本
-├── uni_test2.json                                     # OrcaLab 场景布局
-├── run.sh                                             # 一键运行示例
-└── README.md                                          # 本文件
+├── g1_pick_teleop_gripper_test.py                     # 纯遥操作（不落盘）
+├── uni_test.json                                      # 纯遥操作场景布局
+├── g1_pick_collection_tele_lerobot_gripper_test.py    # 遥操作采集（落盘）
+├── uni_test2.json                                     # 采集场景布局
+├── run.sh                                             # 采集一键运行示例
+├── run_teleop.sh                                      # 纯遥操作一键运行示例
+└── README.md
 ```
 
 ---
@@ -32,18 +34,61 @@ test/
 
 ### 2. 加载场景
 
-在 OrcaLab 中加载本目录的 `uni_test2.json`（包含工具架、抓取物体及 G1+夹爪机器人）。  
-相机端口映射：
+纯遥操作请加载本目录的 `uni_test.json`。采集请加载 `uni_test2.json`。  
+两份布局均包含工具架、抓取物体及 G1+夹爪机器人。
+
+采集时的相机端口：
 - `head` → 7090
 - `wrist_r` → 7080
 
+纯遥操作不采相机，无需配置 Recording。
+
 ### 3. 连接 Pico VR 头显
 
-通过 USB 连接 Pico，确认 `adb devices` 可见设备。
+通过 USB 连接 Pico，确认 `adb devices` 可见设备。首次使用请按仓库 `docs/unitree_g1_collection.md` 禁用房间标定向导，并做 `adb reverse tcp:8012 tcp:8012`。
 
 ---
 
-## 快速运行
+## 纯遥操作（不落盘）
+
+OrcaLab 加载 `uni_test.json` 并运行仿真后，在本目录执行：
+
+```bash
+bash run_teleop.sh
+```
+
+或：
+
+```bash
+adb reverse tcp:8012 tcp:8012
+adb shell am start -a android.intent.action.VIEW -d 'http://127.0.0.1:8012/'
+
+python -u g1_pick_teleop_gripper_test.py \
+    --level default \
+    --task_config ../../common/example.yaml \
+    --agent_name g1_pick_with_gripper_usda_1 \
+    --task "抓取测试" \
+    --orcagym_addr localhost:50051 \
+    --xr_backend televuer \
+    --tv_no_tls \
+    --tv_goal_mode rebased_tv \
+    --tv_ee_dx 0.03
+```
+
+头显请打开 `http://127.0.0.1:8012/`（明文，不要用 https）。
+
+| 操作 | 效果 |
+|------|------|
+| 左 squeeze | 开始 / 结束本轮跟手 |
+| 右 squeeze | 重置本轮 |
+| 左右 squeeze 同按 | 退出 |
+| 右臂 | 跟随右手柄位姿 |
+| 左臂 | 侧平举锁定 |
+| 左 / 右扳机 | 对应夹爪开合 |
+
+---
+
+## 遥操作采集（落盘）
 
 ```bash
 # 在本目录（test/）下执行
@@ -105,13 +150,6 @@ python -u g1_pick_collection_tele_lerobot_gripper_test.py \
 
 ---
 
-## 数据集依赖（主链路）
+## 采集脚本依赖
 
-本脚本使用以下主链路模块（位于 `src/dataStorage/` 和 `src/controllers/`）：
-
-- `lerobot_data_storage.py` — LeRobot v2.1 写入器（含 NVENC 编码、subproc 后端）
-- `g1_pick_with_gripper_data_storage.py` — G1+夹爪 state/action schema
-- `lerobot_camera.py` — 相机帧采集工具
-- `encoder_proc.py` — forkserver 子进程编码器
-- `g1_pick_unitree_arm_ik.py` — 宇树 G1 双臂 IK（含 `fixed_left_q` 左臂锁定）
-- `g1_pick_dual_arm_controller.py` — 双臂控制器
+落盘采集还会用到 `src/dataStorage/` 下的 LeRobot 写入与相机模块；纯遥操作不依赖这些模块。

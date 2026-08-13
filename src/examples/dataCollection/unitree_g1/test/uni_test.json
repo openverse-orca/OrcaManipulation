@@ -1,0 +1,640 @@
+{
+    "version": "3.0",
+    "viewport_camera_transform": {
+        "position": [
+            19.46695327758789,
+            -24.278804779052734,
+            2.1170804500579834
+        ],
+        "rotation": [
+            0.6853366404087425,
+            -0.24741196307148347,
+            0.23256693474699927,
+            -0.6442155157280504
+        ]
+    },
+    "actors": [
+        {
+            "name": "Group",
+            "path": "/Group",
+            "type": "GroupActor",
+            "transform": {
+                "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "children": [
+                {
+                    "name": "Static",
+                    "path": "/Group/Static",
+                    "type": "GroupActor",
+                    "transform": {
+                        "position": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "rotation": [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "scale": 1.0
+                    },
+                    "children": [
+                        {
+                            "name": "block",
+                            "path": "/Group/Static/block",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    20.180767059326172,
+                                    -24.279428482055664,
+                                    0.9650000095367431
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/southgrid_competetion_2026/csg_robotcompetition_2026/props/blocks/block"
+                        },
+                        {
+                            "name": "Table_green_03",
+                            "path": "/Group/Static/Table_green_03",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    20.4973201751709,
+                                    -23.828718185424805,
+                                    0.200000524520874
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/southgrid_competetion_2026/csg_robotcompetition_2026/props/table_green_03/table_green_03"
+                        },
+                        {
+                            "name": "PenHolder",
+                            "path": "/Group/Static/PenHolder",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    18.81814765930176,
+                                    -22.1533145904541,
+                                    1.1983189582824707
+                                ],
+                                "rotation": [
+                                    0.7071071107358423,
+                                    0.0,
+                                    0.0,
+                                    -0.7071064516370992
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/southgrid_competetion_2026/csg_robotcompetition_2026/props/penholder/penholder"
+                        },
+                        {
+                            "name": "ElectricalCabinet",
+                            "path": "/Group/Static/ElectricalCabinet",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    19.119369506835938,
+                                    -21.89777183532715,
+                                    0.22237277030944824
+                                ],
+                                "rotation": [
+                                    0.7071086643233062,
+                                    0.0,
+                                    0.0,
+                                    0.7071048980447737
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/southgrid_competetion_2026/csg_robotcompetition_2026/props/electricalcabinet/electricalcabinet"
+                        },
+                        {
+                            "name": "block_1",
+                            "path": "/Group/Static/block_1",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    20.34440040588379,
+                                    -24.279293060302734,
+                                    0.9650000095367431
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/southgrid_competetion_2026/csg_robotcompetition_2026/props/blocks/block"
+                        }
+                    ]
+                },
+                {
+                    "name": "Interactive",
+                    "path": "/Group/Interactive",
+                    "type": "GroupActor",
+                    "transform": {
+                        "position": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "rotation": [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "scale": 1.0
+                    },
+                    "children": [
+                        {
+                            "name": "Flashlight",
+                            "path": "/Group/Interactive/Flashlight",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    20.19326400756836,
+                                    -24.410200119018555,
+                                    1.015100037574768
+                                ],
+                                "rotation": [
+                                    0.5000004768370445,
+                                    -0.4999999999998863,
+                                    0.4999999999998863,
+                                    -0.4999995231627281
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/southgrid_competetion_2026/csg_robotcompetition_2026/props/flashlight/flashlight"
+                        },
+                        {
+                            "name": "TestPencil",
+                            "path": "/Group/Interactive/TestPencil",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    18.81732749938965,
+                                    -22.14461326599121,
+                                    1.269355058670044
+                                ],
+                                "rotation": [
+                                    0.0,
+                                    0.0,
+                                    -0.14677845213429896,
+                                    0.9891693919592637
+                                ],
+                                "scale": 1.2999999523162842
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/southgrid_competetion_2026/csg_robotcompetition_2026/props/testpencil/testpencil"
+                        },
+                        {
+                            "name": "ElectriciansKnife01",
+                            "path": "/Group/Interactive/ElectriciansKnife01",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    20.27082061767578,
+                                    -24.300918579101562,
+                                    1.0009000301361084
+                                ],
+                                "rotation": [
+                                    0.0,
+                                    0.0,
+                                    0.7071064533609334,
+                                    0.7071071090120096
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/southgrid_competetion_2026/csg_robotcompetition_2026/props/electriciansknife/electriciansknife01"
+                        },
+                        {
+                            "name": "Spanner",
+                            "path": "/Group/Interactive/Spanner",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    20.266826629638672,
+                                    -24.08023452758789,
+                                    1.0076000690460205
+                                ],
+                                "rotation": [
+                                    0.0,
+                                    0.0,
+                                    -0.7071068407911908,
+                                    -0.7071067215818992
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/southgrid_competetion_2026/csg_robotcompetition_2026/props/spanner/spanner"
+                        },
+                        {
+                            "name": "Screwdriver",
+                            "path": "/Group/Interactive/Screwdriver",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    20.255630493164062,
+                                    -24.1927547454834,
+                                    1.0082341432571411
+                                ],
+                                "rotation": [
+                                    0.5000755879136717,
+                                    0.4999248775665772,
+                                    -0.5000751110765047,
+                                    -0.49992440072941025
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/southgrid_competetion_2026/csg_robotcompetition_2026/props/screwdriver_set/screwdriver"
+                        },
+                        {
+                            "name": "ToolBox",
+                            "path": "/Group/Interactive/ToolBox",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    20.27153778076172,
+                                    -23.831787109375,
+                                    0.9549999833106995
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 0.699999988079071
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/southgrid_competetion_2026/csg_robotcompetition_2026/props/toolbox/toolbox"
+                        },
+                        {
+                            "name": "ElectriciansKnife02",
+                            "path": "/Group/Interactive/ElectriciansKnife02",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    20.273229598999023,
+                                    -24.50413703918457,
+                                    1.000100016593933
+                                ],
+                                "rotation": [
+                                    0.0,
+                                    1.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/southgrid_competetion_2026/csg_robotcompetition_2026/props/electriciansknife/electriciansknife02"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "g1_pick_with_gripper_usda_1",
+            "path": "/g1_pick_with_gripper_usda_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    20.22125244140625,
+                    -24.181787490844727,
+                    0.2026619017124176
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/13951baeb514b4b9/default_project/prefabs/g1_pick_with_gripper_usda",
+            "entity_overrides": [
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "waist_yaw_link_rev_1_0",
+                            "index": 6
+                        },
+                        {
+                            "name": "waist_roll_link_rev_1_0",
+                            "index": 1
+                        },
+                        {
+                            "name": "torso_link_rev_1_0",
+                            "index": 1
+                        },
+                        {
+                            "name": "head_camera1",
+                            "index": 10
+                        },
+                        {
+                            "name": "head_camera2",
+                            "index": 0
+                        },
+                        {
+                            "name": "cameras",
+                            "index": 1
+                        },
+                        {
+                            "name": "head_cam",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "ColorPort",
+                                    "value": 7090,
+                                    "type": "int"
+                                },
+                                {
+                                    "name": "DepthPort",
+                                    "value": 7091,
+                                    "type": "int"
+                                },
+                                {
+                                    "name": "Enable",
+                                    "value": true,
+                                    "type": "bool"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "waist_yaw_link_rev_1_0",
+                            "index": 6
+                        },
+                        {
+                            "name": "waist_roll_link_rev_1_0",
+                            "index": 1
+                        },
+                        {
+                            "name": "torso_link_rev_1_0",
+                            "index": 1
+                        },
+                        {
+                            "name": "right_shoulder_pitch_link",
+                            "index": 5
+                        },
+                        {
+                            "name": "right_shoulder_roll_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "right_shoulder_yaw_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "right_elbow_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "right_wrist_roll_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "right_wrist_pitch_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "right_wrist_yaw_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "arm_r_end_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "camera_right_body1",
+                            "index": 2
+                        },
+                        {
+                            "name": "camera_right_body2",
+                            "index": 0
+                        },
+                        {
+                            "name": "cameras",
+                            "index": 1
+                        },
+                        {
+                            "name": "camera_right",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "ColorPort",
+                                    "value": 7080,
+                                    "type": "int"
+                                },
+                                {
+                                    "name": "DepthPort",
+                                    "value": 7081,
+                                    "type": "int"
+                                },
+                                {
+                                    "name": "Enable",
+                                    "value": true,
+                                    "type": "bool"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "waist_yaw_link_rev_1_0",
+                            "index": 6
+                        },
+                        {
+                            "name": "waist_roll_link_rev_1_0",
+                            "index": 1
+                        },
+                        {
+                            "name": "torso_link_rev_1_0",
+                            "index": 1
+                        },
+                        {
+                            "name": "left_shoulder_pitch_link",
+                            "index": 2
+                        },
+                        {
+                            "name": "left_shoulder_roll_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "left_shoulder_yaw_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "left_elbow_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "left_wrist_roll_link",
+                            "index": 2
+                        },
+                        {
+                            "name": "left_wrist_pitch_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "left_wrist_yaw_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "arm_l_end_link",
+                            "index": 2
+                        },
+                        {
+                            "name": "camera_left_body1",
+                            "index": 1
+                        },
+                        {
+                            "name": "camera_left_body2",
+                            "index": 0
+                        },
+                        {
+                            "name": "cameras",
+                            "index": 1
+                        },
+                        {
+                            "name": "camera_left",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "Enable",
+                                    "value": true,
+                                    "type": "bool"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
