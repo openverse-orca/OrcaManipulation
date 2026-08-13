@@ -2,6 +2,8 @@
 
 本目录提供 G1 机械臂 + OmniPicker 双指夹爪的 VR 遥操作：纯跟手（不落盘）与数据采集两套入口。共用模块位于仓库 `src/`。
 
+从零配置到跑通纯遥操作，请按 [README_TELEOP.md](README_TELEOP.md) 逐步执行。
+
 ---
 
 ## 目录结构
