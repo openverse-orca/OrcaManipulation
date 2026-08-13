@@ -89,6 +89,12 @@ AUTO_START_ORCALAB="${AUTO_START_ORCALAB:-0}"
 CLOTH_HOST="${CLOTH_HOST:-auto}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# 集中配置：XPBD 默认 target / pip 版本（新增场景只改 xpbd_scene.conf）
+if [[ -f "${SCRIPT_DIR}/xpbd_scene.conf" ]]; then
+  # shellcheck source=/dev/null
+  source "${SCRIPT_DIR}/xpbd_scene.conf"
+fi
+
 export PYTHONPATH="${REPO}/OrcaLink/Client/Python:${REPO}/OrcaGym:${REPO}/OrcaManipulation/src:${PYTHONPATH:-}"
 export PBD_GRPC_ADDRESS="${PBD_GRPC_ADDRESS:-localhost:${PBD_GRPC_PORT}}"
 export XPBD_UI
@@ -158,7 +164,7 @@ else
 fi
 
 if [[ "${XPBD_AUTO_BUILD:-1}" != "0" ]]; then
-  XPBD_TARGET="${XPBD_BUILD_TARGET:-dual_gripper_g1_cook2}"
+  XPBD_TARGET="${XPBD_BUILD_TARGET:-${XPBD_DEFAULT_TARGET:-dual_gripper_g1_cook2}}"
   if [[ "${ORCAXPBD_USE_PIP_PACKAGE:-0}" == "1" ]]; then
     echo "[P2.3c] 检查/编译 pip ${XPBD_TARGET}..."
     XPBD_BUILD_TARGET="${XPBD_TARGET}" python3 "${SCRIPT_DIR}/ensure_xpbd_pip.py"

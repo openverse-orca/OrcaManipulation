@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-将 pip 包 orca-xpbd 中的 dual_gripper_cross_mjc 同步到 XPBD/build/，供联调脚本使用。
+将 pip 包 orca-xpbd 中的目标二进制同步到 XPBD/build/，供联调脚本使用。
 
 不调用 XPBD/build.sh；与 XPBD_AUTO_BUILD=0 配合，避免本地编译。
 
 用法:
   python3 XPBD/Cloth_robot/ensure_xpbd_pip.py
-  python3 XPBD/Cloth_robot/ensure_xpbd_pip.py dual_gripper_cross_mjc
+  python3 XPBD/Cloth_robot/ensure_xpbd_pip.py dual_gripper_g1_cook2
 
 环境变量:
   ORCA_XPBD_VERSION      pip 版本（默认 26.7.1.9）
+  XPBD_BUILD_TARGET      目标二进制名（未传位置参数时生效，与 ensure_xpbd_build.py 对齐）
   XPBD_PIP_AUTO_INSTALL  缺包时自动 pip install（默认 1）
   XPBD_PIP_FORCE_REFRESH 强制从 pip 包重新拷贝（默认 0）
 """
@@ -27,10 +28,28 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 XPBD_ROOT = _SCRIPT_DIR.parent
 XPBD_BUILD_DIR = XPBD_ROOT / "build"
 STAMP_NAME = ".orca_xpbd_pip_stamp"
-DEFAULT_TARGET = "dual_gripper_cross_mjc"
-DEFAULT_VERSION = "26.7.1.9"
 TEST_PYPI_INDEX = "https://test.pypi.org/simple/"
 PYPI_EXTRA = "https://pypi.org/simple/"
+
+
+def _load_scene_conf() -> dict[str, str]:
+    """读取同目录 xpbd_scene.conf（key="value" 格式），返回键值对。"""
+    conf_path = _SCRIPT_DIR / "xpbd_scene.conf"
+    result: dict[str, str] = {}
+    if not conf_path.is_file():
+        return result
+    for line in conf_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        result[key.strip()] = value.strip().strip('"').strip("'")
+    return result
+
+
+_SCENE_CONF = _load_scene_conf()
+DEFAULT_TARGET = _SCENE_CONF.get("XPBD_DEFAULT_TARGET", "dual_gripper_g1_cook2")
+DEFAULT_VERSION = _SCENE_CONF.get("XPBD_DEFAULT_VERSION", "26.8.1.5")
 
 
 def _env_flag(name: str, default: bool = True) -> bool:
@@ -51,24 +70,25 @@ def _file_md5(path: Path) -> str:
 
 def ensure_orca_xpbd_installed(version: str) -> str:
     """
-    确保当前 Python 环境已安装 orca-xpbd。
+    确保当前 Python 环境已安装指定版本的 orca-xpbd。
 
-    若未安装且 XPBD_PIP_AUTO_INSTALL=1，从 TestPyPI + PyPI 安装指定版本。
-    返回已安装包的 __version__ 字符串。
+    已安装但版本不匹配时，若 XPBD_PIP_AUTO_INSTALL=1 则重装到指定版本；
+    否则抛出异常。返回已安装包的 __version__ 字符串。
     """
     try:
         import orcaxpbd_client  # noqa: WPS433
 
         installed = str(getattr(orcaxpbd_client, "__version__", "")).strip()
-        if installed:
+        if installed and installed == version:
             return installed
     except ImportError:
         installed = ""
 
+    # 到这里：要么未安装，要么已装版本与期望版本不匹配
     if not _env_flag("XPBD_PIP_AUTO_INSTALL", default=True):
         raise RuntimeError(
-            "orca-xpbd 未安装；请先: "
-            f"pip install -i {TEST_PYPI_INDEX} --extra-index-url {PYPI_EXTRA} "
+            f"orca-xpbd 版本不匹配或未安装（已装 {installed!r}，期望 {version!r}）；"
+            f"请先: pip install -i {TEST_PYPI_INDEX} --extra-index-url {PYPI_EXTRA} "
             f"orca-xpbd=={version}"
         )
 
@@ -77,6 +97,8 @@ def ensure_orca_xpbd_installed(version: str) -> str:
         "-m",
         "pip",
         "install",
+        "--upgrade",
+        "--force-reinstall",
         "-i",
         TEST_PYPI_INDEX,
         "--extra-index-url",
@@ -146,10 +168,18 @@ def sync_pip_binary_to_build(
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Sync orca-xpbd pip binary to XPBD/build/")
-    ap.add_argument("target", nargs="?", default=DEFAULT_TARGET)
+    ap.add_argument("target", nargs="?", default=None)
     ap.add_argument("--force", action="store_true", help="force recopy from pip package")
     args = ap.parse_args()
 
+    # 与 ensure_xpbd_build.py 对齐：优先命令行位置参数，其次环境变量
+    # XPBD_BUILD_TARGET（run_cloth_robot_p23c.sh 只设环境变量、不传位置参数），
+    # 最后才回退到 DEFAULT_TARGET。
+    target = (
+        args.target
+        or os.environ.get("XPBD_BUILD_TARGET", "").strip()
+        or DEFAULT_TARGET
+    )
     version = os.environ.get("ORCA_XPBD_VERSION", DEFAULT_VERSION).strip() or DEFAULT_VERSION
     force = args.force or _env_flag("XPBD_PIP_FORCE_REFRESH", default=False)
 
@@ -161,7 +191,7 @@ def main() -> int:
                 flush=True,
             )
         sync_pip_binary_to_build(
-            args.target,
+            target,
             package_version=installed,
             force_refresh=force,
         )

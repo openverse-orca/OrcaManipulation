@@ -19,7 +19,25 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[4]
 XPBD_ROOT = REPO_ROOT / "XPBD"
 BUILD_SCRIPT = XPBD_ROOT / "build.sh"
-TARGET = os.environ.get("XPBD_BUILD_TARGET", "dual_gripper_g1_cook2").strip() or "dual_gripper_g1_cook2"
+
+
+def _load_scene_conf() -> dict[str, str]:
+    """读取同目录 xpbd_scene.conf（key="value" 格式），返回键值对。"""
+    conf_path = SCRIPT_DIR / "xpbd_scene.conf"
+    result: dict[str, str] = {}
+    if not conf_path.is_file():
+        return result
+    for line in conf_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        result[key.strip()] = value.strip().strip('"').strip("'")
+    return result
+
+
+_DEFAULT_TARGET = _load_scene_conf().get("XPBD_DEFAULT_TARGET", "dual_gripper_g1_cook2")
+TARGET = os.environ.get("XPBD_BUILD_TARGET", "").strip() or _DEFAULT_TARGET
 BINARY_PATH = XPBD_ROOT / "build" / TARGET
 
 

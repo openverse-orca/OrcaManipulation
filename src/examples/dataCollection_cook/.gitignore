@@ -8,3 +8,6 @@ cloth_grasp_replay.replay_meta.json
 # 遥操运行时写入
 grip_triggers.txt
 data_collection_cloth.log
+
+# XPBD 二进制同步产物（ensure_xpbd_pip.py 从 pip 包拷贝到 build/，运行时生成）
+build/
