@@ -226,6 +226,26 @@
                                                     "name": "friction.z",
                                                     "value": 0.10000000149011612,
                                                     "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.x",
+                                                    "value": 0.9900000095367432,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.y",
+                                                    "value": 0.9990000128746033,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.z",
+                                                    "value": 0.004999999888241291,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solref.x",
+                                                    "value": 0.0020000000949949026,
+                                                    "type": "float"
                                                 }
                                             ]
                                         }
@@ -268,6 +288,26 @@
                                                 {
                                                     "name": "friction.z",
                                                     "value": 0.10000000149011612,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.x",
+                                                    "value": 0.9900000095367432,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.y",
+                                                    "value": 0.9990000128746033,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.z",
+                                                    "value": 0.004999999888241291,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solref.x",
+                                                    "value": 0.0020000000949949026,
                                                     "type": "float"
                                                 }
                                             ]
@@ -312,6 +352,26 @@
                                                     "name": "friction.z",
                                                     "value": 0.10000000149011612,
                                                     "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.x",
+                                                    "value": 0.9900000095367432,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.y",
+                                                    "value": 0.9990000128746033,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.z",
+                                                    "value": 0.004999999888241291,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solref.x",
+                                                    "value": 0.0020000000949949026,
+                                                    "type": "float"
                                                 }
                                             ]
                                         }
@@ -354,6 +414,26 @@
                                                 {
                                                     "name": "friction.z",
                                                     "value": 0.10000000149011612,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.x",
+                                                    "value": 0.9900000095367432,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.y",
+                                                    "value": 0.9990000128746033,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.z",
+                                                    "value": 0.004999999888241291,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solref.x",
+                                                    "value": 0.0020000000949949026,
                                                     "type": "float"
                                                 }
                                             ]
@@ -927,7 +1007,165 @@
                                 ],
                                 "scale": 1.0
                             },
-                            "asset_path": "assets/e071469a36d3c8aa/southgrid_competetion_2026/csg_robotcompetition_2026/props/electriciansknife/electriciansknife02"
+                            "asset_path": "assets/e071469a36d3c8aa/southgrid_competetion_2026/csg_robotcompetition_2026/props/electriciansknife/electriciansknife02",
+                            "entity_overrides": [
+                                {
+                                    "entity_path": [
+                                        {
+                                            "name": "ElectriciansKnife02",
+                                            "index": 0
+                                        },
+                                        {
+                                            "name": "task_electriciansknife02_joint",
+                                            "index": 0
+                                        },
+                                        {
+                                            "name": "Phy",
+                                            "index": 0
+                                        },
+                                        {
+                                            "name": "new",
+                                            "index": 1
+                                        },
+                                        {
+                                            "name": "1",
+                                            "index": 2
+                                        }
+                                    ],
+                                    "group_overrids": [
+                                        {
+                                            "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                            "type_index": 0,
+                                            "property_overrides": [
+                                                {
+                                                    "name": "solimp.x",
+                                                    "value": 0.9900000095367432,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.y",
+                                                    "value": 0.9990000128746033,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.z",
+                                                    "value": 0.004999999888241291,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solref.x",
+                                                    "value": 0.0020000000949949026,
+                                                    "type": "float"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    "entity_path": [
+                                        {
+                                            "name": "ElectriciansKnife02",
+                                            "index": 0
+                                        },
+                                        {
+                                            "name": "task_electriciansknife02_joint",
+                                            "index": 0
+                                        },
+                                        {
+                                            "name": "Phy",
+                                            "index": 0
+                                        },
+                                        {
+                                            "name": "new",
+                                            "index": 1
+                                        },
+                                        {
+                                            "name": "1",
+                                            "index": 1
+                                        }
+                                    ],
+                                    "group_overrids": [
+                                        {
+                                            "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                            "type_index": 0,
+                                            "property_overrides": [
+                                                {
+                                                    "name": "solimp.x",
+                                                    "value": 0.9900000095367432,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.y",
+                                                    "value": 0.9990000128746033,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.z",
+                                                    "value": 0.004999999888241291,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solref.x",
+                                                    "value": 0.0020000000949949026,
+                                                    "type": "float"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    "entity_path": [
+                                        {
+                                            "name": "ElectriciansKnife02",
+                                            "index": 0
+                                        },
+                                        {
+                                            "name": "task_electriciansknife02_joint",
+                                            "index": 0
+                                        },
+                                        {
+                                            "name": "Phy",
+                                            "index": 0
+                                        },
+                                        {
+                                            "name": "new",
+                                            "index": 1
+                                        },
+                                        {
+                                            "name": "1",
+                                            "index": 0
+                                        }
+                                    ],
+                                    "group_overrids": [
+                                        {
+                                            "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                            "type_index": 0,
+                                            "property_overrides": [
+                                                {
+                                                    "name": "solimp.x",
+                                                    "value": 0.9900000095367432,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.y",
+                                                    "value": 0.9990000128746033,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solimp.z",
+                                                    "value": 0.004999999888241291,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "solref.x",
+                                                    "value": 0.0020000000949949026,
+                                                    "type": "float"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
                         }
                     ]
                 }
