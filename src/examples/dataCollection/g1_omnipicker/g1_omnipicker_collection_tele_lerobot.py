@@ -80,8 +80,8 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true", help="追加到已有数据集（断点续采）")
     parser.add_argument("--orcagym_addr", default="localhost:50051")
     parser.add_argument(
-        "--cameras", default="head,wrist_l,wrist_r",
-        help="启用的相机列表（逗号分隔，可选 head/wrist_l/wrist_r），默认三路全开。",
+        "--cameras", default="head,wrist_r",
+        help="启用的相机列表（逗号分隔，可选 head/wrist_r），默认两路。",
     )
     parser.add_argument(
         "--cam_resolution", default="480x640",
@@ -98,7 +98,6 @@ def main() -> None:
     # ── 相机路数 / 分辨率 ────────────────────────────────────────────────────
     _CAM_KEY_MAP = {
         "head": "camera_head_color",
-        "wrist_l": "camera_wrist_l_color",
         "wrist_r": "camera_wrist_r_color",
     }
     _enabled = {k.strip() for k in args.cameras.split(",")}
