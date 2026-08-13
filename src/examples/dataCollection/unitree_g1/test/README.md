@@ -16,8 +16,6 @@
 在 OrcaLab 资产库订阅：
 
 - `SouthGrid_Competition_2026`
-- `G1_omnipicker`
-- `G1_Picker_SouthGrid`
 
 并在草稿箱搜索并订阅 `g1_pick_with_gripper_usda`（场景里 actor 名为 `g1_pick_with_gripper_usda_1`）。场景打不开或物体不显示时，先检查以上资产是否都已订阅。
 
@@ -37,7 +35,7 @@ cd /path/to/OrcaManipulation
 
 确认根目录有：`environment-unitree.yml`、`requirements.txt`、`scripts/`、`third_party/`、`src/`。
 
-必须新建 Conda 环境，不要在已有环境上 `conda env update`：
+
 
 ```
 conda env create -f environment-unitree.yml
