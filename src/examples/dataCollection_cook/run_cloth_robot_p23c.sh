@@ -13,7 +13,6 @@
 #   CLOTH_SYNC_STUDIO_VIS=0 bash ...                                 # 关闭 Studio 刚体跟随
 #   USE_ALL_CPU=1 bash ...                                           # 关闭 CPU 绑核（默认 XPBD+Python→4～末核）
 #   DEBUG=1 bash XPBD/Cloth_robot/run_cloth_robot_p23c.sh            # debug CSV + 采集 + 分析
-#   REGEN_REPLAY=1 bash XPBD/Cloth_robot/run_cloth_robot_p23c.sh     # 关键帧改过后重生成 replay
 #   bash XPBD/Cloth_robot/run_cloth_robot_p23c.sh # 第二步：自动读 Studio Play 关卡名
 #   CLOTH_HOST=auto|studio|orcalab bash XPBD/Cloth_robot/run_cloth_robot_p23c.sh  # 双宿主（默认 auto）
 #   CLOTH_HOST=orcalab LEVEL=NursingHome AGENT=g1_omnipicker bash ...  # OrcaLab Play 后联调
@@ -22,10 +21,9 @@
 #   CLOTH_CAMERA_MONITOR=1 bash ...              # 开启 4 路相机 figure（默认关闭）
 set -euo pipefail
 
-REPO="${REPO_ROOT:-$(cd "$(dirname "$0")/../../../../.." && pwd)}"
+REPO="${REPO_ROOT:-$(cd "$(dirname "$0")/../../../.." && pwd)}"
 CLOTH_3D="${REPO}/OrcaPlayground/examples/cloth_3d"
 TELE_DIR="${REPO}/OrcaManipulation/src/examples/dataCollection_cook"
-ANALYZE_DIR="${TELE_DIR}/analyze"
 
 # DEBUG=1：恢复全量 debug 联调（CSV、dataset、实时墙钟、自动分析）
 DEBUG="${DEBUG:-0}"
@@ -37,7 +35,6 @@ if [[ "$DEBUG" == "1" ]]; then
   XPBD_UI="${XPBD_UI:-1}"
   CLOTH_SYNC_STUDIO_VIS="${CLOTH_SYNC_STUDIO_VIS:-1}"
   CLOTH_NO_REALTIME="${CLOTH_NO_REALTIME:-0}"
-  REGEN_REPLAY="${REGEN_REPLAY:-1}"
   MAX_MACRO_FRAMES="${MAX_MACRO_FRAMES:-}"
   MAX_SEC="${MAX_SEC:-120}"
 else
@@ -47,7 +44,6 @@ else
   XPBD_UI="${XPBD_UI:-1}"
   CLOTH_SYNC_STUDIO_VIS="${CLOTH_SYNC_STUDIO_VIS:-1}"
   CLOTH_NO_REALTIME="${CLOTH_NO_REALTIME:-1}"
-  REGEN_REPLAY="${REGEN_REPLAY:-0}"
   MAX_MACRO_FRAMES="${MAX_MACRO_FRAMES:-800}"
   MAX_SEC="${MAX_SEC:-120}"
 fi
@@ -81,8 +77,6 @@ KILL_STALE="${KILL_STALE:-1}"
 if [[ "${SKIP_STALE_KILL:-0}" == "1" ]]; then
   KILL_STALE=0
 fi
-REPLAY="${REPLAY:-1}"
-REPLAY_JSON="${REPLAY_JSON:-cloth_grasp_replay.json}"
 STUDIO_CPU_AFFINITY="${STUDIO_CPU_AFFINITY:-0-3}"
 AUTO_START_STUDIO="${AUTO_START_STUDIO:-0}"
 AUTO_START_ORCALAB="${AUTO_START_ORCALAB:-0}"
@@ -151,7 +145,7 @@ if [[ "$CLOTH_SYNC_STUDIO_VIS" == "1" ]]; then
   export CLOTH_SYNC_STUDIO_VIS
   CLOTH_STUDIO_VIS_STRIDE="${CLOTH_STUDIO_VIS_STRIDE:-1}"
   export CLOTH_STUDIO_VIS_STRIDE
-  echo "[P2.3c] CLOTH_SYNC_STUDIO_VIS=1：replay 推送 qpos 到视口（Studio/OrcaLab，stride=${CLOTH_STUDIO_VIS_STRIDE}）"
+  echo "[P2.3c] CLOTH_SYNC_STUDIO_VIS=1：推送 qpos 到视口（Studio/OrcaLab，stride=${CLOTH_STUDIO_VIS_STRIDE}）"
 fi
 
 if [[ "$XPBD_UI" == "1" ]]; then
@@ -165,13 +159,10 @@ fi
 
 if [[ "${XPBD_AUTO_BUILD:-1}" != "0" ]]; then
   XPBD_TARGET="${XPBD_BUILD_TARGET:-${XPBD_DEFAULT_TARGET:-dual_gripper_g1_cook2}}"
-  if [[ "${ORCAXPBD_USE_PIP_PACKAGE:-0}" == "1" ]]; then
-    echo "[P2.3c] 检查/编译 pip ${XPBD_TARGET}..."
-    XPBD_BUILD_TARGET="${XPBD_TARGET}" python3 "${SCRIPT_DIR}/ensure_xpbd_pip.py"
-  else
-    echo "[P2.3c] 源码编译 XPBD ${XPBD_TARGET}..."
-    XPBD_BUILD_TARGET="${XPBD_TARGET}" python3 "${SCRIPT_DIR}/ensure_xpbd_build.py"
-  fi
+  # PrepareXPBD.py 内部根据 ORCAXPBD_USE_PIP_PACKAGE 分派：pip 同步 或 源码编译
+  XPBD_BUILD_TARGET="${XPBD_TARGET}" \
+    ORCAXPBD_USE_PIP_PACKAGE="${ORCAXPBD_USE_PIP_PACKAGE:-0}" \
+    python3 "${SCRIPT_DIR}/PrepareXPBD.py"
 fi
 
 pin_studio_cpus() {
@@ -308,35 +299,25 @@ _kill_pids_gracefully() {
 }
 
 kill_stale_cloth_processes() {
-  local tele_pids xpbd_pids orca_pids pico_pids tele_pid
+  local tele_pids orca_pids pico_pids tele_pid
   tele_pids=$(pgrep -f "data_collection_cloth_tele\\.py" 2>/dev/null || true)
-  xpbd_pids=$(pgrep -f "dual_gripper_g1_cook2" 2>/dev/null || true)
-  xpbd_pids+=$'\n'$(pgrep -f "dual_gripper_cross_mjc" 2>/dev/null || true)
   orca_pids=$(_pids_on_tcp_port "$ORCALINK_PORT")
   pico_pids=$(_pids_on_tcp_port "$PICO_PORT")
 
-  if [[ -z "$tele_pids$xpbd_pids$orca_pids$pico_pids" ]]; then
+  if [[ -z "$tele_pids$orca_pids$pico_pids" ]]; then
     echo "[P2.3c] 无陈旧 cloth 联调进程（:${ORCALINK_PORT} / :${PICO_PORT}）"
     return 0
   fi
 
   echo "[P2.3c] 清理陈旧 cloth 联调进程（OrcaLink :${ORCALINK_PORT}、Pico :${PICO_PORT}）..."
 
-  # 先停 tele，再停 XPBD / 端口监听，避免 OrcaLink session 半开
+  # 先停 tele，再停端口监听，避免 OrcaLink session 半开。
+  # （XPBD 旧进程由 PrepareXPBD.py 在准备阶段清理，不在此处处理。）
   if [[ -n "$tele_pids" ]]; then
     while read -r tele_pid; do
       [[ -z "$tele_pid" ]] && continue
       _kill_pids_gracefully "data_collection_cloth_tele" "$tele_pid"
     done <<< "$tele_pids"
-  fi
-
-  xpbd_pids=$(pgrep -f "dual_gripper_g1_cook2" 2>/dev/null || true)
-  xpbd_pids+=$'\n'$(pgrep -f "dual_gripper_cross_mjc" 2>/dev/null || true)
-  if [[ -n "$xpbd_pids" ]]; then
-    while read -r tele_pid; do
-      [[ -z "$tele_pid" ]] && continue
-      _kill_pids_gracefully "xpbd(g1_cook2/cross_mjc)" "$tele_pid"
-    done <<< "$xpbd_pids"
   fi
 
   orca_pids=$(_pids_on_tcp_port "$ORCALINK_PORT")
@@ -434,27 +415,6 @@ if [[ -n "${BENCH_JSON:-}" ]]; then
   echo "[P2.3c] BENCH_JSON=${BENCH_JSON}"
 fi
 
-if [[ "$REPLAY" == "1" ]]; then
-  REPLAY_PATH="${TELE_DIR}/${REPLAY_JSON}"
-  if [[ ! -f "$REPLAY_PATH" ]] || [[ "${REGEN_REPLAY:-0}" == "1" ]]; then
-    echo "[P2.3c] 从 session + tele 关节 neutral 生成抓取 replay → ${REPLAY_JSON}"
-    $PYTHON "${TELE_DIR}/generate_cloth_robot_replay_data.py" \
-      --watch-latest-session \
-      --session-tag p23c \
-      --output "$REPLAY_PATH" \
-      || {
-        echo "[P2.3c] WARN: replay 生成失败，回退 dual_gripper_cross_v4_replay.json"
-        REPLAY_PATH="${TELE_DIR}/dual_gripper_cross_v4_replay.json"
-        if [[ ! -f "$REPLAY_PATH" ]]; then
-          $PYTHON "${TELE_DIR}/generate_pico_replay_data.py"
-        fi
-      }
-    if [[ -f "${REPLAY_PATH%.json}.replay_meta.json" ]]; then
-      echo "[P2.3c] replay meta: ${REPLAY_PATH%.json}.replay_meta.json"
-    fi
-  fi
-  TELE_ARGS+=(--replay --replay_data "$REPLAY_PATH")
-fi
 
 echo "[P2.3c] 启动 data_collection_cloth_tele（OrcaLink + XPBD + bridge）..."
 RUN_START=$(date +%s.%N)
@@ -466,30 +426,3 @@ echo "[P2.3c] 墙钟耗时: ${RUN_WALL}s（CLOTH_NO_REALTIME=${CLOTH_NO_REALTIME
 
 echo "[P2.3c] 完成。日志: ${TELE_DIR}/logs/${LOG_TAG}_tele.log"
 echo "[P2.3c] XPBD 日志: ${TELE_DIR}/logs/xpbd_*.log"
-
-if [[ "$CLOTH_DEBUG" == "1" ]]; then
-  echo ""
-  echo "[P2.3c] 自动分析 cloth_debug_* + 夹爪距布..."
-  ANALYSIS_LOG="${TELE_DIR}/logs/${LOG_TAG}_grip_analysis.txt"
-  ANALYZE_TARGET="${MAX_MACRO_FRAMES:-500}"
-  echo "[P2.3c] 分析 target_macro_frames=${ANALYZE_TARGET}"
-  $PYTHON "${ANALYZE_DIR}/analyze_cloth_debug_session.py" --watch-latest --target-macro-frames "$ANALYZE_TARGET" \
-    | tee "${TELE_DIR}/logs/${LOG_TAG}_analysis.txt"
-  $PYTHON "${ANALYZE_DIR}/analyze_gripper_cloth_distance.py" --watch-latest --plot \
-    | tee "$ANALYSIS_LOG"
-  set +e
-  $PYTHON "${ANALYZE_DIR}/verify_replay_osc_tracking.py" --watch-latest \
-    | tee "${TELE_DIR}/logs/${LOG_TAG}_osc_tracking.txt"
-  OSC_RC=$?
-  GRIP_LOCK_LOG="${TELE_DIR}/logs/${LOG_TAG}_grip_lock.txt"
-  $PYTHON "${ANALYZE_DIR}/analyze_grip_lock_event.py" --watch-latest --plot \
-    | tee "$GRIP_LOCK_LOG"
-  GRIP_LOCK_RC=$?
-  set -e
-  echo "[P2.3c] OSC 跟踪: exit=$OSC_RC (0=pass)"
-  echo "[P2.3c] 夹取锁定检测: $GRIP_LOCK_LOG (exit=$GRIP_LOCK_RC, 0=pass 2=anomaly)"
-  echo "[P2.3c] 报告: logs/cloth_debug_*/grip_lock_report.json"
-  if [[ "$GRIP_LOCK_RC" -ne 0 ]]; then
-    echo "[P2.3c] WARN: grip lock 检测未通过（速度尖峰/质心跳变/未锁定）"
-  fi
-fi

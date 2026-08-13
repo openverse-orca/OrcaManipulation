@@ -18,7 +18,7 @@ import os
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_CONFIG = (
     REPO_ROOT / "OrcaPlayground/examples/cloth_3d/cloth_sim_config.openloong.json"
 )

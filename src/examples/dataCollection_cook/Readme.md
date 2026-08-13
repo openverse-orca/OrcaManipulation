@@ -16,7 +16,7 @@ Step 1: 进入容器，激活 conda 环境
         ↓
 Step 2: 安装依赖（requirements.txt）
         ↓
-Step 3: 运行 RunCloth/run_cloth_robot_p23c.sh
+Step 3: 运行 run_cloth_robot_p23c.sh
 ```
 
 > 注意：**必须先启动 Studio 并 Play**，否则 Step 3 会卡在
@@ -44,7 +44,7 @@ ss -tlnp | grep -E "50051|50263"
 conda activate <你的环境名>
 ```
 
-`run_cloth_robot_p23c.sh` 会通过 `RunCloth/resolve_orca_conda_python.sh`
+`run_cloth_robot_p23c.sh` 会通过 `resolve_orca_conda_python.sh`
 自动使用当前激活的非 base conda 环境，无需额外配置。
 
 ---
@@ -65,7 +65,7 @@ orca-xpbd==<版本>
 orca-link==<版本>
 ```
 
-版本号与 `RunCloth/xpbd_scene.conf` 的 `XPBD_DEFAULT_VERSION` 保持一致，
+版本号与 `xpbd_scene.conf` 的 `XPBD_DEFAULT_VERSION` 保持一致，
 由发布流程自动同步，无需手动维护。
 
 ---
@@ -76,13 +76,13 @@ orca-link==<版本>
 cd <REPO_ROOT>/OrcaManipulation/src/examples/dataCollection_cook
 
 # PyPI 模式：使用 pip 安装的 XPBD 二进制，而非源码编译
-ORCAXPBD_USE_PIP_PACKAGE=1 bash RunCloth/run_cloth_robot_p23c.sh
+ORCAXPBD_USE_PIP_PACKAGE=1 bash run_cloth_robot_p23c.sh
 ```
 
 `run_cloth_robot_p23c.sh` 会自动：
 
-1. 读取 `RunCloth/xpbd_scene.conf`（target + 版本）
-2. PyPI 模式走 `RunCloth/ensure_xpbd_pip.py`，从 pip 包同步 `dual_gripper_g1_cook2`
+1. 读取 `xpbd_scene.conf`（target + 版本）
+2. PyPI 模式走 `EnsureXPBD.py`，从 pip 包同步 `dual_gripper_g1_cook2`
 3. 刷新 session + 导出 scene
 4. 启动 `data_collection_cloth_tele.py`（OrcaLink + XPBD + bridge）
 
@@ -102,9 +102,8 @@ ORCAXPBD_USE_PIP_PACKAGE=1 bash RunCloth/run_cloth_robot_p23c.sh
 
 | 文件 | 说明 |
 |------|------|
-| `RunCloth/xpbd_scene.conf` | XPBD 场景集中配置（target + 版本），新增场景只改这里 |
-| `RunCloth/run_cloth_robot_p23c.sh` | 三进程联调入口 |
-| `RunCloth/ensure_xpbd_pip.py` | PyPI 模式同步 XPBD 二进制 |
-| `RunCloth/ensure_xpbd_build.py` | 源码模式编译 XPBD |
+| `xpbd_scene.conf` | XPBD 场景集中配置（target + 版本），新增场景只改这里 |
+| `run_cloth_robot_p23c.sh` | 三进程联调入口 |
+| `EnsureXPBD.py` | 确保 XPBD 二进制就位（pip 同步 或 源码编译，二选一） |
 | `data_collection_cloth_tele.py` | 布料遥操/回放主程序 |
 | `requirements.txt` | 本示例依赖声明 |

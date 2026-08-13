@@ -16,7 +16,7 @@ from pathlib import Path
 
 import mujoco
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 CLOTH_3D = REPO_ROOT / "OrcaPlayground" / "examples" / "cloth_3d"
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "cloth_robot_p0_minimal.xml"
 ORCA_MANIP = REPO_ROOT / "OrcaManipulation" / "src"

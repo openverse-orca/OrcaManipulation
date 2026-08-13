@@ -1,13 +1,9 @@
 # 运行时日志与 debug 目录（父级 .gitignore 已含 logs/）
 logs/
 
-# 由 generate_cloth_robot_replay_data.py / p23c 联调生成的回放缓存
-cloth_grasp_replay.json
-cloth_grasp_replay.replay_meta.json
-
 # 遥操运行时写入
 grip_triggers.txt
 data_collection_cloth.log
 
-# XPBD 二进制同步产物（ensure_xpbd_pip.py 从 pip 包拷贝到 build/，运行时生成）
+# XPBD 二进制同步产物（EnsureXPBD.py pip 模式从 pip 包拷贝到 build/，运行时生成）
 build/

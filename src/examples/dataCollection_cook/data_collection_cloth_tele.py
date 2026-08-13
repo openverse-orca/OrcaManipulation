@@ -1,9 +1,7 @@
 """
-布料遥操 / 预制轨迹回放（与 SPH 流体路径隔离）。
+布料遥操（与 SPH 流体路径隔离）。
 
 - 默认：Pico VR 手柄（TCP）
-- --replay：加载 JSON 预制轨迹，格式与 VR 一致（见 RobotHand_Trajoctory.md 方案 A）
-- --keyframe：关闭外部 Pico/replay 驱动（保留接口）；dual_gripper 18 关键帧短链请用 run_cloth_keyframe_shortchain.py
 - --cloth-coupling：OrcaGym → OrcaLink → XPBD 刚体+布；XPBD PBD_GRPC → Studio 布料渲染
 
 不依赖 envs.fluid / OrcaSPH；MuJoCo 经 OrcaGym 驱动，下游控制器与 data_collection_tele 相同。
@@ -27,7 +25,6 @@ from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
 from orca_gym.log.orca_log import get_orca_logger
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
-from controllers.auto_task_status import AutoStartTaskStatusController
 from envs.cpu_affinity import apply_current_process_cpu_affinity, resolve_cpu_affinity
 from controllers import controllers
 from controllers.g1_arm_pico_remap import (
@@ -59,7 +56,7 @@ orca_logger = get_orca_logger(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Cloth teleop / trajectory replay (no SPH fluid)")
+    parser = argparse.ArgumentParser(description="Cloth teleop (no SPH fluid)")
     parser.add_argument("--level", type=str, required=True, help="场景的名称")
     parser.add_argument(
         "--agent_name",
@@ -78,17 +75,6 @@ def main():
         type=str,
         default=None,
         help="场景/任务 YAML；省略表示 EmptyTask",
-    )
-    parser.add_argument(
-        "--replay",
-        action="store_true",
-        help="预制轨迹回放：屏蔽 VR TCP，使用 JSON 逐帧驱动",
-    )
-    parser.add_argument(
-        "--replay_data",
-        type=str,
-        default=None,
-        help="预制轨迹 JSON（PicoJoystick 格式）；需配合 --replay",
     )
     parser.add_argument(
         "--max-episode-sec",
@@ -133,17 +119,12 @@ def main():
     parser.add_argument(
         "--no-collect",
         action="store_true",
-        help="不写入 dataset/HDF5（仅 replay 联调或 release 压测）",
+        help="不写入 dataset/HDF5（仅联调或 release 压测）",
     )
     parser.add_argument(
         "--no-realtime",
         action="store_true",
         help="不按 macro_dt 做墙钟 sleep，尽快跑完",
-    )
-    parser.add_argument(
-        "--keyframe",
-        action="store_true",
-        help="关闭 Pico/replay 外部驱动（功能保留）；dual_gripper 关键帧短链请用 run_cloth_keyframe_shortchain.py",
     )
     parser.add_argument(
         "--gui",
@@ -176,35 +157,6 @@ def main():
 
     cpu_affinity = resolve_cpu_affinity(args.use_all_cpu)
     apply_current_process_cpu_affinity(cpu_affinity)
-
-    if args.keyframe:
-        orca_logger.info(
-            "Keyframe mode: 外部 Pico/replay 已禁用；dual_gripper 短链请运行 "
-            "run_cloth_keyframe_shortchain.py（本地 MuJoCo + OrcaLink + XPBD）"
-        )
-        script_dir = os.path.dirname(os.path.realpath(__file__))
-        repo_root = os.path.abspath(os.path.join(script_dir, "../../../.."))
-        cfg = os.path.join(
-            repo_root,
-            "OrcaPlayground/examples/cloth_3d/cloth_sim_config.debug.json",
-        )
-        argv = [
-            sys.executable,
-            os.path.join(script_dir, "run_cloth_keyframe_shortchain.py"),
-            "--cloth-config",
-            cfg,
-            "--log-dir",
-            os.path.join(script_dir, "logs"),
-        ]
-        if args.max_macro_frames is not None:
-            argv.extend(["--max-macro-frames", str(args.max_macro_frames)])
-        if args.cloth_debug:
-            pass  # shortchain debug json 已含 debug_mode
-        os.execv(sys.executable, argv)
-
-    if args.replay and not args.replay_data:
-        orca_logger.error("--replay requires --replay_data")
-        return
 
     level = args.level
     agent_name = args.agent_name
@@ -278,12 +230,7 @@ def main():
         default_joint_values[joint_name] = value
 
     orca_logger.info("Creating device")
-    if args.replay:
-        replay_frames = PicoJoystick.load_replay_data(args.replay_data)
-        pico_joystick = PicoJoystick(replay_mode=True, replay_data=replay_frames)
-        orca_logger.info(f"Replay mode: {len(replay_frames)} frames from {args.replay_data}")
-    else:
-        pico_joystick = PicoJoystick()
+    pico_joystick = PicoJoystick()
     pico_joystick_device = PicoJoystickDevice(pico_joystick)
 
     orca_logger.info("Creating scene manager")
@@ -292,7 +239,7 @@ def main():
 
     script_name = os.path.basename(sys.argv[0]) if sys.argv else os.path.basename(__file__)
     if not args.no_collect:
-        msg = "布料轨迹回放中…" if args.replay else "布料遥操采集，请操作手柄"
+        msg = "布料遥操采集，请操作手柄"
         scene_manager.show_ui_message(1, msg, "0xffff00", showtime=10)
         scene_manager.get_scene_data(script_name, "beginscene")
 
@@ -411,11 +358,10 @@ def main():
                 orca_logger.info("--cloth-debug: 已启用 debug_mode（未使用 .debug.json 时仅开总开关）")
         else:
             cloth_config.setdefault("debug", {})["debug_mode"] = False
-        if not args.replay:
-            cloth_config.setdefault("xpbd", {})["dg_traj"] = "pico"
-            orca_logger.info(
-                "PICO mode: xpbd.dg_traj=pico（扳机>trigger_close_thresh 才 Closing；指间距>finger_close_ratio 释放 grip）"
-            )
+        cloth_config.setdefault("xpbd", {})["dg_traj"] = "pico"
+        orca_logger.info(
+            "PICO mode: xpbd.dg_traj=pico（扳机>trigger_close_thresh 才 Closing；指间距>finger_close_ratio 释放 grip）"
+        )
         mj_fs = int(cloth_config.get("mujoco", {}).get("frame_skip", 20))
         if mj_fs != frame_skip:
             orca_logger.warning(
@@ -432,29 +378,21 @@ def main():
             cpu_affinity=cpu_affinity,
         )
         data_collection_manager.set_cloth_coupling(cloth_handle)
-        if not args.replay:
-            trigger_path = Path(log_dir) / "grip_triggers.txt"
+        trigger_path = Path(log_dir) / "grip_triggers.txt"
 
-            def _read_pico_triggers() -> tuple[float, float]:
-                ks = pico_joystick.get_key_state()
-                if not ks:
-                    return 0.0, 0.0
-                return (
-                    float(ks["leftHand"]["triggerValue"]),
-                    float(ks["rightHand"]["triggerValue"]),
-                )
+        def _read_pico_triggers() -> tuple[float, float]:
+            ks = pico_joystick.get_key_state()
+            if not ks:
+                return 0.0, 0.0
+            return (
+                float(ks["leftHand"]["triggerValue"]),
+                float(ks["rightHand"]["triggerValue"]),
+            )
 
-            cloth_handle.set_grip_trigger_provider(_read_pico_triggers, trigger_path)
+        cloth_handle.set_grip_trigger_provider(_read_pico_triggers, trigger_path)
         orca_logger.info(
             "Cloth coupling ready. Studio: PBDRender Play + OrcaGym 关卡含 dual_gripper 刚体"
         )
-        if cloth_handle.config.get("debug", {}).get("debug_mode", False):
-            dbg_dir = cloth_handle.config.get("debug", {}).get("debug_log_dir", log_dir)
-            orca_logger.info(
-                f"Cloth debug ON. CSV dir: {dbg_dir} | "
-                f"monitor: python analyze/run_cloth_debug_monitor.py --debug-dir {dbg_dir} | "
-                f"analyze: python analyze/analyze_gripper_cloth_distance.py --debug-dir {dbg_dir} --plot"
-            )
 
     if args.bench:
         data_collection_manager.enable_bench(args.bench)
@@ -552,34 +490,11 @@ def main():
     else:
         orca_logger.info("Creating pick place task")
     data_collection_manager.set_task(create_task(env, config, task_config))
-    if args.replay and (args.max_episode_sec is not None or args.max_macro_frames is not None):
-        macro_dt = frame_skip * time_step
-        duration_sec = None
-        if args.max_macro_frames is not None:
-            orca_logger.info(
-                f"Replay mode: AutoStartTaskStatusController (end by max_macro_frames={args.max_macro_frames}, "
-                f"macro_dt={macro_dt}s)"
-            )
-        else:
-            duration_sec = float(args.max_episode_sec)
-            orca_logger.info(
-                f"Replay mode: AutoStartTaskStatusController wall_duration={duration_sec}s "
-                f"(macro_dt={macro_dt}s)"
-            )
-        data_collection_manager.set_task_status_controller(
-            AutoStartTaskStatusController(
-                env,
-                agent_conf.base_body,
-                auto_start=True,
-                duration_sec=duration_sec,
-            )
-        )
-    else:
-        controllers.add_task_status_pico_controller(
-            data_collection_manager, env, pico_joystick_device, agent_conf.base_body,
-        )
+    controllers.add_task_status_pico_controller(
+        data_collection_manager, env, pico_joystick_device, agent_conf.base_body,
+    )
 
-    data_collection_manager.save_video = not args.replay and not args.no_collect
+    data_collection_manager.save_video = not args.no_collect
     if args.no_realtime:
         data_collection_manager.set_realtime_sync(False)
         orca_logger.info("No-realtime mode: skip wall-clock sleep between macro steps")
@@ -597,12 +512,7 @@ def main():
                 "Cloth coupling: skip_render=True（禁止 Studio override_ctrls；"
                 "设 CLOTH_SYNC_STUDIO_VIS=1 可同步 Studio 视口姿态）"
             )
-    elif args.replay:
-        data_collection_manager.set_skip_render(True)
-        orca_logger.info(
-            "Replay mode: skip_render=True（禁止 Studio override_ctrls 覆盖手臂电机）"
-        )
-    if not args.replay and os.environ.get("CLOTH_CAMERA_MONITOR", "").strip().lower() in (
+    if os.environ.get("CLOTH_CAMERA_MONITOR", "").strip().lower() in (
         "1",
         "true",
         "yes",
@@ -618,7 +528,7 @@ def main():
         "true",
         "yes",
     )
-    if gripper_trace and agent_name == "g1_omnipicker" and not args.replay:
+    if gripper_trace and agent_name == "g1_omnipicker":
         orca_logger.warning(
             "G1 已改用 Controller2F85Reverse，gripper-trace 仍依赖 ControllerOmnipicker，本轮跳过"
         )
@@ -626,7 +536,7 @@ def main():
     pico_delta_trace = args.pico_delta_trace or os.environ.get(
         "CLOTH_PICO_DELTA_TRACE", ""
     ).strip().lower() in ("1", "true", "yes")
-    if pico_delta_trace and not args.keyframe:
+    if pico_delta_trace:
         from envs.cloth.pico_mjc_delta_trace import attach_pico_mjc_delta_tracer
 
         delta_csv = Path(log_dir) / "pico_mjc_delta_trace.csv"

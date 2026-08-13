@@ -5,7 +5,7 @@
 # 输出：绝对路径（stdout）
 set -euo pipefail
 
-REPO="${REPO_ROOT:-$(cd "$(dirname "$0")/../../../../.." && pwd)}"
+REPO="${REPO_ROOT:-$(cd "$(dirname "$0")/../../../.." && pwd)}"
 export PYTHONPATH="${REPO}/OrcaLink/Client/Python:${REPO}/OrcaGym:${REPO}/OrcaManipulation/src:${PYTHONPATH:-}"
 
 eval "$(bash "$(dirname "$0")/resolve_orca_conda_python.sh")"
