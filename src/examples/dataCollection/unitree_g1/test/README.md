@@ -22,6 +22,8 @@
 
 ## 2. 获取代码并建环境
 
+环境安装必须与仓库根目录 `README.md` 一致，不要自行拆开 `pip` 命令。
+
 ```
 git clone -b g1_lerobot https://github.com/openverse-orca/OrcaManipulation.git
 ```
@@ -29,6 +31,10 @@ git clone -b g1_lerobot https://github.com/openverse-orca/OrcaManipulation.git
 ```
 cd /path/to/OrcaManipulation
 ```
+
+确认根目录有：`environment-unitree.yml`、`requirements.txt`、`scripts/`、`third_party/`、`src/`。
+
+必须新建 Conda 环境，不要在已有环境上 `conda env update`：
 
 ```
 conda env create -f environment-unitree.yml
@@ -39,32 +45,12 @@ conda activate orcalab_lerobot
 ```
 
 ```
-python -m pip install --no-deps --require-hashes -r requirements.txt
+bash scripts/install_runtime.sh
 ```
 
-```
-python -m pip install --no-deps orca-gym==26.6.3
-```
+该脚本会先检查 Conda 里的 NumPy / SciPy / Pinocchio / CasADi，再按哈希安装 pip 包、`orca-gym==26.6.3`，以及仓内 TeleVuer。不要执行：`pip install pin`、`pip install pinocchio`、`pip install casadi`、`pip install -r requirements.txt`。
 
-```
-python -m pip install --no-deps --no-build-isolation ./third_party/lerobot
-```
-
-```
-python -m pip install --no-deps --no-build-isolation ./third_party/televuer
-```
-
-```
-python -m pip install --no-deps --no-build-isolation ./third_party/openpi-client
-```
-
-```
-python scripts/verify_environment.py
-```
-
-通过后终端应出现 `Environment verification OK`。
-
-不要执行：`pip install pin`、`pip install pinocchio`、`pip install casadi`、`pip install -r requirements.txt`（无 `--no-deps`）。
+脚本末尾会跑 `python scripts/verify_environment.py`。通过后终端出现 `Environment verification OK`。
 
 本机若还没有 adb：
 
