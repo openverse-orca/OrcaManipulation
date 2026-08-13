@@ -1,0 +1,9 @@
+# dataCollection_cook 布料三进程联调（P23c）依赖
+#
+# 顶层 requirements.txt 已包含 orca-gym / numba / gymnasium / av / opencv-python
+# / h5py 等通用依赖，这里直接引用避免重复声明。
+-r ../../../requirements.txt
+
+# 已发布的 orca 包（版本由 Release-OrcaManipulation.py 依据 Config-Release.json 同步）
+orca-xpbd==26.8.1.6
+orca-link==26.8.1.6
