@@ -1,27 +1,57 @@
-import os
-from dataStorage.abstract_data_storage import AbstractDataStorage
-from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
-from conf import openloong_conf
+"""OpenLoong 机器人存储模块。
+
+包含：
+- ``OpenLoongRobotProfile``：OpenLoong 机器人型号 profile（格式无关），
+  封装 ``obs_callback`` + ``build_state`` + ``state_dim`` + ``state_names``
+- ``OpenLoongDataStorage``：OpenLoong HDF5 数据存储叶子类，组合 profile
+"""
+from __future__ import annotations
+
 import numpy as np
-import h5py
-from orca_gym.log import OrcaLog
-import json
 
-orca_logger = OrcaLog.get_instance()
+from conf import openloong_conf
+from dataStorage.abstract_data_storage import Hdf5DataStorage
+from dataStorage.robot_profile import RobotProfile
+from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
 
-class OpenLoongDataStorage(AbstractDataStorage):
-    def __init__(self, dataset_path: str, hdf5_path: str = None):
-        super().__init__(dataset_path=dataset_path, hdf5_path=hdf5_path)
-        self.data["time_step"] = []
-        
-    def collection_data(self, data: dict, env: OrcaGymLocalEnv, **kwargs):
-        for key, value in data.items():
-            if key not in self.data:
-                self.data[key] = []
-            self.data[key].append(value)
-        self.data["time_step"].append(env.data.time)
-        
+
+# ---------------------------------------------------------------------------
+# state 列名（16 维）
+# ---------------------------------------------------------------------------
+
+_OPENLOONG_STATE_NAMES: list[str] = [
+    "l_pos_x", "l_pos_y", "l_pos_z",
+    "l_quat_x", "l_quat_y", "l_quat_z", "l_quat_w",
+    "r_pos_x", "r_pos_y", "r_pos_z",
+    "r_quat_x", "r_quat_y", "r_quat_z", "r_quat_w",
+    "l_gripper",
+    "r_gripper",
+]
+
+
+class OpenLoongRobotProfile(RobotProfile):
+    """OpenLoong 机器人型号 profile（格式无关）。
+
+    obs_callback（HDF5 / LeRobot 共用）：
+        采集关节位置、电机值、末端位姿等观测数据。
+
+    build_state（仅 LeRobot 调用）：
+        组装 16 维 state 向量：
+        [l_pos(3), l_quat_xyzw(4), r_pos(3), r_quat_xyzw(4),
+         l_gripper_norm(1), r_gripper_norm(1)]
+        夹爪归一化：按 ``openloong_conf.gripper_l/r.actuator_ranges[0]``
+        的最大值归一化到 [0, 1]。
+    """
+
+    def __init__(self):
+        self._l_grip_max = float(openloong_conf.gripper_l["actuator_ranges"][0][1])
+        self._r_grip_max = float(openloong_conf.gripper_r["actuator_ranges"][0][1])
+
     def obs_callback(self, env: OrcaGymLocalEnv) -> dict:
+        """采集 OpenLoong 观测数据。
+
+        返回 obs 字典，包含关节位置、电机值、末端位姿等。
+        """
         obs = {}
         joint_names = openloong_conf.l_arm["joint_names"] + openloong_conf.r_arm["joint_names"]
         joint_names = [env.joint(joint_name) for joint_name in joint_names]
@@ -52,40 +82,58 @@ class OpenLoongDataStorage(AbstractDataStorage):
         arm_position_values = [env.ctrl[id] for id in arm_position_id]
 
         obs["state/joint/position"] = np.array([qpos[joint_name] for joint_name in joint_names], dtype=np.float32).flatten()
-        
+
         obs["/action/joint/position"] = np.array(arm_position_values, dtype=np.float32).flatten()
         obs["/action/joint/motor"] = np.array(arm_motor_values, dtype=np.float32).flatten()
         obs["/action/effector/position"] = np.array([gripper_qpos[gripper_name] for gripper_name in gripper_names], dtype=np.float32).flatten()
         obs["/action/effector/motor"] = np.array([gripper_motor_values], dtype=np.float32).flatten()
         obs["/action/end/position"] = np.array([ee_site_pos_quat[ee_site_name]["xpos"] for ee_site_name in ee_site_names], dtype=np.float32)
         obs["/action/end/orientation"] = np.array([ee_site_pos_quat[ee_site_name]["xquat"][[1, 2, 3, 0]] for ee_site_name in ee_site_names], dtype=np.float32)
-        return obs   
+        return obs
+
+    @property
+    def state_dim(self) -> int:
+        return 16
+
+    @property
+    def state_names(self) -> list[str]:
+        return _OPENLOONG_STATE_NAMES
+
+    def build_state(self, obs: dict) -> np.ndarray:
+        """从 obs 组装 16 维 state，夹爪按各自量程归一化到 [0, 1]。
+
+        Args:
+            obs: ``obs_callback`` 返回的观测字典，需包含以下键：
+                - "/action/end/position": (2, 3) 左右手末端位置
+                - "/action/end/orientation": (2, 4) 左右手末端姿态（xyzw 四元数）
+                - "/action/effector/motor": (2,) 左右夹爪电机值
+
+        Returns:
+            float32 向量，形状 (16,)，各分量已归一化。
+        """
+        pos = np.asarray(obs["/action/end/position"], dtype=np.float32)   # (2, 3)
+        quat = np.asarray(obs["/action/end/orientation"], dtype=np.float32)  # (2, 4)
+        motor = np.asarray(obs["/action/effector/motor"], dtype=np.float32).flatten()
+        l_grip_norm = float(np.clip(motor[0], 0.0, self._l_grip_max)) / self._l_grip_max
+        r_grip_norm = float(np.clip(motor[1], 0.0, self._r_grip_max)) / self._r_grip_max
+        return np.concatenate([
+            pos[0], quat[0],
+            pos[1], quat[1],
+            [l_grip_norm, r_grip_norm],
+        ]).astype(np.float32)
 
 
-    def clear_data(self):
-        super().clear_data()
-        self.data["time_step"] = []
+class OpenLoongDataStorage(Hdf5DataStorage):
+    """OpenLoong HDF5 数据存储叶子类。
 
-    def save_data(self, **kwargs):
-        self._save_data(**kwargs)
-        with h5py.File(self.get_hdf5_absolute_path(), 'r+') as f:
-            task_info = kwargs.get("task_info", {})
-            scene_info = kwargs.get("scene_info", {})
-            task_info_str = json.dumps(task_info)
-            scene_info_str = json.dumps(scene_info)
-            f.create_dataset("task_info", data=task_info_str)
-            f.create_dataset("scene_info", data=scene_info_str)
-        
-        self.data = {"time_step": []}
-        self.get_next_unit_path()
+    组合 ``OpenLoongRobotProfile`` + ``Hdf5DataStorage``。
+    构造签名与原 ``AbstractDataStorage`` 子类一致（内部自动创建 profile），
+    保证 HDF5 采集脚本（如 ``data_collection_tele.py``）无需改动。
+    """
 
-    def _save_data(self, **kwargs):
-        os.makedirs(self.get_current_unit_path(), exist_ok=True)
-        orca_logger.info(f"Saving data to {self.get_current_unit_path()}")
-
-        hdf5_path = self.get_hdf5_absolute_path()
-        os.makedirs(os.path.dirname(hdf5_path), exist_ok=True)
-        
-        with h5py.File(hdf5_path, 'w') as f:
-            for key, value in self.data.items():
-                self.create_dataset(f, key, data=np.array(value), compression="gzip", compression_opts=4)
+    def __init__(self, dataset_path: str, hdf5_path: str = None):
+        super().__init__(
+            dataset_path=dataset_path,
+            robot_profile=OpenLoongRobotProfile(),
+            hdf5_path=hdf5_path,
+        )
