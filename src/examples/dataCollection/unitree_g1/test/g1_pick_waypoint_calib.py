@@ -1,17 +1,13 @@
 """宇树 g1_pick 臂 + 智元 OmniPicker 夹爪 VR Waypoint 标定工具。
 
-基于 g1_pick_teleop_gripper_test.py，保留完整遥操作链路（IK / 腿锁 / 夹爪 /
-XML 旁路补丁 / 任务门控），在其基础上增加实时 waypoint 采样与保存：
+按键与 record_g1_waypoints.py / 按钮录制一致：
+  左 squeeze     开闸跟手 / 再按结束本轮
+  ★ 双 squeeze   记录当前右臂 7 关节角 q（边沿触发）
+  ↺ 右 squeeze   重置场景（已录路点保留）
+  退出保存       Ctrl+C
+  终端 'u'+Enter 撤销最后一个点（可选）
 
-录制方式
-  Pico   模式：右摇杆按下（R_JOYSTICK_PRESSED）= 记录当前 EE 位姿；
-               左摇杆按下（L_JOYSTICK_PRESSED）= 撤销最后一个；
-               左右 Grip 同按 = 退出并保存 YAML。
-  TeleVuer 模式：终端按 Enter（或 'r'+Enter）= 记录；
-               'u'+Enter = 撤销；左右 squeeze 同按 = 退出并保存。
-
-输出 YAML 格式（my_waypoint_toolX.yaml 兼容 segments 格式）：
-  out_dir/<out_name>.yaml
+采样内容：右臂 7 关节角（rad）+ 夹爪 open/close。不存末端位姿。
 
 请先在 OrcaLab 中加载本目录的 uni_test.json。
 
@@ -20,7 +16,8 @@ XML 旁路补丁 / 任务门控），在其基础上增加实时 waypoint 采样
       --level default --task_config ../../common/example.yaml \\
       --agent_name g1_pick_with_gripper_usda_1 \\
       --orcagym_addr localhost:50051 \\
-      --xr_backend pico \\
+      --xr_backend televuer --tv_no_tls \\
+      --tv_goal_mode rebased_tv --tv_ee_dx 0.03 \\
       --out_dir ./waypoints_calib --out_name my_waypoint_tool1
 """
 import argparse
@@ -81,6 +78,13 @@ _GRIP_FR_XML = f"{-_GRIP_TAU_LIM:g} {_GRIP_TAU_LIM:g}"
 # ── Waypoint 标定专用常量 ─────────────────────────────────────────────────────
 # 夹爪判断"闭合"的 ctrl 阈值（actuator_ranges [-1.0, 2.0] 中点≈0.5）
 _GRIP_CLOSE_THRESH = 0.5
+_RECORD_DEBOUNCE_S = 0.5
+_GUIDE_TOOL4 = (
+    "接近位（夹爪 open）",
+    "抓取闭爪位（夹爪 close）",
+    "箱上方（夹爪 close）",
+    "箱上松开位（夹爪 open）",
+)
 
 # 左臂侧平举锁定角（Unitree G1，不参与 IK）。
 # sr=+π/2 外展到左侧；el=_EL_STRAIGHT 把前臂从零位前弯~82°拉直，
@@ -115,18 +119,28 @@ def _fmt_arm7_deg(q7) -> str:
     return "[" + " ".join(parts) + "]deg"
 
 
-def _read_l_arm_q(env) -> np.ndarray | None:
-    """读左臂 7 关节 qpos（rad）；失败返回 None。"""
+def _read_arm_q(env, joint_names: list[str]) -> np.ndarray | None:
+    """读一组关节 qpos（rad）；失败返回 None。"""
     try:
-        names = [env.joint(n) for n in g1_pick_conf.l_arm["joint_names"]]
+        names = [env.joint(n) for n in joint_names]
         qdict = env.query_joint_qpos(names)
         return np.array(
             [float(np.asarray(qdict[n]).reshape(-1)[0]) for n in names],
             dtype=np.float64,
         )
     except Exception as e:
-        orca_logger.warning(f"[L_ARM] 读 qpos 失败: {e}")
+        orca_logger.warning(f"[ARM] 读 qpos 失败: {e}")
         return None
+
+
+def _read_l_arm_q(env) -> np.ndarray | None:
+    """读左臂 7 关节 qpos（rad）；失败返回 None。"""
+    return _read_arm_q(env, list(g1_pick_conf.l_arm["joint_names"]))
+
+
+def _read_r_arm_q(env) -> np.ndarray | None:
+    """读右臂 7 关节 qpos（rad）；失败返回 None。"""
+    return _read_arm_q(env, list(g1_pick_conf.r_arm["joint_names"]))
 
 
 def _log_l_arm(env, tag: str, dual=None, target=None) -> None:
@@ -1006,24 +1020,22 @@ class DiagLog:
 
 
 class WaypointStore:
-    """线程安全的 waypoint 暂存区，供 HealthMonitor 和 WaypointCalibRunner 共享。
+    """线程安全的 waypoint 暂存区。
 
     每条记录包含：
-      pos  : [x, y, z]  右末端 EE 在 base 系的位置（米）
-      quat : [w, x, y, z]  右末端 EE 在 base 系的姿态（wxyz）
-      grip : "open" | "close"  录制时右夹爪状态
-      ts   : ISO 时间戳字符串
+      q    : 右臂 7 关节角（rad）
+      grip : "open" | "close"
+      ts   : 时间戳
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._wps: list[dict] = []
 
-    def record(self, pos, quat, grip: str) -> int:
+    def record(self, q, grip: str) -> int:
         """追加一条 waypoint，返回当前总数。"""
         entry = {
-            "pos": [float(v) for v in pos],
-            "quat": [float(v) for v in quat],
+            "q": [float(v) for v in q],
             "grip": grip,
             "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
         }
@@ -1306,6 +1318,7 @@ class HealthMonitor:
         wiring: ControllerWiring,
         diag: DiagLog,
         waypoint_store: "WaypointStore | None" = None,
+        record_event: threading.Event | None = None,
     ) -> None:
         self._cfg = cfg
         self._env = env
@@ -1315,6 +1328,7 @@ class HealthMonitor:
         self._wiring = wiring
         self._diag = diag
         self._waypoint_store = waypoint_store
+        self._record_event = record_event
         self._stop = threading.Event()
         self._threads: list = []
 
@@ -1363,6 +1377,12 @@ class HealthMonitor:
         manager = self._manager
         diag = self._diag
         discard_event = self._wiring.discard_event
+        record_event = self._record_event
+        _both_prev = False
+        _r_only_count = 0
+        _r_only_triggered = False
+        _last_record_t = 0.0
+        _R_ONLY_STABLE = 8
 
         while not self._stop.wait(self._POLL_DT):
             try:
@@ -1378,6 +1398,10 @@ class HealthMonitor:
                             f"[PICO] no data clients={n_clients} "
                             f"key_state={'none' if raw_key is None else 'ok'}"
                         )
+                    _both_prev = False
+                    _r_only_count = 0
+                    _r_only_triggered = False
+                    continue
                 elif not _first_ok[0]:
                     _first_ok[0] = True
                     diag.log(f"[PICO] connected clients={n_clients}")
@@ -1390,13 +1414,27 @@ class HealthMonitor:
                     both = l_grip and r_grip
                     r_only = r_grip and not l_grip
 
-                    if both:
-                        orca_logger.info("[Grip] 左右同按 → 退出遥操作")
-                        manager._shutdown_requested = True  # noqa: SLF001
+                    # 双 Grip 边沿 → 记关节角（与 record_g1_waypoints 一致）
+                    if both and not _both_prev and (now - _last_record_t) >= _RECORD_DEBOUNCE_S:
+                        if record_event is not None:
+                            record_event.set()
+                        _last_record_t = now
+                        _r_only_count = 0
+                        _r_only_triggered = True
+                        orca_logger.info("[Grip] 双 Grip → 记录右臂关节角 q")
                     elif r_only:
-                        orca_logger.info("[Grip] 右Grip单按 → 重置本轮")
-                        discard_event.set()
-                        manager._shutdown_requested = True  # noqa: SLF001
+                        if not _r_only_triggered:
+                            _r_only_count += 1
+                            if _r_only_count >= _R_ONLY_STABLE:
+                                orca_logger.info("[Grip] 右Grip单按 → 重置本轮")
+                                discard_event.set()
+                                manager._shutdown_requested = True  # noqa: SLF001
+                                _r_only_triggered = True
+                    else:
+                        _r_only_count = 0
+                        if not r_grip:
+                            _r_only_triggered = False
+                    _both_prev = both
             except Exception:
                 pass
 
@@ -1735,22 +1773,12 @@ def _snapshot_and_record(
     diag: "DiagLog",
     close_thresh: float = _GRIP_CLOSE_THRESH,
 ) -> int:
-    """读取当前右臂 EE 位姿和夹爪状态，追加到 WaypointStore，返回总数。
-
-    EE site: g1_pick_conf.r_arm["ee_site_name"] = "right_palm"
-    base   : g1_pick_conf.base_body = "torso_link_rev_1_0"
-    """
-    try:
-        _ee_r = env.site(g1_pick_conf.r_arm["ee_site_name"])
-        _base = env.body(g1_pick_conf.base_body)
-        ee = env.query_site_pos_and_quat_B([_ee_r], [_base])
-        pos = np.asarray(ee[_ee_r]["xpos"], dtype=np.float64).reshape(3)
-        quat = np.asarray(ee[_ee_r]["xquat"], dtype=np.float64).reshape(4)  # wxyz
-    except Exception as e:
-        diag.log(f"[CALIB] EE 位姿读取失败: {e}")
+    """读取当前右臂 7 关节角和夹爪状态，追加到 WaypointStore，返回总数。"""
+    q = _read_r_arm_q(env)
+    if q is None:
+        diag.log("[CALIB] 右臂关节角读取失败")
         return len(ws)
 
-    # 右夹爪 ctrl 均值判断开/闭
     grip_str = "open"
     try:
         act_names = g1_omnipicker_conf.gripper_r["actuator_names"]
@@ -1766,12 +1794,25 @@ def _snapshot_and_record(
     except Exception:
         pass
 
-    n = ws.record(pos, quat, grip_str)
+    n = ws.record(q, grip_str)
+    q_deg = np.degrees(q)
     diag.log(
-        f"[CALIB] wp#{n} pos=[{pos[0]:.4f},{pos[1]:.4f},{pos[2]:.4f}] "
-        f"quat=[{quat[0]:.4f},{quat[1]:.4f},{quat[2]:.4f},{quat[3]:.4f}] "
+        f"[CALIB] wp#{n} q_R(rad)={_fmt_float_list(q)} "
+        f"q_R(deg)=[{' '.join(f'{v:+.1f}' for v in q_deg)}] "
         f"grip={grip_str}"
     )
+    print(
+        f"\n  ★ 路点 {n} 已记录  gripper={grip_str}  "
+        f"R_arm(deg) pitch={q_deg[0]:+.1f} roll={q_deg[1]:+.1f} "
+        f"yaw={q_deg[2]:+.1f} elbow={q_deg[3]:+.1f}",
+        flush=True,
+    )
+    if n <= len(_GUIDE_TOOL4):
+        print(f"    ← {_GUIDE_TOOL4[n - 1]}", flush=True)
+        if n < len(_GUIDE_TOOL4):
+            print(f"  → 下一步：路点 {n + 1} — {_GUIDE_TOOL4[n]}", flush=True)
+        else:
+            print("  ✓ 引导 4 点已齐，可 Ctrl+C 保存（也可继续加录）", flush=True)
     return n
 
 
@@ -1786,62 +1827,52 @@ def _save_waypoints_yaml(
     gripper_open_val: float = -0.8,
     gripper_close_val: float = 2.0,
 ) -> None:
-    """将 waypoints 列表保存为 my_waypoint_toolX.yaml 兼容的 segments 格式。
-
-    YAML schema：
-      gripper_open: float
-      gripper_close: float
-      segments:
-        - steps: int
-          l_hold: true
-          r_target_b: [x, y, z]
-          r_quat_b: [w, x, y, z]
-          gripper_r: open | close
-    同时输出同名 .slot.yaml（slot0_tool0 格式，供 my_slot_waypoints.yaml 直接参考）。
-    """
+    """保存右臂关节角 waypoint YAML。"""
     os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    joint_names = list(g1_pick_conf.r_arm["joint_names"])
     lines = [
         f"# 由 g1_pick_waypoint_calib.py 自动生成  {ts}",
-        f"# 坐标系: {g1_pick_conf.base_body}（g1_pick_conf.base_body）",
-        f"# EE site: {g1_pick_conf.r_arm['ee_site_name']}（右手掌心）",
-        f"# 共 {len(waypoints)} 个 segment",
+        "# 采样：双 squeeze 记录右臂 7 关节角 q（rad）",
+        f"# 共 {len(waypoints)} 个 waypoint",
         "",
         f"gripper_open: {gripper_open_val}",
         f"gripper_close: {gripper_close_val}",
         "",
-        "segments:",
+        "joint_names:",
     ]
+    for n in joint_names:
+        lines.append(f"  - {n}")
+    lines.append("")
+    lines.append("waypoints:")
     for i, wp in enumerate(waypoints):
-        pos = wp["pos"]
-        quat = wp["quat"]
+        q = wp["q"]
         grip = str(wp.get("grip", "open"))
         ts_wp = wp.get("ts", "")
-        lines.append(f"  # waypoint {i + 1}  录制时间: {ts_wp}")
-        lines.append(f"  - steps: {steps_per_wp}")
-        lines.append(f"    l_hold: true")
-        lines.append(f"    r_target_b: {_fmt_float_list(pos)}")
-        lines.append(f"    r_quat_b: {_fmt_float_list(quat)}")
+        hint = ""
+        if i < len(_GUIDE_TOOL4):
+            hint = f"  # {_GUIDE_TOOL4[i]}"
+        q_deg = np.degrees(np.asarray(q, dtype=np.float64))
+        lines.append(f"  # waypoint {i + 1}  录制时间: {ts_wp}{hint}")
+        lines.append(f"  - q: {_fmt_float_list(q)}")
         lines.append(f"    gripper_r: {grip}")
+        lines.append(
+            f"    # R_arm(deg) pitch={q_deg[0]:+.1f} roll={q_deg[1]:+.1f} "
+            f"yaw={q_deg[2]:+.1f} elbow={q_deg[3]:+.1f}"
+        )
         lines.append("")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
-    print(f"[CALIB] ✓ segments YAML 保存: {out_path}  ({len(waypoints)} 段)", flush=True)
+    print(f"[CALIB] ✓ YAML 保存: {out_path}  ({len(waypoints)} 点)", flush=True)
 
-    # 同时输出 slot 格式（将相邻 open→close 对合并为 wp0/wp1）
     slot_path = out_path.replace(".yaml", ".slot.yaml")
     _save_slot_yaml(waypoints, slot_path, ts)
 
 
 def _save_slot_yaml(waypoints: list[dict], slot_path: str, ts: str) -> None:
-    """将 waypoints 中的相邻 open+close 对写成 slot YAML。
-
-    如果 waypoints 数量为偶数且奇偶交替 open/close，则逐对分组；
-    否则按两两顺序分组（可能混合 grip 状态）。
-    """
+    """将相邻两点写成 slot YAML（q + grip）。"""
     lines = [
-        f"# 由 g1_pick_waypoint_calib.py 自动生成（slot 格式）  {ts}",
-        f"# 坐标系: {g1_pick_conf.base_body}",
+        f"# 由 g1_pick_waypoint_calib.py 自动生成（slot 格式，关节角）  {ts}",
         "",
     ]
     for i in range(0, len(waypoints), 2):
@@ -1850,13 +1881,11 @@ def _save_slot_yaml(waypoints: list[dict], slot_path: str, ts: str) -> None:
         key = f"slot0_tool{i // 2}"
         lines.append(f"{key}:")
         lines.append(f"  wp0:")
-        lines.append(f"    pos:  {_fmt_float_list(wp0['pos'])}")
-        lines.append(f"    quat: {_fmt_float_list(wp0['quat'])}")
+        lines.append(f"    q:    {_fmt_float_list(wp0['q'])}")
         lines.append(f"    grip: {wp0.get('grip', 'open')}")
         if wp1 is not None:
             lines.append(f"  wp1:")
-            lines.append(f"    pos:  {_fmt_float_list(wp1['pos'])}")
-            lines.append(f"    quat: {_fmt_float_list(wp1['quat'])}")
+            lines.append(f"    q:    {_fmt_float_list(wp1['q'])}")
             lines.append(f"    grip: {wp1.get('grip', 'close')}")
         lines.append("")
     with open(slot_path, "w", encoding="utf-8") as f:
@@ -2007,10 +2036,12 @@ class SessionRunner:
 class WaypointCalibRunner:
     """Waypoint 标定主循环。
 
-    在 SessionRunner 的遥操作循环基础上增加后台 stdin 线程：
-      Enter 或 'r'+Enter  = 录制当前末端位姿
-      'u'+Enter           = 撤销最后一个 waypoint
-      左右 squeeze 同按   = 退出并保存
+    按键与 omnipicker 录制一致：
+      左 squeeze          = 开闸跟手 / 再按结束本轮
+      双 squeeze          = 记录右臂关节角 q
+      右 squeeze          = 重置本轮（路点保留）
+      Ctrl+C              = 退出并保存
+      终端 'u'+Enter      = 撤销最后一个点
     """
 
     def __init__(
@@ -2023,6 +2054,7 @@ class WaypointCalibRunner:
         default_joint_values: dict | None = None,
         wiring: "ControllerWiring | None" = None,
         waypoint_store: WaypointStore | None = None,
+        record_event: threading.Event | None = None,
     ) -> None:
         self._cfg = cfg
         self._env = env
@@ -2032,6 +2064,7 @@ class WaypointCalibRunner:
         self._default_joint_values = default_joint_values or {}
         self._wiring = wiring
         self._ws = waypoint_store or WaypointStore()
+        self._record_event = record_event if record_event is not None else threading.Event()
         self._kb_stop = threading.Event()
 
     @property
@@ -2039,25 +2072,16 @@ class WaypointCalibRunner:
         return self._ws
 
     def _keyboard_listener(self) -> None:
-        """后台线程：从 stdin 读取录制 / 撤销指令。"""
+        """后台线程：仅处理撤销（录制走双 squeeze）。"""
         import sys as _sys
-        print(
-            "[CALIB] 终端快捷键: Enter 或 'r'+Enter = 录制；'u'+Enter = 撤销",
-            flush=True,
-        )
+        print("[CALIB] 终端可选: 'u'+Enter = 撤销最后一个点", flush=True)
         while not self._kb_stop.is_set():
             try:
                 line = _sys.stdin.readline()
                 if not line:
                     break
                 cmd = line.strip().lower()
-                if cmd in ("", "r"):
-                    n = _snapshot_and_record(
-                        self._ws, self._env, self._diag,
-                        close_thresh=_GRIP_CLOSE_THRESH,
-                    )
-                    print(f"\n[CALIB] ★ 录制 waypoint #{n}", flush=True)
-                elif cmd == "u":
+                if cmd == "u":
                     removed = self._ws.undo()
                     if removed is not None:
                         print(
@@ -2136,7 +2160,7 @@ class WaypointCalibRunner:
             orca_logger.info(f"========== 标定第 {_sess_idx} 轮 ==========")
             print(
                 f"\n>>> 标定第 {_sess_idx} 轮  已录制 {len(self._ws)} 个 waypoint\n"
-                f"    左 squeeze=开始跟手  Enter/'r'=录制  'u'=撤销  左右同按=退出保存",
+                f"    左squeeze=开闸  双squeeze=记q  右squeeze=重置  Ctrl+C=保存退出",
                 flush=True,
             )
 
@@ -2158,10 +2182,24 @@ class WaypointCalibRunner:
                 diag_log=self._wiring._diag if self._wiring is not None else None,
             )
             lag.install(manager, env)
+            _orig_step = env.step
+
+            def _step_and_record(*a, **kw):
+                out = _orig_step(*a, **kw)
+                if self._record_event.is_set():
+                    self._record_event.clear()
+                    _snapshot_and_record(
+                        self._ws, env, self._diag,
+                        close_thresh=_GRIP_CLOSE_THRESH,
+                    )
+                return out
+
+            env.step = _step_and_record  # type: ignore[method-assign]
             _t0 = time.perf_counter()
             try:
                 _ok, _start, _end, _qpos = manager.run_episode()
             finally:
+                env.step = _orig_step  # type: ignore[method-assign]
                 lag.uninstall(manager, env)
                 if dual is not None and _dual_reset_orig is not None:
                     dual.reset = _dual_reset_orig  # type: ignore[method-assign]
@@ -2758,11 +2796,34 @@ def main() -> None:
     # ── Waypoint 暂存区 ───────────────────────────────────────────────────────
     _grip_close_thresh = float(getattr(args, "grip_close_thresh", _GRIP_CLOSE_THRESH))
     wp_store = WaypointStore()
+    record_event = threading.Event()
+    _last_record_t = [0.0]
+
+    def _request_record(_pressed: bool = True):
+        now = time.perf_counter()
+        if (now - _last_record_t[0]) < _RECORD_DEBOUNCE_S:
+            return
+        _last_record_t[0] = now
+        record_event.set()
+        orca_logger.info("[Squeeze] 左右同按 → 记录右臂关节角 q")
+        print("[CALIB] RECORD reason=both_squeeze", flush=True)
+
+    def _request_reset():
+        orca_logger.info("[Squeeze] 右 squeeze → 重置本轮（路点保留）")
+        print("[CALIB] RESET reason=right_squeeze", flush=True)
+        wiring.discard_event.set()
+        manager._shutdown_requested = True  # noqa: SLF001
+
+    if cfg.xr_backend == "televuer" and xr_device is not None:
+        # 覆盖 wire() 里的退出绑定：双 squeeze 记 q，不再退出
+        xr_device.bind_shutdown_event(_request_record)
+        xr_device.bind_discard_event(_request_reset)
 
     # ── 健康监控线程 ──────────────────────────────────────────────────────────
     monitor = HealthMonitor(
         cfg, env, xr_device, pico_device, manager, wiring, diag,
         waypoint_store=wp_store,
+        record_event=record_event,
     )
     monitor.start()
 
@@ -2774,21 +2835,21 @@ def main() -> None:
     print(f"  XR backend: {cfg.xr_backend}", flush=True)
     print(f"  输出: {args.out_dir}/{args.out_name}.yaml", flush=True)
     print("-" * 60, flush=True)
-    print("  【操作按键 · TeleVuer (Pico)】", flush=True)
+    print("  【操作按键 · 与 omnipicker 录制一致】", flush=True)
     print("  左臂移动    已锁定（侧平举停靠，不响应手柄）", flush=True)
     print("  右臂跟随    右手柄位姿", flush=True)
     print("  左手抓握    左扳机    右手抓握    右扳机", flush=True)
     print("-" * 60, flush=True)
-    print("  【Waypoint 标定流程】", flush=True)
-    print("  左 squeeze = 开始跟手 / 结束本轮", flush=True)
-    print("  右 squeeze = 重置（waypoint 不清除）", flush=True)
-    print("  左右 squeeze 同按 = 退出并保存 YAML", flush=True)
-    print("  ─ 录制快捷键（在本终端输入）─", flush=True)
-    print("  Enter 或 'r'+Enter = 录制当前末端位姿为 waypoint", flush=True)
-    print("  'u'+Enter          = 撤销最后一个 waypoint", flush=True)
+    print("  【Waypoint 标定】", flush=True)
+    print("  左 squeeze     开闸跟手 / 再按结束本轮", flush=True)
+    print("  ★ 双 squeeze   记录当前右臂 7 关节角 q", flush=True)
+    print("  ↺ 右 squeeze   重置本轮（已录路点不清除）", flush=True)
+    print("  退出保存       Ctrl+C", flush=True)
+    print("  终端可选       'u'+Enter = 撤销最后一个点", flush=True)
+    print("  引导 4 点：接近(open) → 抓取(close) → 箱上方(close) → 松开(open)", flush=True)
     if cfg.dry_run_tele:
         print("  DRY-RUN：不驱动臂部 actuator，仅打印目标/误差", flush=True)
-    ui_msg = "Enter=录制  u=撤销  左squeeze=开始  左右同按=退出保存"
+    ui_msg = "左squeeze=开闸  双squeeze=记q  右squeeze=重置  Ctrl+C=保存"
     print("  IDLE 时手臂 hold（不跑 IK）", flush=True)
     print(
         f"  仿真步长: time_step={cfg.time_step*1000:.1f}ms "
@@ -2827,6 +2888,7 @@ def main() -> None:
             default_joint_values=default_joint_values,
             wiring=wiring,
             waypoint_store=wp_store,
+            record_event=record_event,
         )
         final_ws = runner.run()
 
