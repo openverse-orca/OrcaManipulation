@@ -1,20 +1,27 @@
-"""宇树 g1_pick 臂 + 智元 OmniPicker 夹爪 VR 纯遥操作（无数采落盘）。
+"""宇树 g1_pick 臂 + 智元 OmniPicker 夹爪 VR Waypoint 标定工具。
 
-基于 g1_pick_collection_tele_lerobot_gripper_test.py：
-  - 臂 / IK / 腿锁 / 夹爪 / XML 旁路补丁 / 任务门控均保留
-  - 去掉 LeRobot writer、相机取流、NVENC、数据集保存
-  - 场景以 OrcaStudio 当前已加载为准（不读布局 JSON）
+基于 g1_pick_teleop_gripper_test.py，保留完整遥操作链路（IK / 腿锁 / 夹爪 /
+XML 旁路补丁 / 任务门控），在其基础上增加实时 waypoint 采样与保存：
+
+录制方式
+  Pico   模式：右摇杆按下（R_JOYSTICK_PRESSED）= 记录当前 EE 位姿；
+               左摇杆按下（L_JOYSTICK_PRESSED）= 撤销最后一个；
+               左右 Grip 同按 = 退出并保存 YAML。
+  TeleVuer 模式：终端按 Enter（或 'r'+Enter）= 记录；
+               'u'+Enter = 撤销；左右 squeeze 同按 = 退出并保存。
+
+输出 YAML 格式（my_waypoint_toolX.yaml 兼容 segments 格式）：
+  out_dir/<out_name>.yaml
 
 请先在 OrcaLab 中加载本目录的 uni_test.json。
 
 用法：
-  python -u g1_pick_teleop_gripper_test.py \\
+  python -u g1_pick_waypoint_calib.py \\
       --level default --task_config ../../common/example.yaml \\
       --agent_name g1_pick_with_gripper_usda_1 \\
-      --task \"抓取测试\" \\
       --orcagym_addr localhost:50051 \\
-      --xr_backend televuer --tv_no_tls \\
-      --tv_goal_mode rebased_tv --tv_ee_dx 0.03
+      --xr_backend pico \\
+      --out_dir ./waypoints_calib --out_name my_waypoint_tool1
 """
 import argparse
 import dataclasses
@@ -24,6 +31,7 @@ import sys
 import threading
 import time
 import traceback
+from datetime import datetime
 from pathlib import Path
 
 # IPOPT 的 MUMPS/BLAS 会为每次因式分解开一个 OMP 并行区。本问题只有 7 个决策
@@ -70,6 +78,10 @@ _GRIP_F_MAX_N = 30.0
 _GRIP_TAU_LIM = _GRIP_F_MAX_N * _GRIP_LEVER_M  # 1.8
 _GRIP_FR_XML = f"{-_GRIP_TAU_LIM:g} {_GRIP_TAU_LIM:g}"
 
+# ── Waypoint 标定专用常量 ─────────────────────────────────────────────────────
+# 夹爪判断"闭合"的 ctrl 阈值（actuator_ranges [-1.0, 2.0] 中点≈0.5）
+_GRIP_CLOSE_THRESH = 0.5
+
 # 左臂侧平举锁定角（Unitree G1，不参与 IK）。
 # sr=+π/2 外展到左侧；el=_EL_STRAIGHT 把前臂从零位前弯~82°拉直，
 # 整条臂才水平指向 +Y（左侧）。el=0 时前臂仍朝 +X，视觉上像前平举。
@@ -78,6 +90,7 @@ _L_ARM_LABELS = ("sp", "sr", "sy", "el", "wr", "wp", "wy")
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
 log_dir = os.path.join(base_dir, "logs")
+_DEFAULT_OUT_DIR = os.path.join(base_dir, "waypoints_calib")
 
 orca_logger = get_orca_logger(
     name="G1PickWithGripperTeleop",
@@ -992,11 +1005,52 @@ class DiagLog:
                 pass
 
 
+class WaypointStore:
+    """线程安全的 waypoint 暂存区，供 HealthMonitor 和 WaypointCalibRunner 共享。
+
+    每条记录包含：
+      pos  : [x, y, z]  右末端 EE 在 base 系的位置（米）
+      quat : [w, x, y, z]  右末端 EE 在 base 系的姿态（wxyz）
+      grip : "open" | "close"  录制时右夹爪状态
+      ts   : ISO 时间戳字符串
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._wps: list[dict] = []
+
+    def record(self, pos, quat, grip: str) -> int:
+        """追加一条 waypoint，返回当前总数。"""
+        entry = {
+            "pos": [float(v) for v in pos],
+            "quat": [float(v) for v in quat],
+            "grip": grip,
+            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+        }
+        with self._lock:
+            self._wps.append(entry)
+            n = len(self._wps)
+        return n
+
+    def undo(self) -> dict | None:
+        """弹出最后一条 waypoint，没有时返回 None。"""
+        with self._lock:
+            return self._wps.pop() if self._wps else None
+
+    def get_all(self) -> list[dict]:
+        with self._lock:
+            return list(self._wps)
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._wps)
+
+
 class ControllerWiring:
     """装配器：绑定双臂 IK、OmniPicker 夹爪、腿锁、任务状态与输入事件回调。
 
     替代 main() 内散落的 _dual_arm_holder / _is_tele_running / _on_discard 等闭包。
-    持有 discard_event，供 HealthMonitor 和 SessionRunner 共享。
+    持有 discard_event，供 HealthMonitor 和 WaypointCalibRunner 共享。
     """
 
     def __init__(self) -> None:
@@ -1234,7 +1288,7 @@ class HealthMonitor:
     """后台监控线程封装，替代 _monitor_stop / _tv_diag_n 与散落的 threading.Thread 创建。
 
     管理监控线程：
-    - pico 后端：_pico_monitor（连接状态 + Grip 快捷键）
+    - pico 后端：_pico_monitor（连接状态 + Grip 快捷键 + 摇杆按下 waypoint 录制）
     - televuer 后端：_tv_monitor（连接 + health 心跳）
     - 可选：_joint_monitor（关节细粒度诊断，默认关）
     - 可选：_gripper_monitor（夹爪力矩 + 接触力，默认开）
@@ -1251,6 +1305,7 @@ class HealthMonitor:
         manager,
         wiring: ControllerWiring,
         diag: DiagLog,
+        waypoint_store: "WaypointStore | None" = None,
     ) -> None:
         self._cfg = cfg
         self._env = env
@@ -1259,6 +1314,7 @@ class HealthMonitor:
         self._manager = manager
         self._wiring = wiring
         self._diag = diag
+        self._waypoint_store = waypoint_store
         self._stop = threading.Event()
         self._threads: list = []
 
@@ -1669,6 +1725,145 @@ class HealthMonitor:
                     diag.log(f"[GRIP] poll failed: {e}")
 
 
+# =============================================================================
+# Waypoint 标定辅助
+# =============================================================================
+
+def _snapshot_and_record(
+    ws: "WaypointStore",
+    env,
+    diag: "DiagLog",
+    close_thresh: float = _GRIP_CLOSE_THRESH,
+) -> int:
+    """读取当前右臂 EE 位姿和夹爪状态，追加到 WaypointStore，返回总数。
+
+    EE site: g1_pick_conf.r_arm["ee_site_name"] = "right_palm"
+    base   : g1_pick_conf.base_body = "torso_link_rev_1_0"
+    """
+    try:
+        _ee_r = env.site(g1_pick_conf.r_arm["ee_site_name"])
+        _base = env.body(g1_pick_conf.base_body)
+        ee = env.query_site_pos_and_quat_B([_ee_r], [_base])
+        pos = np.asarray(ee[_ee_r]["xpos"], dtype=np.float64).reshape(3)
+        quat = np.asarray(ee[_ee_r]["xquat"], dtype=np.float64).reshape(4)  # wxyz
+    except Exception as e:
+        diag.log(f"[CALIB] EE 位姿读取失败: {e}")
+        return len(ws)
+
+    # 右夹爪 ctrl 均值判断开/闭
+    grip_str = "open"
+    try:
+        act_names = g1_omnipicker_conf.gripper_r["actuator_names"]
+        vals = []
+        for an in act_names:
+            try:
+                aid = env.model.actuator_name2id(env.actuator(an))
+                vals.append(float(env.ctrl[aid]))
+            except Exception:
+                pass
+        if vals and sum(vals) / len(vals) > close_thresh:
+            grip_str = "close"
+    except Exception:
+        pass
+
+    n = ws.record(pos, quat, grip_str)
+    diag.log(
+        f"[CALIB] wp#{n} pos=[{pos[0]:.4f},{pos[1]:.4f},{pos[2]:.4f}] "
+        f"quat=[{quat[0]:.4f},{quat[1]:.4f},{quat[2]:.4f},{quat[3]:.4f}] "
+        f"grip={grip_str}"
+    )
+    return n
+
+
+def _fmt_float_list(vals, precision: int = 4) -> str:
+    return "[" + ", ".join(f"{float(v):.{precision}f}" for v in vals) + "]"
+
+
+def _save_waypoints_yaml(
+    waypoints: list[dict],
+    out_path: str,
+    steps_per_wp: int = 300,
+    gripper_open_val: float = -0.8,
+    gripper_close_val: float = 2.0,
+) -> None:
+    """将 waypoints 列表保存为 my_waypoint_toolX.yaml 兼容的 segments 格式。
+
+    YAML schema：
+      gripper_open: float
+      gripper_close: float
+      segments:
+        - steps: int
+          l_hold: true
+          r_target_b: [x, y, z]
+          r_quat_b: [w, x, y, z]
+          gripper_r: open | close
+    同时输出同名 .slot.yaml（slot0_tool0 格式，供 my_slot_waypoints.yaml 直接参考）。
+    """
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines = [
+        f"# 由 g1_pick_waypoint_calib.py 自动生成  {ts}",
+        f"# 坐标系: {g1_pick_conf.base_body}（g1_pick_conf.base_body）",
+        f"# EE site: {g1_pick_conf.r_arm['ee_site_name']}（右手掌心）",
+        f"# 共 {len(waypoints)} 个 segment",
+        "",
+        f"gripper_open: {gripper_open_val}",
+        f"gripper_close: {gripper_close_val}",
+        "",
+        "segments:",
+    ]
+    for i, wp in enumerate(waypoints):
+        pos = wp["pos"]
+        quat = wp["quat"]
+        grip = str(wp.get("grip", "open"))
+        ts_wp = wp.get("ts", "")
+        lines.append(f"  # waypoint {i + 1}  录制时间: {ts_wp}")
+        lines.append(f"  - steps: {steps_per_wp}")
+        lines.append(f"    l_hold: true")
+        lines.append(f"    r_target_b: {_fmt_float_list(pos)}")
+        lines.append(f"    r_quat_b: {_fmt_float_list(quat)}")
+        lines.append(f"    gripper_r: {grip}")
+        lines.append("")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"[CALIB] ✓ segments YAML 保存: {out_path}  ({len(waypoints)} 段)", flush=True)
+
+    # 同时输出 slot 格式（将相邻 open→close 对合并为 wp0/wp1）
+    slot_path = out_path.replace(".yaml", ".slot.yaml")
+    _save_slot_yaml(waypoints, slot_path, ts)
+
+
+def _save_slot_yaml(waypoints: list[dict], slot_path: str, ts: str) -> None:
+    """将 waypoints 中的相邻 open+close 对写成 slot YAML。
+
+    如果 waypoints 数量为偶数且奇偶交替 open/close，则逐对分组；
+    否则按两两顺序分组（可能混合 grip 状态）。
+    """
+    lines = [
+        f"# 由 g1_pick_waypoint_calib.py 自动生成（slot 格式）  {ts}",
+        f"# 坐标系: {g1_pick_conf.base_body}",
+        "",
+    ]
+    for i in range(0, len(waypoints), 2):
+        wp0 = waypoints[i]
+        wp1 = waypoints[i + 1] if (i + 1) < len(waypoints) else None
+        key = f"slot0_tool{i // 2}"
+        lines.append(f"{key}:")
+        lines.append(f"  wp0:")
+        lines.append(f"    pos:  {_fmt_float_list(wp0['pos'])}")
+        lines.append(f"    quat: {_fmt_float_list(wp0['quat'])}")
+        lines.append(f"    grip: {wp0.get('grip', 'open')}")
+        if wp1 is not None:
+            lines.append(f"  wp1:")
+            lines.append(f"    pos:  {_fmt_float_list(wp1['pos'])}")
+            lines.append(f"    quat: {_fmt_float_list(wp1['quat'])}")
+            lines.append(f"    grip: {wp1.get('grip', 'close')}")
+        lines.append("")
+    with open(slot_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"[CALIB]   slot YAML 保存: {slot_path}", flush=True)
+
+
 class SessionRunner:
     """遥操作主循环：reset → 等待左 squeeze 跟手 → 再按结束本轮 / 右 squeeze 重置。"""
 
@@ -1806,13 +2001,198 @@ class SessionRunner:
 
 
 # =============================================================================
+# Waypoint 标定主循环
+# =============================================================================
+
+class WaypointCalibRunner:
+    """Waypoint 标定主循环。
+
+    在 SessionRunner 的遥操作循环基础上增加后台 stdin 线程：
+      Enter 或 'r'+Enter  = 录制当前末端位姿
+      'u'+Enter           = 撤销最后一个 waypoint
+      左右 squeeze 同按   = 退出并保存
+    """
+
+    def __init__(
+        self,
+        cfg: TeleopConfig,
+        env,
+        manager,
+        diag: DiagLog,
+        discard_event: threading.Event,
+        default_joint_values: dict | None = None,
+        wiring: "ControllerWiring | None" = None,
+        waypoint_store: WaypointStore | None = None,
+    ) -> None:
+        self._cfg = cfg
+        self._env = env
+        self._manager = manager
+        self._diag = diag
+        self._discard_event = discard_event
+        self._default_joint_values = default_joint_values or {}
+        self._wiring = wiring
+        self._ws = waypoint_store or WaypointStore()
+        self._kb_stop = threading.Event()
+
+    @property
+    def waypoint_store(self) -> WaypointStore:
+        return self._ws
+
+    def _keyboard_listener(self) -> None:
+        """后台线程：从 stdin 读取录制 / 撤销指令。"""
+        import sys as _sys
+        print(
+            "[CALIB] 终端快捷键: Enter 或 'r'+Enter = 录制；'u'+Enter = 撤销",
+            flush=True,
+        )
+        while not self._kb_stop.is_set():
+            try:
+                line = _sys.stdin.readline()
+                if not line:
+                    break
+                cmd = line.strip().lower()
+                if cmd in ("", "r"):
+                    n = _snapshot_and_record(
+                        self._ws, self._env, self._diag,
+                        close_thresh=_GRIP_CLOSE_THRESH,
+                    )
+                    print(f"\n[CALIB] ★ 录制 waypoint #{n}", flush=True)
+                elif cmd == "u":
+                    removed = self._ws.undo()
+                    if removed is not None:
+                        print(
+                            f"[CALIB] ↩ 已撤销最后一个 waypoint，"
+                            f"剩余 {len(self._ws)} 个",
+                            flush=True,
+                        )
+                    else:
+                        print("[CALIB] 没有可撤销的 waypoint", flush=True)
+            except Exception:
+                pass
+
+    def run(self) -> WaypointStore:
+        """运行标定循环，返回 WaypointStore（含所有录制 waypoint）。"""
+        cfg = self._cfg
+        env = self._env
+        manager = self._manager
+        discard_event = self._discard_event
+
+        # 始终启动 stdin 监听线程（遥操作跑控制环时主线程阻塞，键盘由后台线程处理）
+        _kb_thread = threading.Thread(
+            target=self._keyboard_listener, daemon=True
+        )
+        _kb_thread.start()
+
+        _sess_idx = 0
+        dual = self._wiring.dual_arm_ctrl if self._wiring is not None else None
+        while not manager._shutdown_requested:  # noqa: SLF001
+            _sess_idx += 1
+            orca_logger.info(
+                f"[CALIB] ---- session_prep #{_sess_idx} "
+                f"waypoints_so_far={len(self._ws)} ----"
+            )
+            try:
+                for jn, v in zip(
+                    g1_pick_conf.l_arm["joint_names"], _L_INIT_JOINT_VALUES
+                ):
+                    full = env.joint(jn)
+                    orca_logger.info(
+                        f"[L_ARM][map] {jn} -> {full} = {v:.4f}rad "
+                        f"({np.degrees(v):+.1f}deg)"
+                    )
+            except Exception as e:
+                orca_logger.warning(f"[L_ARM][map] 失败: {e}")
+
+            env.reset()
+            _log_l_arm(env, "1_after_env.reset", dual=dual)
+
+            if not cfg.local_xml:
+                t_us = time.perf_counter()
+                if not manager.update_scene():
+                    orca_logger.info("update_scene 失败，停止标定")
+                    break
+                orca_logger.info(
+                    f"[L_ARM] update_scene 耗时 {(time.perf_counter()-t_us)*1000:.0f}ms"
+                )
+                _log_l_arm(env, "2_after_update_scene", dual=dual)
+
+            env.set_default_joint_values(self._default_joint_values)
+            try:
+                env.mj_forward()
+            except Exception:
+                pass
+            _log_l_arm(env, "3_after_set_default", dual=dual)
+
+            _settle_left_arm(env, manager, dual=dual, max_steps=40, tol=0.05)
+            _log_l_arm(env, "3b_after_settle", dual=dual)
+
+            if dual is not None:
+                dual.reset()
+                _force_dual_left_hold(dual)
+                _log_l_arm(env, "4_after_dual.reset", dual=dual)
+
+            time.sleep(0.05)
+
+            orca_logger.info(f"========== 标定第 {_sess_idx} 轮 ==========")
+            print(
+                f"\n>>> 标定第 {_sess_idx} 轮  已录制 {len(self._ws)} 个 waypoint\n"
+                f"    左 squeeze=开始跟手  Enter/'r'=录制  'u'=撤销  左右同按=退出保存",
+                flush=True,
+            )
+
+            _dual_reset_orig = None
+            if dual is not None:
+                _dual_reset_orig = dual.reset
+
+                def _reset_logged():
+                    _log_l_arm(env, "5b_before_run_episode.dual.reset", dual=dual)
+                    _dual_reset_orig()
+                    _force_dual_left_hold(dual)
+                    _log_l_arm(env, "5c_after_run_episode.dual.reset", dual=dual)
+
+                dual.reset = _reset_logged  # type: ignore[method-assign]
+
+            lag = LoopLagProfiler(
+                warn_ms=float(cfg.lag_warn_ms),
+                log_every=25,
+                diag_log=self._wiring._diag if self._wiring is not None else None,
+            )
+            lag.install(manager, env)
+            _t0 = time.perf_counter()
+            try:
+                _ok, _start, _end, _qpos = manager.run_episode()
+            finally:
+                lag.uninstall(manager, env)
+                if dual is not None and _dual_reset_orig is not None:
+                    dual.reset = _dual_reset_orig  # type: ignore[method-assign]
+            _dur = time.perf_counter() - _t0
+            _log_l_arm(env, "6_after_run_episode", dual=dual)
+
+            if discard_event.is_set():
+                discard_event.clear()
+                manager._shutdown_requested = False  # noqa: SLF001
+                orca_logger.info(f"[CALIB SESSION {_sess_idx}] 已重置本轮（waypoint 保留）")
+                print(f"[CALIB] reset cleared sess={_sess_idx}", flush=True)
+                continue
+
+            if manager._shutdown_requested:  # noqa: SLF001
+                print(f"[CALIB] shutdown abort sess={_sess_idx}", flush=True)
+                break
+
+            orca_logger.info(f"[CALIB SESSION {_sess_idx}] {_dur:.1f}s")
+
+        self._kb_stop.set()
+        return self._ws
+
+
+# =============================================================================
 # Main
 # =============================================================================
 def main() -> None:
-    parser = argparse.ArgumentParser(description="g1_pick VR 纯遥操作（无数采落盘）")
+    parser = argparse.ArgumentParser(description="g1_pick VR Waypoint 标定（基于纯遥操作脚本）")
     parser.add_argument("--level", type=str, default="default", help="场景名称")
     parser.add_argument("--task_config", default="../../common/example.yaml", help="任务配置 YAML")
-    parser.add_argument("--task", default="g1 pick with gripper teleoperation", help="任务描述")
+    parser.add_argument("--task", default="g1 pick with gripper waypoint calibration", help="任务描述")
     parser.add_argument("--orcagym_addr", default="localhost:50051")
     parser.add_argument("--local_xml", default=None,
                         help="使用本地 patched XML（跳过 gRPC 加载）")
@@ -2000,6 +2380,31 @@ def main() -> None:
         type=float,
         default=1.0,
         help="臂+手 body 重力补偿比例 0~1（默认 1.0=全补偿；0 关闭）",
+    )
+    # ── Waypoint 标定专属参数 ────────────────────────────────────────────────
+    parser.add_argument(
+        "--out_dir",
+        type=str,
+        default=_DEFAULT_OUT_DIR,
+        help=f"输出目录（默认 {_DEFAULT_OUT_DIR}）",
+    )
+    parser.add_argument(
+        "--out_name",
+        type=str,
+        default="my_waypoint_tool",
+        help="输出文件名前缀，不含扩展名（默认 my_waypoint_tool）",
+    )
+    parser.add_argument(
+        "--steps_per_wp",
+        type=int,
+        default=300,
+        help="输出 YAML 中每个 segment 的 steps 值（默认 300）",
+    )
+    parser.add_argument(
+        "--grip_close_thresh",
+        type=float,
+        default=_GRIP_CLOSE_THRESH,
+        help=f"右夹爪 ctrl 均值超过此阈值判定为 close（默认 {_GRIP_CLOSE_THRESH}）",
     )
     args = parser.parse_args()
     if os.environ.get("G1_DIAG_HEALTH", "").strip() in ("1", "true", "TRUE", "yes", "YES"):
@@ -2350,41 +2755,40 @@ def main() -> None:
     except Exception as e:
         orca_logger.error(f"初始化失败: {e}\n{traceback.format_exc()}")
 
+    # ── Waypoint 暂存区 ───────────────────────────────────────────────────────
+    _grip_close_thresh = float(getattr(args, "grip_close_thresh", _GRIP_CLOSE_THRESH))
+    wp_store = WaypointStore()
+
     # ── 健康监控线程 ──────────────────────────────────────────────────────────
-    monitor = HealthMonitor(cfg, env, xr_device, pico_device, manager, wiring, diag)
+    monitor = HealthMonitor(
+        cfg, env, xr_device, pico_device, manager, wiring, diag,
+        waypoint_store=wp_store,
+    )
     monitor.start()
 
     # ── 用户提示 ─────────────────────────────────────────────────────────────
     print("", flush=True)
     print("=" * 60, flush=True)
-    print("  g1_pick VR 纯遥操作 (Unitree G1_29 CasADi IK)", flush=True)
+    print("  g1_pick VR Waypoint 标定 (Unitree G1_29 CasADi IK)", flush=True)
     print(f"  任务: {cfg.task}", flush=True)
     print(f"  XR backend: {cfg.xr_backend}", flush=True)
+    print(f"  输出: {args.out_dir}/{args.out_name}.yaml", flush=True)
     print("-" * 60, flush=True)
-    if cfg.xr_backend == "pico":
-        print("  【操作按键 · Pico】", flush=True)
-        print("  左臂移动    已锁定（侧平举停靠，不响应手柄）", flush=True)
-        print("  右臂移动    右手柄位姿", flush=True)
-        print("  左手抓握    左扳机", flush=True)
-        print("  右手抓握    右扳机", flush=True)
-        print("-" * 60, flush=True)
-        print("  【遥操作流程】", flush=True)
-        print("  左Grip×1=开始跟手  左Grip×2=结束本轮", flush=True)
-        print("  右Grip=重置  左右Grip同按=退出", flush=True)
-        ui_msg = "左Grip×1=开始 左Grip×2=结束 右Grip=重置 左右Grip同按=退出"
-    else:
-        print("  【操作按键 · TeleVuer】", flush=True)
-        print("  左臂移动    已锁定（侧平举停靠，不响应手柄）", flush=True)
-        print("  右臂跟随    右手柄位姿（rebased_tv）", flush=True)
-        print("  左手抓握    左扳机", flush=True)
-        print("  右手抓握    右扳机", flush=True)
-        print("-" * 60, flush=True)
-        print("  【遥操作流程】", flush=True)
-        print("  左 squeeze=开始/结束本轮  右 squeeze=重置", flush=True)
-        print("  左右 squeeze 同按=退出", flush=True)
-        if cfg.dry_run_tele:
-            print("  DRY-RUN：不驱动臂部 actuator，仅打印目标/误差", flush=True)
-        ui_msg = "左squeeze=开始/结束 右squeeze=重置 左右同按=退出"
+    print("  【操作按键 · TeleVuer (Pico)】", flush=True)
+    print("  左臂移动    已锁定（侧平举停靠，不响应手柄）", flush=True)
+    print("  右臂跟随    右手柄位姿", flush=True)
+    print("  左手抓握    左扳机    右手抓握    右扳机", flush=True)
+    print("-" * 60, flush=True)
+    print("  【Waypoint 标定流程】", flush=True)
+    print("  左 squeeze = 开始跟手 / 结束本轮", flush=True)
+    print("  右 squeeze = 重置（waypoint 不清除）", flush=True)
+    print("  左右 squeeze 同按 = 退出并保存 YAML", flush=True)
+    print("  ─ 录制快捷键（在本终端输入）─", flush=True)
+    print("  Enter 或 'r'+Enter = 录制当前末端位姿为 waypoint", flush=True)
+    print("  'u'+Enter          = 撤销最后一个 waypoint", flush=True)
+    if cfg.dry_run_tele:
+        print("  DRY-RUN：不驱动臂部 actuator，仅打印目标/误差", flush=True)
+    ui_msg = "Enter=录制  u=撤销  左squeeze=开始  左右同按=退出保存"
     print("  IDLE 时手臂 hold（不跑 IK）", flush=True)
     print(
         f"  仿真步长: time_step={cfg.time_step*1000:.1f}ms "
@@ -2416,20 +2820,23 @@ def main() -> None:
     except Exception as e:
         orca_logger.warning(f"show_ui_message 失败（orcalab 可能看不到操作提示）: {e}")
 
-    # ── 遥操作主循环 ───────────────────────────────────────────────────────────
+    # ── 标定主循环 ─────────────────────────────────────────────────────────────
     try:
-        runner = SessionRunner(
+        runner = WaypointCalibRunner(
             cfg, env, manager, diag, wiring.discard_event,
             default_joint_values=default_joint_values,
             wiring=wiring,
+            waypoint_store=wp_store,
         )
-        runner.run()
+        final_ws = runner.run()
 
     except KeyboardInterrupt:
         orca_logger.info("KeyboardInterrupt")
-        print("\n[停止] 遥操作已中断", flush=True)
+        print("\n[停止] 标定已中断", flush=True)
+        final_ws = wp_store
     except Exception as e:
-        orca_logger.error(f"遥操作异常: {e}\n{traceback.format_exc()}")
+        orca_logger.error(f"标定异常: {e}\n{traceback.format_exc()}")
+        final_ws = wp_store
     finally:
         monitor.stop()
         if cfg.xr_backend == "televuer" and xr_device is not None:
@@ -2443,15 +2850,32 @@ def main() -> None:
         except Exception:
             pass
         diag.close()
-        s = "遥操作结束"
-        orca_logger.info(s)
-        print(
-            f"\n{'='*60}\n"
-            f"  {s}\n"
-            f"  诊断日志: {diag.log_path}\n"
-            f"{'='*60}",
-            flush=True,
-        )
+
+    # ── 保存 YAML ──────────────────────────────────────────────────────────────
+    all_wps = final_ws.get_all()
+    print(f"\n{'='*60}", flush=True)
+    print(f"  Waypoint 标定结束  共录制 {len(all_wps)} 个", flush=True)
+    if all_wps:
+        out_dir = args.out_dir
+        out_name = args.out_name.rstrip("/")
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, out_name + ".yaml")
+        try:
+            _save_waypoints_yaml(
+                all_wps,
+                out_path=out_path,
+                steps_per_wp=int(args.steps_per_wp),
+            )
+        except Exception as e:
+            orca_logger.error(f"YAML 保存失败: {e}\n{traceback.format_exc()}")
+            print(f"[CALIB] ✗ YAML 保存失败: {e}", flush=True)
+    else:
+        print("  （未录制任何 waypoint，跳过保存）", flush=True)
+    print(
+        f"  诊断日志: {diag.log_path}\n"
+        f"{'='*60}",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

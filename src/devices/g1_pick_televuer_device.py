@@ -331,6 +331,16 @@ class TeleVuerDevice(AbstractDevice):
             self._counting_tv = self._tv_wrapper.tvuer
             # Child Process started inside TeleVuer.__init__ as .process
             self._vuer_process = getattr(self._counting_tv, "process", None)
+        except TypeError as _te:
+            # 旧版 TeleVuerWrapper 不接受 host 参数，降级重试
+            if "host" in str(_te) and "host" in wrap_kwargs:
+                _kw2 = {k: v for k, v in wrap_kwargs.items() if k != "host"}
+                self._tv_wrapper = TeleVuerWrapper(**_kw2)
+                self._counting_tv = self._tv_wrapper.tvuer
+                self._vuer_process = getattr(self._counting_tv, "process", None)
+            else:
+                wrap_mod.TeleVuer = self._orig_televuer_cls
+                raise
         except Exception:
             wrap_mod.TeleVuer = self._orig_televuer_cls
             if self._tv_wrapper is not None:
