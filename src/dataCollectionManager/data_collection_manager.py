@@ -1,7 +1,6 @@
 import enum
 import os
 import signal
-import subprocess
 from textwrap import shorten
 import time
 import types
@@ -125,8 +124,6 @@ class DataCollectionManager:
         self.data_storage: AbstractDataStorage = data_storage
         self.ctrl = np.zeros(self.env.nu, dtype=np.float32)
         self.disable_actuator_group = []
-        self.monitor_ports: list[int] = []
-        self.monitor_processes: list[subprocess.Popen] = []
         self.touch_sensor_names: list[str] = []
         self.touch_sensor: TouchSensorVisualizer = None
 
@@ -198,28 +195,11 @@ class DataCollectionManager:
         """
         return self._shutdown_requested
 
-    def add_monitor_port(self, port: int):
-        self.monitor_ports.append(port)
-
     def add_touch_sensor(self, touch_sensor_list: list[str]):
         # 存储传感器对象列表（env.sensor 返回的是传感器对象，而非名称）
         self.touch_sensor_names = [self.env.sensor(name) for name in touch_sensor_list]
-        
-    def start_monitors(self):
-        from orca_gym.scripts.camera_monitor import start_monitor
-        for monitor_port in self.monitor_ports:
-            p = start_monitor(monitor_port)
-            self.monitor_processes.append(p)
 
-    def stop_monitors(self):
-        from orca_gym.scripts.camera_monitor import terminate_monitor
-        for monitor_process in self.monitor_processes:
-            try:
-                terminate_monitor(monitor_process)  
-            except Exception as e:
-                orca_logger.error(f"Failed to stop monitor: {e}")
-
-    def create_env(self, agent_name:str, 
+    def create_env(self, agent_name:str,
                   env_name:str,
                   entry_point:str,
                   default_joint_values:dict[str, float],
@@ -346,7 +326,6 @@ class DataCollectionManager:
     def run(self, max_episodes: int | None = None):
         self._shutdown_requested = False
         self.env.disable_actuator(self.disable_actuator_group)
-        self.start_monitors()
         episode_count = 0
         if self.touch_sensor_names:
             self.touch_sensor = TouchSensorVisualizer()
@@ -390,7 +369,6 @@ class DataCollectionManager:
             signal.signal(signal.SIGINT, self._original_sigint)
             orca_logger.info("Cleanup start")
             self._notify_callbacks("on_run_end")
-            self.stop_monitors()
             if self.touch_sensor is not None:
                 self.touch_sensor.close()
             if self.data_storage is not None:

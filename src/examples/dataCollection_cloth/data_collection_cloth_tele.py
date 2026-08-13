@@ -785,16 +785,6 @@ def main():
         orca_logger.info(
             "Replay mode: skip_render=True（禁止 Studio override_ctrls 覆盖手臂电机）"
         )
-    if not args.replay and os.environ.get("CLOTH_CAMERA_MONITOR", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    ):
-        data_collection_manager.add_monitor_port(7080)
-        data_collection_manager.add_monitor_port(7081)
-        data_collection_manager.add_monitor_port(7090)
-        data_collection_manager.add_monitor_port(7091)
-        orca_logger.info("CLOTH_CAMERA_MONITOR=1：启动 4 路 camera_monitor（7080/7081/7090/7091）")
 
     gripper_trace = args.gripper_trace or os.environ.get("CLOTH_GRIPPER_TRACE", "").strip().lower() in (
         "1",
