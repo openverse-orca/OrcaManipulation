@@ -102,6 +102,14 @@ def main():
     )
     env = data_collection_manager.env
     env.reset()
+    data_collection_manager.render_fps = 30
+
+    cameras_conf = getattr(agent_conf, "cameras_conf", None)
+    if cameras_conf:
+        orca_logger.info("Setting up cameras (client PyAV remux)")
+        data_storage.setup_cameras(env, cameras_conf, show_viewer=True)
+    else:
+        orca_logger.warning(f"agent_conf '{agent_name}' 缺少 cameras_conf，跳过相机配置（视频不会保存）")
 
     data_collection_manager.mode = DataCollectionManager.DataCollectionMode.AUGMENTATION
     data_collection_manager.save_video = True
