@@ -535,6 +535,60 @@ def apply_arm_position_gains(
     )
 
 
+def apply_gripper_forcerange(env, tau_lim: float | None = None) -> int:
+    """在已编译模型上写入夹爪 pctrl 的 forcerange（XML 钩子的兜底）。
+
+    资产默认常为 ±10 N·m。只改 ~/.orcagym/tmp 里未打补丁的原始 XML 会看到大力矩；
+    本函数直接改 mjModel，不依赖正则是否命中 `<general>`。
+    """
+    import mujoco
+
+    tau = float(_GRIP_TAU_LIM if tau_lim is None else tau_lim)
+    gym = getattr(env, "gym", None) or getattr(
+        getattr(env, "unwrapped", env), "gym", None
+    )
+    mj = getattr(gym, "_mjModel", None) if gym is not None else None
+    if mj is None:
+        msg = "[GRIP-CAP] env.gym._mjModel unavailable，力矩帽未写入"
+        orca_logger.error(msg)
+        print(msg, flush=True)
+        return 0
+
+    n = 0
+    sample = []
+    for aid in range(int(mj.nu)):
+        name = mujoco.mj_id2name(mj, mujoco.mjtObj.mjOBJ_ACTUATOR, aid) or ""
+        if "gripper" not in name or "_pctrl" not in name:
+            continue
+        mj.actuator_forcerange[aid, 0] = -tau
+        mj.actuator_forcerange[aid, 1] = tau
+        if hasattr(mj, "actuator_forcelimited"):
+            mj.actuator_forcelimited[aid] = 1
+        n += 1
+        if len(sample) < 2:
+            sample.append(
+                f"{name.split('_')[-3:] and name}:"
+                f"{mj.actuator_forcerange[aid, 0]:g}..{mj.actuator_forcerange[aid, 1]:g}"
+            )
+
+    if n <= 0:
+        msg = (
+            f"[GRIP-CAP] 未找到 gripper *_pctrl，力矩帽未生效"
+            f"（资产默认常为 ±10 N·m）"
+        )
+        orca_logger.error(msg)
+        print(msg, flush=True)
+        return 0
+
+    msg = (
+        f"[GRIP-CAP] runtime n={n} lim=±{tau:g} N·m "
+        f"(F≤{_GRIP_F_MAX_N:.0f}N) 读回={sample[0] if sample else '?'}"
+    )
+    orca_logger.info(msg)
+    print(msg, flush=True)
+    return n
+
+
 def lock_lower_body(manager: DataCollectionManager, env):
     """锁定腿部 + 腰部，保持当前 qpos（每 episode 重置时自动更新）。"""
     joint_names = [
@@ -1017,6 +1071,7 @@ class ControllerWiring:
         apply_arm_position_gains(
             env, kp=cfg.arm_kp, kv=cfg.arm_kv, kv_ratio=cfg.arm_kv_ratio
         )
+        apply_gripper_forcerange(env)
 
         def _is_tele_running() -> bool:
             tsc = manager.task_status_controller

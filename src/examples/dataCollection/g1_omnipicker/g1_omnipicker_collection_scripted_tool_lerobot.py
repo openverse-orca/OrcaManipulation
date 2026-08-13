@@ -1152,27 +1152,60 @@ def main() -> None:
         "--safe_z", type=float, default=0.50,
         help="安全过渡高度 base 系 z（米，默认 0.50）"
     )
+    parser.add_argument(
+        "--speed", type=float, default=1.0,
+        help="轨迹整体提速倍率（默认1.0；1.5=快1.5倍，任务时长与数据时长同步缩短）",
+    )
+    parser.add_argument(
+        "--num_tools", type=int, default=5,
+        help="本集实际抓取的工具数量（默认5；调试时可设 1 只验证第一把）",
+    )
+    # 单位均为「帧」（1/fps 秒）；内部按 env.dt 自动放大为控制步。
     # 默认偏快：抓取仍留足沉降；放箱侧（尤其经由/松开，wp 几乎重合）尽量压缩。
-    parser.add_argument("--steps_transit", type=int, default=90, help="高位过渡步数（默认90）")
-    parser.add_argument("--steps_descend", type=int, default=110, help="垂直下降步数（默认110）")
-    parser.add_argument("--steps_grasp", type=int, default=55, help="移到抓取点步数（默认55）")
-    parser.add_argument("--steps_settle", type=int, default=75, help="抓取点沉降+闭爪驻留步数（默认75）")
-    parser.add_argument("--steps_lift", type=int, default=70, help="抬升步数（默认70）")
+    parser.add_argument(
+        "--steps_transit", type=int, default=90,
+        help="高位过渡帧数（默认90；内部按 env.dt 放大为控制步）",
+    )
+    parser.add_argument(
+        "--steps_descend", type=int, default=110,
+        help="垂直下降帧数（默认110；内部按 env.dt 放大为控制步）",
+    )
+    parser.add_argument(
+        "--steps_grasp", type=int, default=55,
+        help="移到抓取点帧数（默认55；内部按 env.dt 放大为控制步）",
+    )
+    parser.add_argument(
+        "--steps_settle", type=int, default=75,
+        help="抓取点沉降+闭爪驻留帧数（默认75；内部按 env.dt 放大为控制步）",
+    )
+    parser.add_argument(
+        "--steps_lift", type=int, default=70,
+        help="抬升帧数（默认70；内部按 env.dt 放大为控制步）",
+    )
     parser.add_argument(
         "--steps_place_via",
         type=int,
         default=35,
-        help="6 点模式：两条放箱经由段各自步数（默认35≈1.8s@20fps；4 点 YAML 忽略）",
+        help="6 点模式：两条放箱经由段各自帧数（默认35≈1.8s@20fps；内部按 env.dt 放大；4 点 YAML 忽略）",
     )
-    parser.add_argument("--steps_to_box", type=int, default=70, help="移到工具箱上方步数（默认70）")
+    parser.add_argument(
+        "--steps_to_box", type=int, default=70,
+        help="移到工具箱上方帧数（默认70；内部按 env.dt 放大为控制步）",
+    )
     parser.add_argument(
         "--steps_release",
         type=int,
         default=40,
-        help="闭爪逼近松开位步数（默认40；当前 wp 箱上/松开几乎重合）",
+        help="闭爪逼近松开位帧数（默认40；内部按 env.dt 放大；当前 wp 箱上/松开几乎重合）",
     )
-    parser.add_argument("--steps_release_settle", type=int, default=55, help="松开位沉降+张开驻留步数（默认55）")
-    parser.add_argument("--steps_lift_after", type=int, default=55, help="放置后抬升步数（默认55）")
+    parser.add_argument(
+        "--steps_release_settle", type=int, default=55,
+        help="松开位沉降+张开驻留帧数（默认55；内部按 env.dt 放大为控制步）",
+    )
+    parser.add_argument(
+        "--steps_lift_after", type=int, default=55,
+        help="放置后抬升帧数（默认55；内部按 env.dt 放大为控制步）",
+    )
     parser.add_argument(
         "--kp", type=float, default=220.0,
         help="OSC 阻抗刚度 kp（默认220）",
@@ -1198,8 +1231,8 @@ def main() -> None:
     parser.add_argument(
         "--clock",
         choices=("sim", "wall"),
-        default="wall",
-        help="采帧时钟源（wall=墙钟，sim=仿真时间）",
+        default="sim",
+        help="采帧时钟源（sim=仿真时间，脚本化采集推荐；wall=墙钟）",
     )
     args = parser.parse_args()
 
@@ -1331,6 +1364,47 @@ def main() -> None:
     )
     env = manager.env
     manager.save_video = False
+
+    # 轨迹 --steps_* 以「帧」(1/fps) 设计；控制步长 env.dt = time_step×frame_skip。
+    # steps_scale 把帧数放大为控制步，保证末端速度与数据时长 = 任务时长。
+    env_dt = float(manager.time_step) * int(manager.frame_skip)
+    frame_dt = 1.0 / float(args.fps)
+    steps_scale = max(1, int(round(frame_dt / env_dt)))
+    scaled_dt = steps_scale * env_dt
+    orca_logger.info(
+        f"[STEPS-SCALE] env.dt={env_dt*1000:.1f}ms "
+        f"(time_step={manager.time_step} frame_skip={manager.frame_skip}) "
+        f"frame_dt={frame_dt*1000:.1f}ms (@{args.fps}fps) "
+        f"→ steps_scale={steps_scale} "
+        f"(scaled_dt={scaled_dt*1000:.1f}ms)"
+    )
+    if abs(scaled_dt - frame_dt) > 1e-6:
+        orca_logger.warning(
+            f"[STEPS-SCALE] scaled_dt={scaled_dt*1000:.2f}ms 与 "
+            f"1/fps={frame_dt*1000:.2f}ms 偏差 "
+            f"{abs(scaled_dt - frame_dt)*1000:.2f}ms，数据时长可能略偏"
+        )
+    print(
+        f"  [STEPS-SCALE] env.dt={env_dt*1000:.1f}ms → "
+        f"steps_scale={steps_scale}（帧→控制步）",
+        flush=True,
+    )
+
+    traj_speed = max(0.1, float(args.speed))
+    num_tools = int(np.clip(args.num_tools, 1, 5))
+
+    def _ctrl_steps(frames: int) -> int:
+        """轨迹帧数（1/fps）→ 控制步数：按 env.dt 放大，再按 speed 提速。"""
+        return max(1, int(round(float(frames) * steps_scale / traj_speed)))
+
+    if traj_speed != 1.0 or num_tools != 5:
+        orca_logger.info(
+            f"[轨迹] speed={traj_speed:.2f}x，抓取工具数={num_tools}/5"
+        )
+        print(
+            f"  [轨迹] speed={traj_speed:.2f}x | 抓取 {num_tools}/5 把工具",
+            flush=True,
+        )
 
     # ── 首次初始化 ──────────────────────────────────────────────────────────
     env.reset()
@@ -1604,27 +1678,32 @@ def main() -> None:
 
                 all_segments: list[dict] = []
                 place_arm_at: dict[int, int] = {}  # 该工具全部路点结束步 → tool_idx
+                # place_check_timeout_s × fps = 帧数；再 × steps_scale = 控制步
                 place_timeout_steps = max(
-                    1, int(round(float(args.place_check_timeout_s) * args.fps))
+                    1,
+                    int(round(float(args.place_check_timeout_s) * args.fps))
+                    * steps_scale,
                 )
+                retreat_steps = _ctrl_steps(_PLACE_RETREAT_STEPS)
                 cum_steps = 0
                 last_release_quat = None
                 last_release_pos = None
-                for slot_idx, tool_idx in enumerate(grasp_order):
+                active_order = grasp_order[:num_tools]
+                for slot_idx, tool_idx in enumerate(active_order):
                     td = episode_tool_data[tool_idx]
                     tool_segs = _build_tool_segments(
                         wps=td["waypoints"],
                         safe_z=args.safe_z,
-                        steps_transit=args.steps_transit,
-                        steps_descend=args.steps_descend,
-                        steps_grasp=args.steps_grasp,
-                        steps_settle=args.steps_settle,
-                        steps_lift=args.steps_lift,
-                        steps_place_via=args.steps_place_via,
-                        steps_to_box=args.steps_to_box,
-                        steps_release=args.steps_release,
-                        steps_release_settle=args.steps_release_settle,
-                        steps_lift_after=args.steps_lift_after,
+                        steps_transit=_ctrl_steps(args.steps_transit),
+                        steps_descend=_ctrl_steps(args.steps_descend),
+                        steps_grasp=_ctrl_steps(args.steps_grasp),
+                        steps_settle=_ctrl_steps(args.steps_settle),
+                        steps_lift=_ctrl_steps(args.steps_lift),
+                        steps_place_via=_ctrl_steps(args.steps_place_via),
+                        steps_to_box=_ctrl_steps(args.steps_to_box),
+                        steps_release=_ctrl_steps(args.steps_release),
+                        steps_release_settle=_ctrl_steps(args.steps_release_settle),
+                        steps_lift_after=_ctrl_steps(args.steps_lift_after),
                     )
                     for s in tool_segs:
                         if args.randomize:
@@ -1670,7 +1749,7 @@ def main() -> None:
                     retreat_pos = [retreat_x, retreat_y, float(args.safe_z)]
                     all_segments.append(
                         {
-                            "steps": _PLACE_RETREAT_STEPS,
+                            "steps": retreat_steps,
                             "l_hold": True,
                             "r_target_b": retreat_pos,
                             "r_quat_b": last_release_quat,
@@ -1679,7 +1758,7 @@ def main() -> None:
                         }
                     )
                     # 末尾只需覆盖「离开后等接触」窗口；检查多在 1 步内完成
-                    wait_steps = place_timeout_steps + 2
+                    wait_steps = place_timeout_steps + 2 * steps_scale
                     all_segments.append(
                         {
                             "steps": wait_steps,
@@ -1690,17 +1769,21 @@ def main() -> None:
                             "label": "S-入箱检查等待",
                         }
                     )
-                    cum_steps += _PLACE_RETREAT_STEPS + wait_steps
+                    cum_steps += retreat_steps + wait_steps
                     orca_logger.info(
                         f"  追加撤离+等待: retreat={retreat_pos} "
-                        f"retreat_steps={_PLACE_RETREAT_STEPS} "
+                        f"retreat_steps={retreat_steps} "
                         f"timeout_steps={place_timeout_steps}"
                     )
 
                 total_steps = cum_steps
+                duration_s = total_steps * env_dt
                 orca_logger.info(
                     f"总段数: {len(all_segments)}，总步数: {total_steps}，"
-                    f"约 {total_steps / args.fps:.1f}s @ {args.fps}fps"
+                    f"约 {duration_s:.1f}s "
+                    f"(env.dt={env_dt*1000:.1f}ms × {total_steps}，"
+                    f"steps_scale={steps_scale}，speed={traj_speed:.2f}x，"
+                    f"工具={num_tools}/5，@{args.fps}fps)"
                     + (
                         f"；入箱监视 {len(place_arm_at)} 件"
                         f"（EE出箱后等接触，超时 {args.place_check_timeout_s:.1f}s）"
@@ -1710,7 +1793,7 @@ def main() -> None:
                 )
                 print(
                     f"  轨迹: {len(all_segments)} 段 / {total_steps} 步"
-                    f"（约 {total_steps / args.fps:.1f}s）",
+                    f"（约 {duration_s:.1f}s）",
                     flush=True,
                 )
 

@@ -320,6 +320,11 @@ def _install_xml_patch(env, agent_name: str, arm_gravcomp: float) -> None:
         xml = _re.sub(r"<general\b[^>]*/?>", _soft_grip_forcerange, xml)
         if fr_n:
             patches.append(f"gripper_forcerange=±{tele._GRIP_TAU_LIM:g}(n={fr_n})")
+        else:
+            orca_logger.error(
+                "XML 未改到任何 gripper *_pctrl forcerange；"
+                "将依赖 reset 后的 apply_gripper_forcerange 兜底"
+            )
 
         import pathlib
 
@@ -464,6 +469,9 @@ def main() -> None:
     tele.apply_arm_position_gains(
         env, kp=args.arm_kp, kv=args.arm_kv, kv_ratio=args.arm_kv_ratio
     )
+    n_cap = tele.apply_gripper_forcerange(env)
+    if n_cap <= 0:
+        orca_logger.error("夹爪力矩帽未写入，回放将使用资产默认 ±10 N·m")
 
     r_ctrl = RightArmQCtrl(env)
     try:
