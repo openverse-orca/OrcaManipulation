@@ -1,29 +1,32 @@
-"""VR 遥操作采集 → LeRobot v2.1 格式（parquet + 视频）。
+"""VR 遥操作采集 → LeRobot v3.0 格式（parquet + 视频）。
 
 与 data_collection_tele.py 的区别：
   - data_storage 换成 OpenLoongLeRobotStorage / Tiangong2LeRobotStorage
-  - 相机走 CameraWrapper WebSocket 内存流（env.begin_save_video 触发 OrcaStudio 开推流）
-  - manager.save_video=False（不用 OrcaStudio 服务端录像；视频由 LeRobot 后台 ffmpeg 编码）
-  - collection_data() 流式写帧：每帧即时进 AsyncImageWriter 队列，不在内存攒全集
-  - save_data() 非阻塞：swap episode_buffer → 后台 worker 串行做 parquet+meta+编码
-  - 数据直接写入 LeRobot v2.1 parquet 格式，可直接用于 lerobot 训练
+  - 相机走 OrcaGym 客户端 PyAV remux 录制（``setup_cameras`` 触发推流）
+  - manager.save_video=False（不用 OrcaStudio 服务端录像）
+  - collection_data() 流式写帧：降频门控 + ``SingleFrameTask`` 逐帧回调，
+    回调内调用 ``manager.decode_frame_at`` 解码真实图像，直接 ``add_frame``
+    传给 LeRobot（流式编码 ``streaming_encoding=True``，边采集边编码）
+  - 数据直接写入 LeRobot v3.0 parquet 格式，可直接用于 lerobot 训练
 
 架构设计：
   使用 manager.run() + EpisodeLifecycleCallback 回调机制，与 data_collection_tele.py
   保持一致的框架调用方式。LeRobot 特有的初始化和清理逻辑通过回调注入：
 
-    on_run_start: 启动相机推流 → 配置 LeRobot storage → 创建 writer
-    on_episode_start: mp4 模式按集开录
-    on_episode_end: mp4 模式按集停录、统计帧数
-    on_run_end: writer.close() → stop_save_video → close_cameras（在 env.close() 之前）
+    on_run_start: setup_cameras 启动推流 → configure_lerobot 注入依赖 → with writer
+    on_episode_start: 计数
+    on_episode_end: 帧数统计
+    on_run_end: writer.__exit__（在 env.close() 之前执行）
+
+相机命名映射：
+  env 相机名（cameras_conf 的 key）→ LeRobot feature key 后缀。
+  例：``camera_head`` → ``cam_head``，``observation.images.cam_head``。
 
 退出清理顺序（由 on_run_end 回调保证，在 manager.run() 的 env.close() 之前执行）：
-    writer.close() → wait_all + stop_image_writer + VEM exit
-    env.stop_save_video()   → 释放 OrcaStudio 推流会话（gRPC channel 仍在）
-    close_cameras()         → 停 WebSocket 相机线程
-    env.close()             → 关 gRPC channel（manager.run() finally 执行）
+    writer.__exit__()  → stop_image_writer + VEM 清理
+    env.close()        → manager.run() finally 执行（关闭 viewer + 录制器 + gRPC）
 
-运行环境：需安装 orca_gym 26.6.x + lerobot 0.3.x + av + pyarrow，缺失时动态导入会提示安装
+运行环境：需安装 orca_gym 26.6.x + lerobot 0.3.x + av + pyarrow
 
 用法：
   cd src/examples/dataCollection
@@ -35,17 +38,10 @@
       --repo_id your_org/my_dataset \\
       --fps 20 \\
       --clock wall
-
-  # 使用服务端 MP4 录制（WebSocket 端口不可用时）
-  python data_collection_tele_lerobot.py ... --camera_source mp4
-
-  # 追加到已有数据集（断点续采）
-  python data_collection_tele_lerobot.py ... --resume
 """
 import argparse
 import os
 import sys
-import threading
 import time
 import traceback
 
@@ -69,27 +65,23 @@ from yaml import Loader, load
 
 from controllers import controllers
 from dataCollectionManager.data_collection_manager import DataCollectionManager
-from dataStorage.lerobot_camera import (
-    bring_up_cameras,
-    close_cameras,
-    probe_camera_hw,
-)
 from dataStorage.lerobot_data_storage import LeRobotDatasetWriter
 from devices.abstract_device import PicoJoystickDevice
 from scene.scene_manager import SceneManager
 from task.pick_place_task import PickPlaceTask
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
-STREAM_TRIGGER_PATH = "/tmp/tele_lerobot_stream"
 
-# 三路相机映射：头部 + 双腕（env_name -> (sim_cam_key, websocket_port)）。
-# 由入口脚本定义，lerobot_camera 模块不再提供默认值。
-DEFAULT_CAMERA_MAP = {
-    "camera_head_color": ("cam_head", 7070),
-    "camera_wrist_l_color": ("cam_wrist_l", 7090),
-    "camera_wrist_r_color": ("cam_wrist_r", 7080),
+# env 相机名（cameras_conf 的 key）→ LeRobot feature key 后缀。
+# 例：``camera_head`` → ``observation.images.cam_head``。
+CAMERA_LEROBOT_KEY_MAP = {
+    "camera_head": "cam_head",
+    "camera_wrist_l": "cam_wrist_l",
+    "camera_wrist_r": "cam_wrist_r",
 }
-DEFAULT_HW = (480, 640)
+
+# 默认采集帧分辨率（H, W），与 cameras_conf 中的 Width/Height 对齐
+DEFAULT_HW = (720, 1080)
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
 log_dir = os.path.join(base_dir, "logs")
@@ -134,30 +126,67 @@ def _make_storage(agent_name: str, scratch_dir: str):
     raise ValueError(f"不支持的 agent_name: {agent_name!r}")
 
 
+def _camera_short_name(env_cam: str) -> str:
+    """env 相机名 → 短名（去掉 ``camera_`` 前缀）。
+
+    例：``camera_head`` → ``head``，``camera_wrist_l`` → ``wrist_l``。
+    """
+    prefix = "camera_"
+    return env_cam[len(prefix):] if env_cam.startswith(prefix) else env_cam
+
+
+def _build_camera_map(cameras_conf: dict, enabled: set[str] | None = None) -> dict:
+    """从 cameras_conf 构建 ``{env_camera_name: lerobot_key}`` 映射。
+
+    Args:
+        cameras_conf: 机器人配置中的相机配置字典（key 是 env 相机名）。
+        enabled: 可选的相机启用集合（短名，如 ``{"head", "wrist_l"}``，
+            也可传完整 env 名 ``{"camera_head"}``）。为 None 时启用全部。
+
+    Returns:
+        ``{env_camera_name: lerobot_key}``，仅包含在 CAMERA_LEROBOT_KEY_MAP
+        中有映射且（若指定 enabled）被启用的相机。
+    """
+    camera_map: dict = {}
+    for env_cam in cameras_conf.keys():
+        # 短名过滤（同时接受短名 "head" 和完整名 "camera_head"）
+        if enabled is not None:
+            short = _camera_short_name(env_cam)
+            if short not in enabled and env_cam not in enabled:
+                continue
+        lerobot_key = CAMERA_LEROBOT_KEY_MAP.get(env_cam)
+        if lerobot_key is None:
+            orca_logger.warning(f"相机 {env_cam!r} 不在 CAMERA_LEROBOT_KEY_MAP 中，跳过")
+            continue
+        camera_map[env_cam] = lerobot_key
+    return camera_map
+
+
+def _filter_cameras_conf(cameras_conf: dict, camera_map: dict) -> dict:
+    """按 camera_map 过滤 cameras_conf，仅保留映射中的相机。"""
+    return {env_cam: cameras_conf[env_cam] for env_cam in camera_map.keys() if env_cam in cameras_conf}
+
+
 class LeRobotEpisodeCallback:
     """LeRobot 采集的 episode 生命周期回调。
 
     通过 EpisodeLifecycleCallback 协议注入 DataCollectionManager，
-    实现 LeRobot 特有的初始化、mp4 按集录制控制和有序清理逻辑，
-    无需修改 manager.run() 核心流程。
+    实现 LeRobot 特有的初始化和有序清理逻辑，无需修改 manager.run() 核心流程。
 
     生命周期调用顺序：
-        on_run_start:  启动相机推流 → 配置 storage → 创建 writer → with writer
-        on_episode_start: mp4 模式按集 begin_save_video
-        on_episode_end:   mp4 模式按集 stop_save_video + 帧数统计
-        on_run_end:       writer.close() → stop_save_video → close_cameras
-                          （在 manager.run() 的 env.close() 之前执行）
+        on_run_start:  setup_cameras 启动推流 → configure_lerobot 注入依赖 → with writer
+        on_episode_start: episode 计数
+        on_episode_end:   帧数统计
+        on_run_end:       writer.__exit__（在 manager.run() 的 env.close() 之前执行）
     """
 
     def __init__(
         self,
         manager: DataCollectionManager,
         storage,
-        scene_manager: SceneManager,
+        cameras_conf: dict,
         camera_map: dict,
         cam_hw: tuple,
-        cameras: dict,
-        camera_source: str,
         fps: int,
         clock: str,
         task: str,
@@ -165,15 +194,12 @@ class LeRobotEpisodeCallback:
         repo_id: str,
         resume: bool,
         agent_name: str,
-        scratch_dir: str,
     ) -> None:
         self._manager = manager
         self._storage = storage
-        self._scene_manager = scene_manager
+        self._cameras_conf = cameras_conf
         self._camera_map = camera_map
         self._cam_hw = cam_hw
-        self._cameras = cameras
-        self._camera_source = camera_source
         self._fps = fps
         self._clock = clock
         self._task = task
@@ -181,95 +207,156 @@ class LeRobotEpisodeCallback:
         self._repo_id = repo_id
         self._resume = resume
         self._agent_name = agent_name
-        self._scratch_dir = scratch_dir
 
         self._writer: LeRobotDatasetWriter | None = None
-        self._video_started = False
+        self._writer_entered: bool = False  # 标记 writer.__enter__ 是否成功（用于 __exit__ 配对）
         self._ep_idx = 0
 
     def on_run_start(self) -> None:
-        """run() 主循环启动前：创建 writer、配置 storage、启动相机推流。"""
-        cam_shape = (3, self._cam_hw[0], self._cam_hw[1])
-        self._writer = LeRobotDatasetWriter.create(
-            repo_id=self._repo_id,
-            root=self._lerobot_out,
-            fps=self._fps,
-            camera_map=self._camera_map,
-            state_dim=self._storage.state_dim,
-            state_names=self._storage.state_names,
-            cam_shape=cam_shape,
-            resume=self._resume,
-            robot_type=self._agent_name,
-        )
-        self._storage.configure_lerobot(
-            fps=self._fps,
-            cameras=self._cameras,
-            camera_map=self._camera_map,
-            target_hw=self._cam_hw,
-            writer=self._writer,
-            task=self._task,
-            clock=self._clock,
-            camera_source=self._camera_source,
-        )
-        # 进入 writer context（管理 VideoEncodingManager 生命周期）
-        self._writer.__enter__()
+        """run() 主循环启动前：启动相机推流、探测真实帧尺寸、创建 writer、配置 storage。
+
+        尺寸探测：``setup_cameras`` 后轮询等待首帧到达，用 ``decode_frame_at``
+        解码获取真实帧尺寸。若与 ``cameras_conf`` 声明不符（引擎端可能忽略
+        Width/Height 参数或被场景配置覆盖），以真实尺寸为准创建数据集，
+        避免后续 ``add_frame`` 因 shape 不符被 LeRobot 拒绝。
+
+        异常安全：任何步骤失败都会设置 ``_writer_entered=False``，确保
+        ``on_run_end`` 不会对未 ``__enter__`` 的 writer 调用 ``__exit__``。
+        """
+        try:
+            # 1. 启动相机推流 + viewer（OrcaGym 客户端 PyAV remux 录制）
+            self._storage.setup_cameras(self._manager.env, self._cameras_conf, show_viewer=False)
+
+            # 2. 探测真实帧尺寸（阻塞等待首帧，最多 ~5 秒）
+            cam_hw = self._probe_actual_cam_hw()
+
+            # 3. 创建 writer（用探测到的真实尺寸）
+            cam_shape = (3, cam_hw[0], cam_hw[1])
+            self._writer = LeRobotDatasetWriter.create(
+                repo_id=self._repo_id,
+                root=self._lerobot_out,
+                fps=self._fps,
+                camera_map=self._camera_map,
+                state_dim=self._storage.state_dim,
+                state_names=self._storage.state_names,
+                cam_shape=cam_shape,
+                resume=self._resume,
+                robot_type=self._agent_name,
+            )
+            # 4. 注入 LeRobot 依赖（fps / env / camera_map / writer / task / clock）
+            self._storage.configure_lerobot(
+                fps=self._fps,
+                env=self._manager.env,
+                cameras_conf=self._cameras_conf,
+                camera_map=self._camera_map,
+                target_hw=cam_hw,
+                writer=self._writer,
+                task=self._task,
+                clock=self._clock,
+            )
+            # 5. 进入 writer context（管理 VideoEncodingManager 生命周期）
+            self._writer.__enter__()
+            self._writer_entered = True
+        except Exception:
+            # setup_cameras/create/configure/__enter__ 任一步失败，标记未 entered，
+            # on_run_end 仍会尝试 close()（停写图线程 + finalize），但不会 __exit__。
+            self._writer_entered = False
+            raise
+
+    def _probe_actual_cam_hw(self, timeout: float = 5.0, poll_interval: float = 0.1) -> tuple:
+        """探测相机实际渲染尺寸（阻塞等待首帧并解码）。
+
+        ``setup_cameras`` 后引擎端可能不会立即推流，需轮询等待首帧到达。
+        首帧到达后用 ``decode_frame_at`` 解码获取真实 (H, W)。若与
+        ``self._cam_hw`` 声明不符，打印警告并以真实尺寸为准。
+
+        Args:
+            timeout: 等待首帧的最长时间（秒）。
+            poll_interval: 轮询间隔（秒）。
+
+        Returns:
+            ``(height, width)`` 真实帧尺寸。若超时未收到首帧，回退到
+            ``self._cam_hw`` 声明尺寸（后续 ``add_frame`` 会因 shape 不符报错，
+            提示用户检查相机推流是否正常）。
+        """
+        manager = self._manager.env.get_recorder_manager()
+        primary_cam = next(iter(self._camera_map.keys()))
+        deadline = time.monotonic() + timeout
+        probed_hw: tuple | None = None
+
+        while time.monotonic() < deadline:
+            latest_idx = manager.get_latest_frame_simulate_index(primary_cam, "color")
+            if latest_idx is not None and latest_idx >= 0:
+                img = manager.decode_frame_at(primary_cam, latest_idx, "color")
+                if img is not None and img.ndim == 3 and img.shape[0] >= 2:
+                    probed_hw = (int(img.shape[0]), int(img.shape[1]))  # HWC
+                    break
+            time.sleep(poll_interval)
+
+        if probed_hw is None:
+            orca_logger.warning(
+                f"[LeRobot] 探测首帧尺寸超时（{timeout}s 未收到 {primary_cam} color 流），"
+                f"回退到 cameras_conf 声明尺寸 {self._cam_hw}。"
+                f"若后续 add_frame 报 shape 不符，请检查相机推流是否正常。"
+            )
+            return self._cam_hw
+
+        if probed_hw != self._cam_hw:
+            orca_logger.warning(
+                f"[LeRobot] 实际帧尺寸 {probed_hw[0]}x{probed_hw[1]} 与 "
+                f"cameras_conf 声明 {self._cam_hw[0]}x{self._cam_hw[1]} 不符，"
+                f"以实际尺寸为准创建数据集。"
+            )
+        else:
+            orca_logger.info(
+                f"[LeRobot] 探测帧尺寸: {probed_hw[0]}x{probed_hw[1]}（与声明一致）"
+            )
+        return probed_hw
 
     def on_episode_start(self) -> None:
-        """每集开始前：mp4 模式按集开录。"""
+        """每集开始前：计数。"""
         self._ep_idx += 1
-        if self._camera_source == "mp4":
-            ep_dir = os.path.join(self._scratch_dir, "mp4", f"ep_{self._ep_idx:06d}")
-            os.makedirs(os.path.join(ep_dir, "video"), exist_ok=True)
-            ep_start_wall = time.perf_counter()
-            self._manager.env.begin_save_video(ep_dir)
-            self._video_started = True
-            self._storage.set_episode_video_info(ep_dir, ep_start_wall)
 
     def on_episode_end(self, task_is_success: bool) -> None:
-        """每集结束后：mp4 模式按集停录 + 帧数统计。"""
-        # mp4 模式：集结束后立即停录（stop 后 MP4 header 才写完，save_data 才能提取帧）
-        if self._camera_source == "mp4" and self._video_started:
-            try:
-                self._manager.env.stop_save_video()
-            except Exception as stop_e:
-                orca_logger.warning(f"stop_save_video 失败（可忽略）: {stop_e}")
-            self._video_started = False
-
-        # 帧数统计（在 save_data/clear_data 清空缓冲区之前读取）
+        """每集结束后：帧数统计（在 save_data/clear_data 清空缓冲区之前读取）。"""
         _ep_frames = self._storage.buffered_frame_count
         orca_logger.info(f"[EP {self._ep_idx}] 捕获 {_ep_frames} 帧")
 
     def on_run_end(self) -> None:
-        """run() 结束时：有序释放外部资源（在 env.close() 之前）。
+        """run() 结束时：释放 writer 资源（在 env.close() 之前）。
 
-        清理顺序：
-            1. writer.close()       → wait_all + stop_image_writer + VEM exit
-            2. env.stop_save_video()→ 释放 OrcaStudio 推流会话
-            3. close_cameras()      → 停 WebSocket 相机线程
-        manager.run() 的 finally 随后执行 env.close()。
+        异常安全：无论采集过程中是否抛异常（包括 KeyboardInterrupt），
+        ``manager.run()`` 的 ``finally`` 块都会调用本方法，保证 writer 被正确关闭。
+
+        清理逻辑：
+            - 若 ``__enter__`` 成功过：调 ``__exit__``（VEM 清理 + finalize 写 parquet footer）
+            - 若 ``__enter__`` 未成功但 writer 已创建：调 ``close()``（停写图线程 + finalize）
+            - 若 writer 创建失败（None）：跳过
+        manager.run() 的 finally 随后执行 env.close()（关闭 viewer + 录制器 + gRPC）。
         """
-        if self._writer is not None:
-            try:
+        if self._writer is None:
+            return
+        try:
+            if self._writer_entered:
                 self._writer.__exit__(None, None, None)
+            else:
+                # __enter__ 未成功（on_run_start 中途失败），但仍需停写图线程 + finalize
+                self._writer.close()
+        except Exception as e:
+            orca_logger.error(f"[LeRobot] writer 清理异常: {e}")
+        finally:
+            try:
+                orca_logger.info(
+                    f"采集结束，共 {self._writer.num_episodes} 集 / "
+                    f"{self._writer.num_frames} 帧"
+                )
             except Exception:
                 pass
-        if self._video_started:
-            try:
-                self._manager.env.stop_save_video()
-                orca_logger.info("已停止相机推流（释放 OrcaStudio 渲染/录像会话）")
-            except Exception as stop_err:
-                orca_logger.warning(f"stop_save_video 失败（可忽略）: {stop_err}")
-            self._video_started = False
-        close_cameras(self._cameras)
-        if self._writer is not None:
-            orca_logger.info(
-                f"采集结束，共 {self._writer.num_episodes} 集 / {self._writer.num_frames} 帧"
-            )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="VR 遥操作采集 → LeRobot v2.1 格式（parquet + 视频）"
+        description="VR 遥操作采集 → LeRobot v3.0 格式（parquet + 视频）"
     )
     parser.add_argument(
         "--level", required=True,
@@ -306,44 +393,35 @@ def main() -> None:
         help="启用的相机列表（逗号分隔，可选 head/wrist_l/wrist_r），默认三路全开。"
              "显存不足时可只留 head 减轻 GPU 压力，例如 --cameras head",
     )
-    parser.add_argument(
-        "--cam_resolution", default="480x640",
-        help="采集帧 resize 目标分辨率 HxW（默认 480x640）。注意：此选项仅在 Python 端对"
-             "收到的帧做客户端缩放，不改变 OrcaStudio 渲染分辨率或显存占用。"
-             "显存不足时请用 --cameras 减少路数，而非降低此分辨率。",
-    )
-    parser.add_argument(
-        "--camera_source", choices=("websocket", "mp4"), default="websocket",
-        help="相机数据来源。websocket（默认）：从 CameraWrapper 内存流取帧（流式写盘）；"
-             "mp4：OrcaStudio 按集录制 MP4，集末批量提取帧（端口不可用时使用）。",
-    )
     args = parser.parse_args()
 
     agent_conf = _load_agent_conf(args.agent_name)
     lerobot_out = os.path.abspath(os.path.expanduser(args.lerobot_out))
 
-    # ── 相机路数 / 分辨率（显存缓解）────────────────────────────────
-    _CAM_KEY_MAP = {
-        "head": "camera_head_color",
-        "wrist_l": "camera_wrist_l_color",
-        "wrist_r": "camera_wrist_r_color",
-    }
-    _enabled = {k.strip() for k in args.cameras.split(",")}
-    camera_map = {
-        env_name: (key, port)
-        for env_name, (key, port) in DEFAULT_CAMERA_MAP.items()
-        if any(env_name == _CAM_KEY_MAP.get(k) for k in _enabled)
-    }
-    if not camera_map:
-        orca_logger.warning("--cameras 参数未匹配到任何已知相机，回退全路")
-        camera_map = DEFAULT_CAMERA_MAP
+    # ── 相机映射 / 配置过滤 ────────────────────────────────────────────
+    cameras_conf_all = getattr(agent_conf, "cameras_conf", None)
+    if not cameras_conf_all:
+        orca_logger.error(
+            f"agent_conf '{args.agent_name}' 缺少 cameras_conf 属性，无法启动 LeRobot 采集"
+        )
+        return
 
-    try:
-        _h, _w = (int(x) for x in args.cam_resolution.lower().split("x"))
-        cam_hw_override = (_h, _w)
-    except Exception:
-        orca_logger.warning(f"--cam_resolution 格式错误 '{args.cam_resolution}'，使用默认 {DEFAULT_HW}")
-        cam_hw_override = DEFAULT_HW
+    _enabled = {k.strip() for k in args.cameras.split(",") if k.strip()}
+    camera_map = _build_camera_map(cameras_conf_all, enabled=_enabled)
+    if not camera_map:
+        orca_logger.error(
+            f"--cameras '{args.cameras}' 未匹配到任何有效相机（cameras_conf keys="
+            f"{list(cameras_conf_all.keys())}），退出"
+        )
+        return
+    cameras_conf = _filter_cameras_conf(cameras_conf_all, camera_map)
+
+    # 从 cameras_conf 读取目标分辨率（与渲染分辨率一致）
+    first_cam_props = next(iter(cameras_conf.values()))
+    cam_hw = (
+        int(first_cam_props.get("Height", DEFAULT_HW[0])),
+        int(first_cam_props.get("Width", DEFAULT_HW[1])),
+    )
 
     # ── 关节初值 ──────────────────────────────────────────────────────
     default_joint_values: dict = {}
@@ -356,7 +434,7 @@ def main() -> None:
     print("=" * 60, flush=True)
     print("  LeRobot 数采启动中...", flush=True)
     print(f"  机器人: {args.agent_name}  场景: {args.level}", flush=True)
-    print(f"  相机: {args.cameras}  分辨率: {args.cam_resolution}", flush=True)
+    print(f"  相机: {list(camera_map.keys())}  分辨率: {cam_hw[0]}x{cam_hw[1]}", flush=True)
     print(f"  输出目录: {lerobot_out}", flush=True)
     print("  等待 Pico 连接（请确认 Pico 端 OrcaLab App 已启动）...", flush=True)
     print("=" * 60, flush=True)
@@ -414,108 +492,61 @@ def main() -> None:
         orcagym_addr=args.orcagym_addr,
     )
     env = manager.env
-    manager.save_video = False  # 视频由 LeRobot 后台编码，不用 env.begin_save_video
+    # 视频由 LeRobot 流式编码（streaming_encoding=True），不用 env.begin_save_video
+    manager.save_video = False
 
-    # ── 场景就绪后初始化控制器 + 相机 ────────────────────────────────
-    cameras: dict = {}
-    cam_hw = cam_hw_override
-    video_started = False
-
+    # ── 场景就绪后初始化控制器 ────────────────────────────────────────
     try:
         env.reset()
         time.sleep(0.1)
-        if True:
-            # ── 补设真实关节初值（机器人已 spawn，关节存在）─────────
-            env.set_default_joint_values(default_joint_values)
+        # ── 补设真实关节初值（机器人已 spawn，关节存在）─────────
+        env.set_default_joint_values(default_joint_values)
 
-            # ── 控制器 ─────────────────────────────────────────────
-            orca_logger.info("Disabling position actuator group")
-            manager.set_disable_actuator_group([agent_conf.positions_group])
+        # ── 控制器 ─────────────────────────────────────────────
+        orca_logger.info("Disabling position actuator group")
+        manager.set_disable_actuator_group([agent_conf.positions_group])
 
-            orca_logger.info("Adding gripper controllers")
-            controllers.add_gripper_2f85_pico_controller(
-                manager, env, agent_conf.gripper_l, agent_conf.base_body,
-                pico_device,
-                [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
-            )
-            controllers.add_gripper_2f85_pico_controller(
-                manager, env, agent_conf.gripper_r, agent_conf.base_body,
-                pico_device,
-                [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
-            )
+        orca_logger.info("Adding gripper controllers")
+        controllers.add_gripper_2f85_pico_controller(
+            manager, env, agent_conf.gripper_l, agent_conf.base_body,
+            pico_device,
+            [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
+        )
+        controllers.add_gripper_2f85_pico_controller(
+            manager, env, agent_conf.gripper_r, agent_conf.base_body,
+            pico_device,
+            [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
+        )
 
-            orca_logger.info("Adding arm controllers")
-            controllers.add_arm_osc_pico_controller(
-                manager, env, agent_conf.l_arm, agent_conf.base_body,
-                pico_device, PicoJoystickKey.L_TRANSFORM,
-            )
-            controllers.add_arm_osc_pico_controller(
-                manager, env, agent_conf.r_arm, agent_conf.base_body,
-                pico_device, PicoJoystickKey.R_TRANSFORM,
-            )
+        orca_logger.info("Adding arm controllers")
+        controllers.add_arm_osc_pico_controller(
+            manager, env, agent_conf.l_arm, agent_conf.base_body,
+            pico_device, PicoJoystickKey.L_TRANSFORM,
+        )
+        controllers.add_arm_osc_pico_controller(
+            manager, env, agent_conf.r_arm, agent_conf.base_body,
+            pico_device, PicoJoystickKey.R_TRANSFORM,
+        )
 
-            orca_logger.info("Adding task status controller")
-            manager.set_task(PickPlaceTask(env))
-            controllers.add_task_status_pico_controller(
-                manager, env, pico_device, agent_conf.base_body
-            )
-
-            # ── 相机 ────────────────────────────────────────────────
-            orca_logger.info(f"启用相机: {list(camera_map.keys())}")
-            print(f"[场景] 机器人已就绪（nu={env.model.nu}），加载相机推流...", flush=True)
-            if args.camera_source == "websocket":
-                os.makedirs(STREAM_TRIGGER_PATH, exist_ok=True)
-                env.begin_save_video(STREAM_TRIGGER_PATH)
-                video_started = True
-                orca_logger.info("begin_save_video 已调用，触发相机推流")
-                cameras = bring_up_cameras(camera_map)
-                camera_map = {n: v for n, v in camera_map.items() if n in cameras}
-                if cameras:
-                    cam_hw = probe_camera_hw(cameras, camera_map, default_hw=cam_hw_override)
-            else:
-                orca_logger.info("mp4 模式：跳过 WebSocket 相机连接，每集 begin_save_video 按集触发")
+        orca_logger.info("Adding task status controller")
+        manager.set_task(PickPlaceTask(env))
+        controllers.add_task_status_pico_controller(
+            manager, env, pico_device, agent_conf.base_body
+        )
     except KeyboardInterrupt:
-        orca_logger.info("初始化阶段收到 Ctrl+C，正在释放相机推流会话...")
+        orca_logger.info("初始化阶段收到 Ctrl+C，退出")
+        return
     except Exception as e:
         orca_logger.error(f"初始化失败: {e}\n{traceback.format_exc()}")
-
-    def _release_stream_and_close():
-        """早期退出路径（无相机/setup 失败）的清理。"""
-        if video_started:
-            try:
-                env.stop_save_video()
-                orca_logger.info("已停止相机推流（释放 OrcaStudio 渲染/录像会话）")
-            except Exception as stop_err:
-                orca_logger.warning(f"stop_save_video 失败（可忽略）: {stop_err}")
-        close_cameras(cameras)
-        try:
-            env.close()
-        except Exception:
-            pass
-
-    if not cameras and args.camera_source != "mp4":
-        orca_logger.error("没有可用相机，退出")
-        _release_stream_and_close()
         return
-
-    cam_shape = (3, cam_hw[0], cam_hw[1])
-    if cameras:
-        orca_logger.info(f"相机分辨率 {cam_hw[0]}x{cam_hw[1]}，fps={args.fps}，路数={len(cameras)}")
-    else:
-        orca_logger.info(
-            f"mp4 模式，帧分辨率 {cam_hw[0]}x{cam_hw[1]}，fps={args.fps}，"
-            f"相机路数={len(camera_map)}"
-        )
 
     # ── 创建 LeRobot 回调 ────────────────────────────────────────────
     lerobot_callback = LeRobotEpisodeCallback(
         manager=manager,
         storage=storage,
-        scene_manager=scene_manager,
+        cameras_conf=cameras_conf,
         camera_map=camera_map,
         cam_hw=cam_hw,
-        cameras=cameras,
-        camera_source=args.camera_source,
         fps=args.fps,
         clock=args.clock,
         task=args.task,
@@ -523,143 +554,15 @@ def main() -> None:
         repo_id=args.repo_id,
         resume=args.resume,
         agent_name=args.agent_name,
-        scratch_dir=scratch_dir,
     )
     manager.register_episode_callback(lerobot_callback)
+    manager.render_fps = 30
 
-    # # ── 后台状态监控线程 ──────────────────────────────────────────────
-    # _monitor_stop = threading.Event()
-    # _POLL_DT = 0.02
-    # _STATUS_EVERY = 2.0
-
-    # def _hand_btn_sig(h: dict) -> tuple:
-    #     jp = h.get("joystickPosition") or [0.0, 0.0]
-    #     return (
-    #         bool(h.get("gripButtonPressed")),
-    #         bool(h.get("primaryButtonPressed")),
-    #         bool(h.get("secondaryButtonPressed")),
-    #         bool(h.get("joystickPressed")),
-    #         round(float(h.get("triggerValue", 0.0)), 1),
-    #         round(float(jp[0]), 1),
-    #         round(float(jp[1]), 1),
-    #     )
-
-    # def _fmt_hand_sig(sig: tuple) -> str:
-    #     grip, prim, sec, jpr, trig, jx, jy = sig
-    #     return (
-    #         f"Grip={int(grip)} 扳机={trig:.1f} 主键={int(prim)} "
-    #         f"副键={int(sec)} 摇杆按下={int(jpr)} 摇杆=({jx:.1f},{jy:.1f})"
-    #     )
-
-    # def _status_monitor():
-    #     last_wall = time.perf_counter()
-    #     try:
-    #         last_sim = float(env.data.time)
-    #     except Exception:
-    #         last_sim = 0.0
-    #     _prev_sig = None
-    #     _last_status = last_wall
-    #     while not _monitor_stop.wait(_POLL_DT):
-    #         try:
-    #             pj = pico_device.pico_joystick
-    #             n_clients = len(pj.clients)
-    #             raw_key = pj.current_key_state
-
-    #             if n_clients > 0 and raw_key is not None:
-    #                 l_sig = _hand_btn_sig(raw_key.get("leftHand", {}) or {})
-    #                 r_sig = _hand_btn_sig(raw_key.get("rightHand", {}) or {})
-    #                 sig = (l_sig, r_sig)
-    #                 if sig != _prev_sig:
-    #                     orca_logger.info(
-    #                         f"[Pico 按键变化] 左[{_fmt_hand_sig(l_sig)}] | "
-    #                         f"右[{_fmt_hand_sig(r_sig)}]"
-    #                     )
-    #                     _prev_sig = sig
-
-    #             now = time.perf_counter()
-    #             if now - _last_status < _STATUS_EVERY:
-    #                 continue
-    #             _last_status = now
-    #             sim_now = float(env.data.time)
-    #             d_wall = now - last_wall
-    #             d_sim = sim_now - last_sim
-    #             last_wall, last_sim = now, sim_now
-
-    #             if n_clients == 0:
-    #                 orca_logger.info("[Pico] ✗ 无客户端连接（请检查 Pico 端 App 是否已启动并连接到本机 IP）")
-    #             else:
-    #                 orca_logger.info(f"[Pico] ✓ {n_clients} 个客户端已连接")
-
-    #             if d_sim < 0:
-    #                 orca_logger.info("[监控] 仿真已重置，等待下一集/开始采集...")
-    #                 continue
-    #             rt = (d_sim / d_wall) if d_wall > 0 else 0.0
-    #             ctrl_dt = float(env.dt) if float(env.dt) > 0 else 1.0
-    #             loop_hz = ((d_sim / ctrl_dt) / d_wall) if d_wall > 0 else 0.0
-    #             orca_logger.info(
-    #                 f"[监控] 仿真实时比 {rt:.2f}x（1.0=实时）/ 估算控制频率 "
-    #                 f"{loop_hz:.1f} Hz / 仿真时钟 {sim_now:.1f}s"
-    #             )
-    #         except Exception:
-    #             pass
-
-    # _monitor = threading.Thread(target=_status_monitor, daemon=True)
-    # _monitor.start()
-
-    # # ── 打印操作说明 ──────────────────────────────────────────────────
-    # print("", flush=True)
-    # print("=" * 60, flush=True)
-    # print("  ✓ 场景加载完成，进入采集主循环", flush=True)
-    # print(f"  任务: {args.task}", flush=True)
-    # print(f"  数据输出: {lerobot_out}", flush=True)
-    # if cameras:
-    #     print(f"  相机: {len(cameras)} 路  {cam_hw[0]}x{cam_hw[1]}  {args.fps}fps", flush=True)
-    # else:
-    #     print(
-    #         f"  相机模式: mp4  路数: {len(camera_map)}  帧分辨率: {cam_hw[0]}x{cam_hw[1]}  "
-    #         f"{args.fps}fps",
-    #         flush=True,
-    #     )
-    # print("-" * 60, flush=True)
-    # print("  【操作按键】", flush=True)
-    # print("  左臂移动    左手柄移动 (持握激活)", flush=True)
-    # print("  右臂移动    右手柄移动 (持握激活)", flush=True)
-    # print("  左夹爪      X / Y 键 或 左扳机", flush=True)
-    # print("  右夹爪      A / B 键 或 右扳机", flush=True)
-    # print("-" * 60, flush=True)
-    # print("  【采集流程】", flush=True)
-    # print("  第1步 开始采集  →  轻按一下【左手柄 Grip 侧握键】", flush=True)
-    # print("                      注意：Grip 是用【中指】握住手柄侧面的那颗键，", flush=True)
-    # print("                      不是食指扳机、也不是拇指摇杆按下！", flush=True)
-    # print("                      成功后 VR 里会显示「开始采集」，此时再操作机器人", flush=True)
-    # print("  第2步 完成操作  →  将物体放入篮子后", flush=True)
-    # print("         保 存   →  再轻按一下【左手柄 Grip 侧握键】（任务成功自动保存）", flush=True)
-    # print("         丢 弃   →  任务失败则自动丢弃", flush=True)
-    # print("  停止程序        →  终端按 Ctrl+C", flush=True)
-    # print("=" * 60, flush=True)
-    # print("", flush=True)
-
-    # try:
-    #     scene_manager.show_ui_message(
-    #         1, "轻按左手柄【中指 Grip 侧握键】开始采集，再按一次结束保存（非扳机/非摇杆）",
-    #         "0x00ff00", showtime=0,
-    #     )
-    # except Exception as ui_err:
-    #     orca_logger.warning(f"VR 开始提示发送失败（可忽略）: {ui_err}")
-
-    # # ── 主循环：使用 manager.run() ────────────────────────────────────
-    # # manager.run() 内部：while not _shutdown_requested → reset → update_scene
-    # #   → run_episode → save_data/clear_data → finally: on_run_end → env.close()
-    # # LeRobot 特有的初始化和清理通过 EpisodeLifecycleCallback 回调注入，
-    # # 与 data_collection_tele.py 保持一致的框架调用方式。
-    # orca_logger.info(f"开始采集，LeRobot 输出: {lerobot_out}")
+    orca_logger.info(
+        f"开始采集，LeRobot 输出: {lerobot_out}  "
+        f"相机: {list(camera_map.keys())}  {cam_hw[0]}x{cam_hw[1]}  {args.fps}fps"
+    )
     manager.run()
-
-    # _monitor_stop.set()
-    # print(f"\n{'=' * 60}", flush=True)
-    # print(f"  采集结束", flush=True)
-    # print(f"  数据位于: {lerobot_out}", flush=True)
-    # print(f"{'=' * 60}", flush=True)
 
 
 if __name__ == "__main__":

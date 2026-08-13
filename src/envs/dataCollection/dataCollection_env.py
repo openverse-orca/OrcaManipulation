@@ -65,6 +65,7 @@ class DataCollectionEnv(OrcaGymLocalEnv):
         if self._skip_studio_render_on_reset:
             self.clear_studio_override_ctrls()
         else:
+            self.render_count = 1.1
             self.render()
         return obs, info
 

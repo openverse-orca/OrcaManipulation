@@ -16,7 +16,6 @@ from controllers.controller_task import TaskStatus, TaskStatusController
 from devices.abstract_device import AbstractDevice
 from scene.scene_manager import SceneManager
 from dataStorage.abstract_data_storage import AbstractDataStorage
-from orca_gym.sensor.rgbd_camera import Monitor
 from sensor.touch_sensor_visualizer import TouchSensorVisualizer
 orca_logger = OrcaLog.get_instance()
 
@@ -111,6 +110,7 @@ class DataCollectionManager:
                 scene_manager: SceneManager = None,
                 data_storage: AbstractDataStorage = None,
                 episode_callbacks: list[EpisodeLifecycleCallback] | None = None,
+                render_fps: int = 30,
                 **kwargs):
         self._mjc_agent_prefix = mjc_agent_prefix
         self.device = device
@@ -132,6 +132,10 @@ class DataCollectionManager:
 
         self._save_video = False
         self._saving = False
+        self._episode_count = 0
+        # 待处理的 IDR 请求标志：首次进入 RUNNING 时置 True，
+        # 在下一次 render 时消费（传 request_idr=True 给 env.render）
+        self._pending_idr_request = False
         self._mode = self.DataCollectionMode.TELECONTROL
         self._shutdown_requested = False
         self._original_sigint = signal.getsignal(signal.SIGINT)
@@ -140,13 +144,34 @@ class DataCollectionManager:
         # Episode 生命周期回调列表（可扩展，不修改核心流程）
         self._episode_callbacks: list[EpisodeLifecycleCallback] = list(episode_callbacks) if episode_callbacks else []
 
+        self.simulate_index = -1
+        self.env.set_sync_render(True)
+        self._render_fps = render_fps
+
     @property
     def save_video(self) -> bool:
+        """是否在 episode 运行期间录制视频。
+
+        设为 ``True`` 后，``_handle_task_running`` 首次进入时会调用
+        ``data_storage.start_episode_recording`` 记录起始仿真步索引，
+        ``_handle_task_end`` 会调用 ``data_storage.stop_episode_recording``
+        将区间保存为 MP4。底层使用 OrcaGym 客户端 PyAV remux 录制接口
+        （``env.save_streaming``），不再使用引擎侧 MP4 录制。
+        """
         return self._save_video
-    
+
     @save_video.setter
     def save_video(self, value: bool):
         self._save_video = value
+
+    @property
+    def render_fps(self) -> int:
+        return self._render_fps
+
+    @render_fps.setter
+    def render_fps(self, value: int):
+        self._render_fps = value
+        self.env.set_render_fps(value)
 
     @property
     def saving(self) -> bool:
@@ -330,12 +355,13 @@ class DataCollectionManager:
             while not self._shutdown_requested:
                 self.env.reset()
                 # sleep 0.1秒等待模拟器重置完成
-                time.sleep(0.1)
+                time.sleep(1)
                 update_scene_ret = self.update_scene()
                 if not update_scene_ret:
                     orca_logger.info("Can't update scene, End")
                     break
                 task_is_success = self.run_episode()
+                self._episode_count += 1
                 episode_count += 1
                 if max_episodes is not None and episode_count >= max_episodes:
                     orca_logger.info(f"Reached max_episodes={max_episodes}, exiting run loop")
@@ -347,7 +373,12 @@ class DataCollectionManager:
                         orca_logger.info("Task Success!")
                         task_info = self.task.get_task_info()
                         scene_info = self.scene_manager.get_scene_info()
-                        self.data_storage.save_data(task_info=task_info, scene_info=scene_info, task_description=self.task.get_task_description())
+                        self.data_storage.save_data(
+                            env=self.env,
+                            task_info=task_info,
+                            scene_info=scene_info,
+                            task_description=self.task.get_task_description(),
+                        )
                     else:
                         self.data_storage.clear_data()
                         orca_logger.info("Task Failed!")
@@ -365,10 +396,25 @@ class DataCollectionManager:
             if self.data_storage is not None:
                 orca_logger.info("Clear data")
                 self.data_storage.clear_data()
-            self.env.reset()
-            # sleep 0.1秒等待模拟器重置完成
-            time.sleep(0.1)
-            self.env.close()
+            # 引擎已停止时 reset 会因 gRPC 断开抛异常，忽略以保证 close 能执行
+            # （close 负责关闭 viewer 子进程和录制器，不依赖 gRPC）
+            try:
+                self.env.reset()
+                # sleep 0.1秒等待模拟器重置完成
+                time.sleep(0.1)
+            except Exception as reset_err:
+                orca_logger.warning(
+                    f"env.reset() failed during cleanup (engine may have "
+                    f"stopped): {reset_err}"
+                )
+            # close 必须执行：关闭 viewer 子进程、录制器、gRPC channel。
+            # 即使 close 内部 gRPC 关闭失败，viewer 子进程也会先被关闭。
+            try:
+                self.env.close()
+            except Exception as close_err:
+                orca_logger.warning(
+                    f"env.close() failed during cleanup: {close_err}"
+                )
 
     def update_scene(self):
         if self.scene_manager is not None:
@@ -430,22 +476,29 @@ class DataCollectionManager:
             should_step = self._query_physics_step_allowed()
             if should_step:
                 obs, reward, terminated, truncated, info = self.env.step(action)
+                self.simulate_index += 1
             else:
                 obs = self.env._get_obs().copy() if hasattr(self.env, "_get_obs") else {}
                 reward, terminated, truncated, info = 0.0, False, False, {}
 
             self._update_touch_sensors()
+
+            # 在 render 前处理任务状态：首次进入 RUNNING 时启动录制并标记需要
+            # 请求 IDR 关键帧，使该帧作为视频段起点（配合 save_streaming 的
+            # 前向截断，保证 MP4 第一帧为关键帧，避免开头花屏）
+            should_end, task_is_success, data_recording_started = self._handle_task_status(
+                obs, data_recording_started, terminated, truncated
+            )
+
+            request_idr = self._consume_idr_request()
             if not self._any_callback_skip_render():
-                self.env.render()
+                self.env.render(self.simulate_index, request_idr=request_idr)
             else:
                 self._notify_callbacks("on_after_render_skipped")
                 self._any_callback_push_studio_vis()
 
             self._notify_callbacks("on_step_end", obs, info)
 
-            should_end, task_is_success, data_recording_started = self._handle_task_status(
-                obs, data_recording_started, terminated, truncated
-            )
             if should_end:
                 self._notify_callbacks("on_episode_end", task_is_success)
                 return task_is_success
@@ -498,6 +551,21 @@ class DataCollectionManager:
         touch_sensor_data = {name: sensor_data[name][0] for name in self.touch_sensor_names}
         self.touch_sensor.update_data(touch_sensor_data)
 
+    def _consume_idr_request(self) -> bool:
+        """消费待处理的 IDR 请求标志（原子读后清）。
+
+        首次进入 RUNNING 启动视频录制时，会设置 ``_pending_idr_request=True``。
+        下一次 render 调用本方法获取标志值并清零，传给
+        ``env.render(request_idr=...)``，使该帧作为视频段起点的关键帧。
+
+        Returns:
+            是否需要请求 IDR 关键帧。
+        """
+        if self._pending_idr_request:
+            self._pending_idr_request = False
+            return True
+        return False
+
     def _handle_task_status(
         self, obs: dict, data_recording_started: bool, terminated: bool, truncated: bool
     ) -> tuple[bool, bool, bool]:
@@ -529,24 +597,34 @@ class DataCollectionManager:
         if not data_recording_started:
             self._start_data_recording()
             data_recording_started = True
+            # 首次进入 RUNNING 时启动 episode 视频录制（记录起始仿真步索引）
+            if self.save_video and not self.saving and self.data_storage is not None:
+                self.data_storage.start_episode_recording(
+                    self.env, self._episode_count, self.simulate_index
+                )
+                self.saving = True
+                # 标记下一次 render 请求 IDR 关键帧，作为视频段起点
+                self._pending_idr_request = True
 
         if self.data_storage is not None:
-            self.data_storage.collection_data(obs, self.env)
-
-        if self.save_video and not self.saving and self.data_storage is not None:
-            self.data_storage.begin_save_video(self.env)
-            self.saving = True
+            self.data_storage.collection_data(
+                obs, self.env, simulate_index=self.simulate_index
+            )
 
         return data_recording_started
 
     def _handle_task_end(self, data_recording_started: bool) -> tuple[bool, bool]:
-        """处理任务结束状态：停止视频保存、停止数据记录、返回任务结果。
+        """处理任务结束状态：停止数据记录、返回任务结果。
+
+        视频流的实际保存在 ``save_data``（任务成功时）中执行，本方法仅记录
+        episode 结束仿真步索引。
 
         Returns:
             (True, task_is_success) — 调用方应结束 episode
         """
         if self.save_video and self.saving and self.data_storage is not None:
-            self.data_storage.stop_save_video(self.env)
+            # 仅记录结束仿真步索引，实际 save_streaming 在 save_data 中执行
+            self.data_storage.stop_episode_recording(self.env, self.simulate_index)
             self.saving = False
 
         if data_recording_started:
@@ -560,7 +638,9 @@ class DataCollectionManager:
         """开始数据记录：日志输出 + UI 消息显示。"""
         unit_path = None
         if self.data_storage is not None:
-            unit_path = self.data_storage.get_current_unit_path()
+            # get_current_unit_path 是 HDF5 专用（per-episode UUID 目录），
+            # LeRobot 没有（用 LeRobotDatasetWriter 管理 episode 目录）
+            unit_path = getattr(self.data_storage, "get_current_unit_path", lambda: None)()
             orca_logger.info(f"Start recording data unit: {unit_path}")
         else:
             orca_logger.info("Start recording data unit")
@@ -572,7 +652,7 @@ class DataCollectionManager:
         """停止数据记录：日志输出 + UI 消息显示。"""
         unit_path = None
         if self.data_storage is not None:
-            unit_path = self.data_storage.get_current_unit_path()
+            unit_path = getattr(self.data_storage, "get_current_unit_path", lambda: None)()
             orca_logger.info(f"Stop recording data unit: {unit_path}")
         else:
             orca_logger.info("Stop recording data unit")
