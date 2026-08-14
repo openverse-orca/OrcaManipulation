@@ -669,10 +669,6 @@ class LerobotDataStorage(AbstractDataStorage):
             f"[LeRobot] ✓ Episode {ep_idx} flush 完成（{actual_frames} 帧，流式编码）"
         )
 
-        # depth 视频由 save_streaming 保存为独立 MP4（LeRobot 只处理 RGB）
-        if env is not None:
-            self._save_episode_videos(env)
-
         self._reset_episode()
 
     def clear_data(self) -> None:
@@ -698,45 +694,8 @@ class LerobotDataStorage(AbstractDataStorage):
         self._lr_ep_end_sim_idx = end_simulate_index
 
     def _save_episode_videos(self, env: OrcaGymLocalEnv) -> dict:
-        """保存 depth 视频流为 MP4（color 由 LeRobot add_frame 处理）。"""
-        if self._cameras_conf is None:
-            return {}
-
-        start_sim_idx = getattr(self, "_episode_start_sim_idx", None)
-        end_sim_idx = getattr(self, "_episode_end_sim_idx", None)
-        episode_index = getattr(self, "_episode_index", 0)
-
-        if start_sim_idx is None or end_sim_idx is None:
-            return {}
-
-        video_dir = self.get_video_absolute_path()
-        os.makedirs(video_dir, exist_ok=True)
-
-        results: dict[str, dict[str, object]] = {}
-        for camera_name, props in self._cameras_conf.items():
-            if not props.get("capture_depth", False):
-                continue
-            file_name = f"{camera_name}_depth_episode_{episode_index:03d}.mp4"
-            file_path = os.path.join(video_dir, file_name)
-            try:
-                future = env.save_streaming(
-                    camera_name=camera_name,
-                    camera_type="depth",
-                    file_path=file_path,
-                    start_simulate_index=start_sim_idx,
-                    end_simulate_index=end_sim_idx,
-                )
-                result = future.result()
-                results[camera_name] = {"depth": result}
-                _logger.info(
-                    f"Depth video saved: camera={camera_name} "
-                    f"frames={result.frame_count} path={result.file_path}"
-                )
-            except Exception as e:
-                _logger.error(
-                    f"Depth video save failed: camera={camera_name} error={e}"
-                )
-        return results
+        """LeRobot 不用基类的 _save_episode_videos（由 save_data 内部处理）。"""
+        return {}
 
     def _reset_episode(self) -> None:
         """重置本集所有流式状态。"""
