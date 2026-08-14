@@ -301,6 +301,9 @@ def _build_tele_cfg(args) -> tele.TeleopConfig:
         diag_joints_hz=float(getattr(args, "diag_joints_hz", 5.0)),
         diag_log_dir=str(getattr(args, "diag_log_dir", "/tmp/g1pick_record_btn_diag")),
         tv_no_tls=args.tv_no_tls,
+        tv_cert_file=getattr(args, "tv_cert_file", None),
+        tv_key_file=getattr(args, "tv_key_file", None),
+        tv_host=getattr(args, "tv_host", "127.0.0.1"),
         arm_kp=args.arm_kp,
         arm_kv=args.arm_kv,
         arm_kv_ratio=args.arm_kv_ratio,
@@ -370,6 +373,21 @@ def main() -> None:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="TeleVuer 明文 HTTP/WS（默认开，与常用数采命令一致；关：--no-tv_no_tls）",
+    )
+    parser.add_argument(
+        "--tv_cert_file",
+        default=None,
+        help="显式 TLS 证书路径；必须与 --tv_key_file 同时提供",
+    )
+    parser.add_argument(
+        "--tv_key_file",
+        default=None,
+        help="显式 TLS 私钥路径；必须与 --tv_cert_file 同时提供",
+    )
+    parser.add_argument(
+        "--tv_host",
+        default="127.0.0.1",
+        help="TeleVuer 监听地址，默认 127.0.0.1（配合 adb reverse）",
     )
     parser.add_argument(
         "--tv_goal_mode", choices=("rebased_tv", "absolute_tv"), default="rebased_tv",
@@ -457,8 +475,9 @@ def main() -> None:
             display_mode="pass-through",
             img_shape=(480, 640),
             binocular=False,
-            cert_file="" if cfg.tv_no_tls else None,
-            key_file="" if cfg.tv_no_tls else None,
+            cert_file="" if cfg.tv_no_tls else cfg.tv_cert_file,
+            key_file="" if cfg.tv_no_tls else cfg.tv_key_file,
+            host=cfg.tv_host,
             log_buttons=False,
             evt_log=False,
         )
