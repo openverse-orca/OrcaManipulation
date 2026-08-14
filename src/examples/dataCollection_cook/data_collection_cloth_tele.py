@@ -25,7 +25,6 @@ from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
 from orca_gym.log.orca_log import get_orca_logger
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
-from envs.cpu_affinity import apply_current_process_cpu_affinity, resolve_cpu_affinity
 from controllers import controllers
 from controllers.g1_arm_pico_remap import (
     G1_ARM_POSITION_REMAP,
@@ -132,11 +131,6 @@ def main():
         help="打开 MuJoCo 原生 passive viewer（同步显示物理仿真，需在 GUI 环境下运行）",
     )
     parser.add_argument(
-        "--use-all-cpu",
-        action="store_true",
-        help="不使用 CPU 亲和性（默认 MuJoCo/Python + XPBD 绑定 4～末核，为 Studio 保留 0-3）",
-    )
-    parser.add_argument(
         "--bench",
         type=str,
         default=None,
@@ -154,9 +148,6 @@ def main():
     )
 
     args = parser.parse_args()
-
-    cpu_affinity = resolve_cpu_affinity(args.use_all_cpu)
-    apply_current_process_cpu_affinity(cpu_affinity)
 
     level = args.level
     agent_name = args.agent_name
@@ -321,7 +312,7 @@ def main():
         orca_logger.info("MuJoCo passive viewer started (--gui)")
 
     if args.cloth_coupling:
-        from envs.cloth import (
+        from envs.softbody import (
             apply_runtime_cloth_overrides,
             default_cloth_config_path,
             load_cloth_config,
@@ -375,7 +366,6 @@ def main():
             log_dir=log_dir,
             auto_start_orcalink=True if args.cloth_auto_start_orcalink else None,
             auto_start_xpbd=True if args.cloth_auto_start_xpbd else None,
-            cpu_affinity=cpu_affinity,
         )
         data_collection_manager.set_cloth_coupling(cloth_handle)
         trigger_path = Path(log_dir) / "grip_triggers.txt"
@@ -399,7 +389,7 @@ def main():
         orca_logger.info(f"Bench enabled: {args.bench}")
 
     if agent_name == "openloong":
-        from envs.cloth.openloong_osc_actuators import setup_openloong_dual_arm_osc_actuators
+        from envs.softbody.ProcessOrcaGym import setup_openloong_dual_arm_osc_actuators
 
         def _bind_osc_actuators() -> None:
             setup_openloong_dual_arm_osc_actuators(env, agent_conf.l_arm, agent_conf.r_arm)
@@ -537,7 +527,7 @@ def main():
         "CLOTH_PICO_DELTA_TRACE", ""
     ).strip().lower() in ("1", "true", "yes")
     if pico_delta_trace:
-        from envs.cloth.pico_mjc_delta_trace import attach_pico_mjc_delta_tracer
+        from envs.softbody.ProcessPico import attach_pico_mjc_delta_tracer
 
         delta_csv = Path(log_dir) / "pico_mjc_delta_trace.csv"
         palm_l = palm_r = None

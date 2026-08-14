@@ -44,7 +44,7 @@ ss -tlnp | grep -E "50051|50263"
 conda activate <你的环境名>
 ```
 
-`run_cloth_robot_p23c.sh` 会通过 `resolve_orca_conda_python.sh`
+`run_cloth_robot_p23c.sh` 会通过 `PrepareConda.py`
 自动使用当前激活的非 base conda 环境，无需额外配置。
 
 ---
