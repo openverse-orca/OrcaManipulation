@@ -22,10 +22,10 @@ from controllers.controller_2f85_reverse import Controller2F85Reverse
 from controllers.controllers import create_arm_osc_controller, create_gripper_2f85_reverse_controller
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from dataStorage.lerobot_camera import (
-    DEFAULT_CAMERA_MAP,
     DEFAULT_HW,
     bring_up_cameras,
     close_cameras,
+    omnipicker_camera_map,
     probe_camera_hw,
 )
 from dataStorage.lerobot_data_storage import G1OmniPickerLeRobotStorage
@@ -333,6 +333,11 @@ def main():
     parser.add_argument("--no_images", action="store_true",
                         help="跳过相机采图，发送空图（仅用 state 的策略）")
     parser.add_argument("--no_preview", action="store_true", help="不显示相机实时预览小窗口")
+    parser.add_argument(
+        "--enable_wrist_l",
+        action="store_true",
+        help="启用左腕相机 camera_wrist_l_color:7070（旧三路策略需要；默认关闭，仅头+右腕）",
+    )
     args = parser.parse_args()
 
     if args.max_steps < 1:
@@ -375,18 +380,23 @@ def main():
     manager.add_controller(l_grip)
     manager.add_controller(r_grip)
 
+    camera_map = omnipicker_camera_map(enable_wrist_l=args.enable_wrist_l)
     # camera_name_map：env 相机传感器名 → 策略观测键名（与采集数据集一致）
     camera_name_map: dict[str, str] = {
         env_name: lerobot_key
-        for env_name, (lerobot_key, _port) in DEFAULT_CAMERA_MAP.items()
+        for env_name, (lerobot_key, _port) in camera_map.items()
     }
+    orca_logger.info(
+        f"推理相机: {list(camera_name_map.values())}"
+        + ("（含左腕 7070）" if args.enable_wrist_l else "（默认头+右腕）")
+    )
 
     _need_cameras = (not args.no_images) or (not args.no_preview)
     _shared_cameras: dict = {}
     _target_hw: tuple = DEFAULT_HW
     _preview_ready: bool = False
     _PREVIEW_W, _PREVIEW_H = 320, 240
-    _PREVIEW_CAMS = list(DEFAULT_CAMERA_MAP.keys())
+    _PREVIEW_CAMS = list(camera_map.keys())
     policy_runner: OpenPIPolicyRunner | None = None
     device: EEFDevice | None = None
 
@@ -436,9 +446,9 @@ def main():
                         env.begin_save_video(STREAM_TRIGGER_PATH)
                         _video_started = True
                         _shared_cameras = bring_up_cameras(
-                            DEFAULT_CAMERA_MAP, port_timeout=30.0, frame_timeout=30.0
+                            camera_map, port_timeout=30.0, frame_timeout=30.0
                         )
-                        _target_hw = probe_camera_hw(_shared_cameras, DEFAULT_CAMERA_MAP)
+                        _target_hw = probe_camera_hw(_shared_cameras, camera_map)
                         orca_logger.info(
                             f"内存流相机已就绪（{len(_shared_cameras)} 路），分辨率={_target_hw}"
                         )

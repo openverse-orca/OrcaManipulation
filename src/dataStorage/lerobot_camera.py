@@ -31,7 +31,26 @@ DEFAULT_CAMERA_MAP = {
     "camera_head_color": ("cam_head", 7090),
     "camera_wrist_r_color": ("cam_wrist_r", 7080),
 }
+# 左腕（旧三路采集 / 旧策略需要时再启用）。
+WRIST_L_CAMERA = {
+    "camera_wrist_l_color": ("cam_wrist_l", 7070),
+}
 DEFAULT_HW = (480, 640)
+
+
+def omnipicker_camera_map(*, enable_wrist_l: bool = False) -> dict:
+    """返回 OmniPicker 相机映射。
+
+    默认两路（头 7090 + 右腕 7080）。``enable_wrist_l=True`` 时按旧顺序
+    插入左腕 7070：head → wrist_l → wrist_r。
+    """
+    if not enable_wrist_l:
+        return dict(DEFAULT_CAMERA_MAP)
+    return {
+        "camera_head_color": DEFAULT_CAMERA_MAP["camera_head_color"],
+        **WRIST_L_CAMERA,
+        "camera_wrist_r_color": DEFAULT_CAMERA_MAP["camera_wrist_r_color"],
+    }
 
 
 def camera_keys(camera_map: dict) -> list[str]:
