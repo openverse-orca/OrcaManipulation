@@ -1,7 +1,5 @@
 import enum
-import os
 import signal
-from textwrap import shorten
 import time
 import types
 import numpy as np
@@ -103,11 +101,11 @@ class DataCollectionManager:
                 time_step: float = 0.001, 
                 orcagym_addr: str = "localhost:50051",
                 mjc_agent_prefix: str | None = None,
-                task: AbstractTask = None,
-                device: AbstractDevice = None,
-                task_status_controller: TaskStatusController = None,
-                scene_manager: SceneManager = None,
-                data_storage: AbstractDataStorage = None,
+                task: AbstractTask | None = None,
+                device: AbstractDevice | None = None,
+                task_status_controller: TaskStatusController | None = None,
+                scene_manager: SceneManager | None = None,
+                data_storage: AbstractDataStorage | None = None,
                 episode_callbacks: list[EpisodeLifecycleCallback] | None = None,
                 render_fps: int = 30,
                 **kwargs):
@@ -302,7 +300,7 @@ class DataCollectionManager:
     def add_controller(self, controller: AbstractController):
         self.controllers.append(controller)
 
-    def run_controllers(self) ->list[float]:
+    def run_controllers(self) -> np.ndarray:
         if self.device is not None:
             self.device.update()
         for controller in self.controllers:
@@ -333,7 +331,7 @@ class DataCollectionManager:
         try:
             while not self._shutdown_requested:
                 self.env.reset()
-                # sleep 0.1秒等待模拟器重置完成
+                # sleep 1秒等待模拟器重置完成
                 time.sleep(1)
                 update_scene_ret = self.update_scene()
                 if not update_scene_ret:
@@ -403,7 +401,6 @@ class DataCollectionManager:
                     self.scene_manager.update_actor_qpos()
                     self.task.get_task(self.scene_manager)
                     orca_logger.info(f"Task description: {self.task.get_task_description()}")
-                    # self.scene_manager.show_ui_message(1, self.task.get_task_description(),showtime=5)
 
                 
             elif self.mode == self.DataCollectionMode.AUGMENTATION:
@@ -416,13 +413,7 @@ class DataCollectionManager:
                     return load_ret
                 unit_path = self.device.get_current_unit_path()
                 if unit_path is not None:
-                    # 回放提示只展示当前回放目录名
-                    current_dir_name = os.path.basename(unit_path)
-                    if current_dir_name == "":
-                        current_dir_name = os.path.basename(os.path.dirname(unit_path))
                     orca_logger.info(f"Replay data unit: {unit_path}")
-                    replay_msg = shorten(f"回放目录: {current_dir_name}", width=80, placeholder="...")
-                   # self.scene_manager.show_ui_message(1, replay_msg, "0x00bfff", showtime=0)
                 task_info = self.device.get_task_info()
                 scene_info = self.device.get_scene_info()
                 self.scene_manager.update_actor_qpos(restore=True, scene_info=scene_info)
@@ -610,6 +601,8 @@ class DataCollectionManager:
 
         orca_logger.info("Task end")
         task_is_success = self.task.is_success()
+        if task_is_success: 
+            self._pending_idr_request = True
         return True, task_is_success
 
     def _start_data_recording(self) -> None:

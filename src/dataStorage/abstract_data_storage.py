@@ -208,6 +208,8 @@ class AbstractDataStorage(metaclass=abc.ABCMeta):
                         f"frames={result.frame_count} path={result.file_path}"
                     )
                 except Exception as e:
+                    # 失败时记录 None，让外层能区分"无此流类型"与"保存失败"
+                    cam_results[cam_type] = None
                     _logger.error(
                         f"Video save failed: camera={camera_name} "
                         f"type={cam_type} error={e}"

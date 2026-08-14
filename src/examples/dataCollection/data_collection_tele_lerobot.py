@@ -36,8 +36,7 @@
       --task_config example.yaml \\
       --lerobot_out /path/to/out_dataset \\
       --repo_id your_org/my_dataset \\
-      --fps 20 \\
-      --clock wall
+      --fps 20
 """
 import argparse
 import os
@@ -71,17 +70,6 @@ from scene.scene_manager import SceneManager
 from task.pick_place_task import PickPlaceTask
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
-
-# env 相机名（cameras_conf 的 key）→ LeRobot feature key 后缀。
-# 例：``camera_head`` → ``observation.images.cam_head``。
-CAMERA_LEROBOT_KEY_MAP = {
-    "camera_head": "cam_head",
-    "camera_wrist_l": "cam_wrist_l",
-    "camera_wrist_r": "cam_wrist_r",
-}
-
-# 默认采集帧分辨率（H, W），与 cameras_conf 中的 Width/Height 对齐
-DEFAULT_HW = (720, 1080)
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
 log_dir = os.path.join(base_dir, "logs")
@@ -126,45 +114,20 @@ def _make_storage(agent_name: str, scratch_dir: str):
     raise ValueError(f"不支持的 agent_name: {agent_name!r}")
 
 
-def _camera_short_name(env_cam: str) -> str:
-    """env 相机名 → 短名（去掉 ``camera_`` 前缀）。
+def _filter_cameras_by_name(cameras_conf: dict, enabled: set[str] | None = None) -> dict:
+    """按相机短名过滤 cameras_conf。
 
-    例：``camera_head`` → ``head``，``camera_wrist_l`` → ``wrist_l``。
+    ``enabled`` 中的短名（如 ``"head"``）匹配 ``camera_head``；
+    也接受完整名（如 ``"camera_head"``）。为 None 时返回全部。
     """
-    prefix = "camera_"
-    return env_cam[len(prefix):] if env_cam.startswith(prefix) else env_cam
-
-
-def _build_camera_map(cameras_conf: dict, enabled: set[str] | None = None) -> dict:
-    """从 cameras_conf 构建 ``{env_camera_name: lerobot_key}`` 映射。
-
-    Args:
-        cameras_conf: 机器人配置中的相机配置字典（key 是 env 相机名）。
-        enabled: 可选的相机启用集合（短名，如 ``{"head", "wrist_l"}``，
-            也可传完整 env 名 ``{"camera_head"}``）。为 None 时启用全部。
-
-    Returns:
-        ``{env_camera_name: lerobot_key}``，仅包含在 CAMERA_LEROBOT_KEY_MAP
-        中有映射且（若指定 enabled）被启用的相机。
-    """
-    camera_map: dict = {}
-    for env_cam in cameras_conf.keys():
-        # 短名过滤（同时接受短名 "head" 和完整名 "camera_head"）
-        if enabled is not None:
-            short = _camera_short_name(env_cam)
-            if short not in enabled and env_cam not in enabled:
-                continue
-        lerobot_key = CAMERA_LEROBOT_KEY_MAP.get(env_cam)
-        if lerobot_key is None:
-            orca_logger.warning(f"相机 {env_cam!r} 不在 CAMERA_LEROBOT_KEY_MAP 中，跳过")
-            continue
-        camera_map[env_cam] = lerobot_key
-    return camera_map
-
-
-def _filter_cameras_conf(cameras_conf: dict, camera_map: dict) -> dict:
-    """按 camera_map 过滤 cameras_conf，仅保留映射中的相机。"""
-    return {env_cam: cameras_conf[env_cam] for env_cam in camera_map.keys() if env_cam in cameras_conf}
+    if enabled is None:
+        return dict(cameras_conf)
+    result: dict = {}
+    for env_cam, props in cameras_conf.items():
+        short = env_cam[len("camera_"):] if env_cam.startswith("camera_") else env_cam
+        if short in enabled or env_cam in enabled:
+            result[env_cam] = props
+    return result
 
 
 class LeRobotEpisodeCallback:
@@ -185,10 +148,7 @@ class LeRobotEpisodeCallback:
         manager: DataCollectionManager,
         storage,
         cameras_conf: dict,
-        camera_map: dict,
-        cam_hw: tuple,
         fps: int,
-        clock: str,
         task: str,
         lerobot_out: str,
         repo_id: str,
@@ -198,10 +158,7 @@ class LeRobotEpisodeCallback:
         self._manager = manager
         self._storage = storage
         self._cameras_conf = cameras_conf
-        self._camera_map = camera_map
-        self._cam_hw = cam_hw
         self._fps = fps
-        self._clock = clock
         self._task = task
         self._lerobot_out = lerobot_out
         self._repo_id = repo_id
@@ -209,109 +166,38 @@ class LeRobotEpisodeCallback:
         self._agent_name = agent_name
 
         self._writer: LeRobotDatasetWriter | None = None
-        self._writer_entered: bool = False  # 标记 writer.__enter__ 是否成功（用于 __exit__ 配对）
+        self._writer_entered: bool = False
         self._ep_idx = 0
 
     def on_run_start(self) -> None:
-        """run() 主循环启动前：启动相机推流、探测真实帧尺寸、创建 writer、配置 storage。
-
-        尺寸探测：``setup_cameras`` 后轮询等待首帧到达，用 ``decode_frame_at``
-        解码获取真实帧尺寸。若与 ``cameras_conf`` 声明不符（引擎端可能忽略
-        Width/Height 参数或被场景配置覆盖），以真实尺寸为准创建数据集，
-        避免后续 ``add_frame`` 因 shape 不符被 LeRobot 拒绝。
+        """run() 主循环启动前：启动相机推流、创建 writer、配置 storage。
 
         异常安全：任何步骤失败都会设置 ``_writer_entered=False``，确保
         ``on_run_end`` 不会对未 ``__enter__`` 的 writer 调用 ``__exit__``。
         """
         try:
-            # 1. 启动相机推流 + viewer（OrcaGym 客户端 PyAV remux 录制）
             self._storage.setup_cameras(self._manager.env, self._cameras_conf, show_viewer=False)
-
-            # 2. 探测真实帧尺寸（阻塞等待首帧，最多 ~5 秒）
-            cam_hw = self._probe_actual_cam_hw()
-
-            # 3. 创建 writer（用探测到的真实尺寸）
-            cam_shape = (3, cam_hw[0], cam_hw[1])
             self._writer = LeRobotDatasetWriter.create(
                 repo_id=self._repo_id,
                 root=self._lerobot_out,
                 fps=self._fps,
-                camera_map=self._camera_map,
+                cameras_conf=self._cameras_conf,
                 state_dim=self._storage.state_dim,
                 state_names=self._storage.state_names,
-                cam_shape=cam_shape,
                 resume=self._resume,
                 robot_type=self._agent_name,
             )
-            # 4. 注入 LeRobot 依赖（fps / env / camera_map / writer / task / clock）
             self._storage.configure_lerobot(
-                fps=self._fps,
                 env=self._manager.env,
                 cameras_conf=self._cameras_conf,
-                camera_map=self._camera_map,
-                target_hw=cam_hw,
                 writer=self._writer,
                 task=self._task,
-                clock=self._clock,
             )
-            # 5. 进入 writer context（管理 VideoEncodingManager 生命周期）
             self._writer.__enter__()
             self._writer_entered = True
         except Exception:
-            # setup_cameras/create/configure/__enter__ 任一步失败，标记未 entered，
-            # on_run_end 仍会尝试 close()（停写图线程 + finalize），但不会 __exit__。
             self._writer_entered = False
             raise
-
-    def _probe_actual_cam_hw(self, timeout: float = 5.0, poll_interval: float = 0.1) -> tuple:
-        """探测相机实际渲染尺寸（阻塞等待首帧并解码）。
-
-        ``setup_cameras`` 后引擎端可能不会立即推流，需轮询等待首帧到达。
-        首帧到达后用 ``decode_frame_at`` 解码获取真实 (H, W)。若与
-        ``self._cam_hw`` 声明不符，打印警告并以真实尺寸为准。
-
-        Args:
-            timeout: 等待首帧的最长时间（秒）。
-            poll_interval: 轮询间隔（秒）。
-
-        Returns:
-            ``(height, width)`` 真实帧尺寸。若超时未收到首帧，回退到
-            ``self._cam_hw`` 声明尺寸（后续 ``add_frame`` 会因 shape 不符报错，
-            提示用户检查相机推流是否正常）。
-        """
-        manager = self._manager.env.get_recorder_manager()
-        primary_cam = next(iter(self._camera_map.keys()))
-        deadline = time.monotonic() + timeout
-        probed_hw: tuple | None = None
-
-        while time.monotonic() < deadline:
-            latest_idx = manager.get_latest_frame_simulate_index(primary_cam, "color")
-            if latest_idx is not None and latest_idx >= 0:
-                img = manager.decode_frame_at(primary_cam, latest_idx, "color")
-                if img is not None and img.ndim == 3 and img.shape[0] >= 2:
-                    probed_hw = (int(img.shape[0]), int(img.shape[1]))  # HWC
-                    break
-            time.sleep(poll_interval)
-
-        if probed_hw is None:
-            orca_logger.warning(
-                f"[LeRobot] 探测首帧尺寸超时（{timeout}s 未收到 {primary_cam} color 流），"
-                f"回退到 cameras_conf 声明尺寸 {self._cam_hw}。"
-                f"若后续 add_frame 报 shape 不符，请检查相机推流是否正常。"
-            )
-            return self._cam_hw
-
-        if probed_hw != self._cam_hw:
-            orca_logger.warning(
-                f"[LeRobot] 实际帧尺寸 {probed_hw[0]}x{probed_hw[1]} 与 "
-                f"cameras_conf 声明 {self._cam_hw[0]}x{self._cam_hw[1]} 不符，"
-                f"以实际尺寸为准创建数据集。"
-            )
-        else:
-            orca_logger.info(
-                f"[LeRobot] 探测帧尺寸: {probed_hw[0]}x{probed_hw[1]}（与声明一致）"
-            )
-        return probed_hw
 
     def on_episode_start(self) -> None:
         """每集开始前：计数。"""
@@ -378,12 +264,6 @@ def main() -> None:
     )
     parser.add_argument("--fps", type=int, default=30, help="采集帧率，默认 30")
     parser.add_argument(
-        "--clock", choices=("sim", "wall"), default="sim",
-        help="采帧门控时钟源。sim=仿真时间（默认）；wall=墙钟，用于 VR 遥操作，"
-             "让录到的机械臂速度=人真实操作速度、视频时长≈操作墙钟时长。"
-             "wall 模式下建议 --fps 20（循环频率约 18~25Hz），过高会欠采。",
-    )
-    parser.add_argument(
         "--resume", action="store_true",
         help="追加到已有数据集（断点续采）"
     )
@@ -398,7 +278,6 @@ def main() -> None:
     agent_conf = _load_agent_conf(args.agent_name)
     lerobot_out = os.path.abspath(os.path.expanduser(args.lerobot_out))
 
-    # ── 相机映射 / 配置过滤 ────────────────────────────────────────────
     cameras_conf_all = getattr(agent_conf, "cameras_conf", None)
     if not cameras_conf_all:
         orca_logger.error(
@@ -407,21 +286,13 @@ def main() -> None:
         return
 
     _enabled = {k.strip() for k in args.cameras.split(",") if k.strip()}
-    camera_map = _build_camera_map(cameras_conf_all, enabled=_enabled)
-    if not camera_map:
+    cameras_conf = _filter_cameras_by_name(cameras_conf_all, enabled=_enabled)
+    if not cameras_conf:
         orca_logger.error(
             f"--cameras '{args.cameras}' 未匹配到任何有效相机（cameras_conf keys="
             f"{list(cameras_conf_all.keys())}），退出"
         )
         return
-    cameras_conf = _filter_cameras_conf(cameras_conf_all, camera_map)
-
-    # 从 cameras_conf 读取目标分辨率（与渲染分辨率一致）
-    first_cam_props = next(iter(cameras_conf.values()))
-    cam_hw = (
-        int(first_cam_props.get("Height", DEFAULT_HW[0])),
-        int(first_cam_props.get("Width", DEFAULT_HW[1])),
-    )
 
     # ── 关节初值 ──────────────────────────────────────────────────────
     default_joint_values: dict = {}
@@ -434,7 +305,7 @@ def main() -> None:
     print("=" * 60, flush=True)
     print("  LeRobot 数采启动中...", flush=True)
     print(f"  机器人: {args.agent_name}  场景: {args.level}", flush=True)
-    print(f"  相机: {list(camera_map.keys())}  分辨率: {cam_hw[0]}x{cam_hw[1]}", flush=True)
+    print(f"  相机: {list(cameras_conf.keys())}", flush=True)
     print(f"  输出目录: {lerobot_out}", flush=True)
     print("  等待 Pico 连接（请确认 Pico 端 OrcaLab App 已启动）...", flush=True)
     print("=" * 60, flush=True)
@@ -545,10 +416,7 @@ def main() -> None:
         manager=manager,
         storage=storage,
         cameras_conf=cameras_conf,
-        camera_map=camera_map,
-        cam_hw=cam_hw,
         fps=args.fps,
-        clock=args.clock,
         task=args.task,
         lerobot_out=lerobot_out,
         repo_id=args.repo_id,
@@ -556,11 +424,11 @@ def main() -> None:
         agent_name=args.agent_name,
     )
     manager.register_episode_callback(lerobot_callback)
-    manager.render_fps = 30
+    manager.render_fps = args.fps
 
     orca_logger.info(
         f"开始采集，LeRobot 输出: {lerobot_out}  "
-        f"相机: {list(camera_map.keys())}  {cam_hw[0]}x{cam_hw[1]}  {args.fps}fps"
+        f"相机: {list(cameras_conf.keys())}  {args.fps}fps"
     )
     manager.run()
 

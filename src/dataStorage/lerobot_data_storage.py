@@ -41,7 +41,6 @@ State/action 布局（各机器人不同，由 RobotProfile.build_state() 决定
 from __future__ import annotations
 
 import logging
-import os
 import shutil
 from concurrent.futures import Future
 from pathlib import Path
@@ -100,14 +99,19 @@ def _import_video_encoding_manager():
     )
 
 
-def camera_keys(camera_map: dict) -> list[str]:
-    """返回 LeRobot 相机键列表（写入数据集 features 时用）。
+def _collect_image_keys(cameras_conf: dict) -> list[str]:
+    """从 cameras_conf 推导 LeRobot image feature key 列表。
 
-    ``camera_map`` 结构：``{env_camera_sensor_name: lerobot_key}``，
-    其中 ``lerobot_key`` 是写入 LeRobot features 的 key 后缀（如
-    ``observation.images.<lerobot_key>``）。
+    ``capture_rgb=True`` 的相机 → ``{camera_name}``，
+    ``capture_depth=True`` 的相机 → ``{camera_name}_depth``。
     """
-    return list(camera_map.values())
+    keys: list[str] = []
+    for cam_name, props in cameras_conf.items():
+        if props.get("capture_rgb", False):
+            keys.append(cam_name)
+        if props.get("capture_depth", False):
+            keys.append(f"{cam_name}_depth")
+    return keys
 
 
 def _validate_dataset_root(root: str) -> None:
@@ -200,21 +204,24 @@ class LeRobotDatasetWriter:
         repo_id: str,
         root: str,
         fps: int,
-        camera_map: dict,
+        cameras_conf: dict,
         state_dim: int,
         state_names: list[str],
-        cam_shape: tuple,
         resume: bool = False,
         robot_type: str = "humanoid",
     ) -> "LeRobotDatasetWriter":
         """创建（或恢复）一个 LeRobotDataset，返回已包装的 writer。
 
-        安全护栏：``root`` 不允许是当前工作目录或其祖先目录，否则在非 resume
-        模式下的 ``shutil.rmtree(root)`` 会清空用户的工作目录（含脚本自身）。
+        从 ``cameras_conf`` 自动推导 LeRobot image features：
+        ``capture_rgb=True`` 的相机 → ``observation.images.{camera_name}``，
+        ``capture_depth=True`` 的相机 → ``observation.images.{camera_name}_depth``。
+
+        图像 shape 从 ``cameras_conf`` 的 ``height``/``width`` 推导（取第一个相机的
+        配置），假设所有相机分辨率一致。
         """
         _validate_dataset_root(root)
         LeRobotDataset = _import_lerobot_dataset()
-        cams = camera_keys(camera_map)
+        image_keys = _collect_image_keys(cameras_conf)
 
         if resume and Path(root).exists():
             dataset = LeRobotDataset(
@@ -223,7 +230,7 @@ class LeRobotDatasetWriter:
                 download_videos=False,
                 tolerance_s=0.0001,
             )
-            dataset.start_image_writer(0, 4 * len(cams))
+            dataset.start_image_writer(0, 4 * len(image_keys))
             dataset.episode_buffer = dataset.create_episode_buffer()
             _logger.info(
                 f"[resume] 已加载 {dataset.num_episodes} 集 / "
@@ -232,6 +239,13 @@ class LeRobotDatasetWriter:
         else:
             if Path(root).exists() and not resume:
                 shutil.rmtree(root)
+
+            first_cam_props = next(iter(cameras_conf.values()))
+            cam_shape = (
+                3,
+                int(first_cam_props.get("height", 720)),
+                int(first_cam_props.get("width", 1080)),
+            )
 
             features: dict = {
                 "observation.state": {
@@ -245,8 +259,8 @@ class LeRobotDatasetWriter:
                     "names": [state_names],
                 },
             }
-            for cam_key in cams:
-                features[f"observation.images.{cam_key}"] = {
+            for key in image_keys:
+                features[f"observation.images.{key}"] = {
                     "dtype": "video",
                     "shape": cam_shape,
                     "names": ["channels", "height", "width"],
@@ -261,10 +275,7 @@ class LeRobotDatasetWriter:
                 use_videos=True,
                 tolerance_s=0.0001,
                 image_writer_processes=0,
-                image_writer_threads=4 * len(cams),
-                # 流式编码：add_frame 时立即送入编码线程（不写 PNG 临时文件），
-                # save_episode 时只需 flush 编码器（近瞬时）。适合实时采集。
-                # 每个摄像头一个独立编码线程（daemon），队列满时丢弃帧 + warning。
+                image_writer_threads=4 * len(image_keys),
                 streaming_encoding=True,
             )
 
@@ -291,6 +302,11 @@ class LeRobotDatasetWriter:
             2. VEM.__exit__()：清理残留 PNG 目录（异常中断时）+ 批编码剩余 episode
             3. dataset.finalize()：关闭 parquet writer，写入 footer
                （不调 finalize 会导致 parquet 文件缺少 footer，无法读取）
+
+        Note:
+            ``finalize`` 失败时仅记录日志不抛出（``close`` 常在 ``finally`` 中
+            调用，抛出会掩盖原始异常）。但 finalize 失败会导致 parquet 文件
+            缺少 footer、数据集可能损坏，调用方应检查日志确认关闭成功。
         """
         try:
             self.stop_image_writer()
@@ -418,7 +434,7 @@ class LerobotDataStorage(AbstractDataStorage):
     ``build_state`` / ``state_dim`` / ``state_names``。
 
     流程（每集）：
-        1. 外部调用 ``configure_lerobot`` 注入 fps / env / camera_map / writer 等
+        1. 外部调用 ``configure_lerobot`` 注入 fps / env / cameras_conf / writer 等
         2. ``start_episode_recording`` 记录起始 sim_idx
         3. 每步 ``collection_data(obs, env, simulate_index=...)``：
            - 对每个相机提交 ``SingleFrameTask``（目标 sim_idx 相同，各 recorder
@@ -448,10 +464,8 @@ class LerobotDataStorage(AbstractDataStorage):
         super().__init__(dataset_path=dataset_path, robot_profile=robot_profile)
         self._lr_writer: LeRobotDatasetWriter | None = None
         self._lr_env: OrcaGymLocalEnv | None = None
-        self._lr_fps: float = 0.0
         self._lr_task: str = "robot manipulation"
-        self._lr_camera_map: dict = {}
-        self._lr_cam_keys: list[str] = []
+        self._lr_cameras_conf: dict = {}
         self._lr_primary_camera: str | None = None
         self._lr_ep_start_sim_idx: int | None = None
         self._lr_ep_end_sim_idx: int | None = None
@@ -493,40 +507,28 @@ class LerobotDataStorage(AbstractDataStorage):
 
     def configure_lerobot(
         self,
-        fps: float,
         env: OrcaGymLocalEnv,
         cameras_conf: dict,
-        camera_map: dict,
-        target_hw: tuple,
         writer: LeRobotDatasetWriter,
         task: str = "robot manipulation",
-        clock: str = "sim",
     ) -> None:
         """在 __init__ 完成后、run() 开始前调用，注入 LeRobot 相关依赖。
 
+        相机配置直接复用 ``setup_cameras`` 已注入的 ``cameras_conf``，
+        image key 由相机名 + 流类型推导（color: ``{camera_name}``，
+        depth: ``{camera_name}_depth``），无需额外映射表。
+
         Args:
-            fps: LeRobot 数据集 fps（用于降频门控参考，实际帧率以渲染为准）。
             env: OrcaGym 环境（用于 ``get_recorder_manager``）。
-            cameras_conf: 相机配置（由 ``setup_cameras`` 注入到 env，
-                ``configure_lerobot`` 仅用于校验 primary_camera 存在）。
-            camera_map: ``{env_camera_name: lerobot_key}``。
-            target_hw: ``(height, width)`` 目标分辨率（保留参数，用于校验
-                与 writer 创建时的 cam_shape 一致）。
+            cameras_conf: 相机配置（由 ``setup_cameras`` 注入到 env）。
             writer: ``LeRobotDatasetWriter`` 实例。
             task: 任务描述字符串。
-            clock: 时钟源（保留参数，当前实现以 simulate_index 为准）。
         """
-        if clock not in ("sim", "wall"):
-            raise ValueError(f"clock 只能是 'sim' 或 'wall'，收到: {clock!r}")
-        self._lr_fps = float(fps)
         self._lr_env = env
-        self._lr_camera_map = dict(camera_map)
-        self._lr_cam_keys = camera_keys(camera_map)
+        self._lr_cameras_conf = dict(cameras_conf)
         self._lr_writer = writer
         self._lr_task = task
-        # primary_camera：camera_map 的第一个 env 相机名（用于降频门控查询）
-        # 所有相机 simulate_index 一致，查任一即可
-        self._lr_primary_camera = next(iter(self._lr_camera_map.keys())) if self._lr_camera_map else None
+        self._lr_primary_camera = next(iter(self._lr_cameras_conf.keys())) if self._lr_cameras_conf else None
 
     # -- 覆盖 AbstractDataStorage 的接口 --
 
@@ -569,11 +571,14 @@ class LerobotDataStorage(AbstractDataStorage):
         """对每个相机提交 SingleFrameTask，主相机回调等待所有副相机 future
         后合并图像并 ``add_frame``。**非阻塞**。
 
-        对每个相机（含主相机）提交一个 ``SingleFrameTask``，目标
+        遍历 ``cameras_conf``：``capture_rgb=True`` 的相机提交 color task
+        （image key = ``{camera_name}``），``capture_depth=True`` 的相机提交
+        depth task（image key = ``{camera_name}_depth``），目标
         ``simulate_index`` 相同。各 recorder 内部 save_worker FIFO 保证
         ``DecodeTask`` 先于同帧的 ``SingleFrameTask`` 执行，因此每个 future
-        的 result 就是该相机在该 sim_idx 的解码帧。主相机回调内等待所有副相机
-        future 完成，合并图像后 ``add_frame``。若某相机解码失败，该帧被丢弃。
+        的 result 就是该相机在该 sim_idx 的解码帧。主相机 color task 作为
+        协调者，其 ``on_frame`` 回调等待所有其他 future 完成，合并图像后
+        ``add_frame``。若某相机解码失败，该帧被丢弃。
 
         Args:
             state_prev: 上一帧的 state（作为 ``observation.state``）。
@@ -581,50 +586,54 @@ class LerobotDataStorage(AbstractDataStorage):
             simulate_index: 目标帧的 simulate_index。
         """
         writer = self._lr_writer
-        camera_map = self._lr_camera_map
+        cameras_conf = self._lr_cameras_conf
         task_desc = self._lr_task
         env = self._lr_env
         primary_cam = self._lr_primary_camera
         manager = env.get_recorder_manager()
 
-        secondary_cams = [c for c in camera_map if c != primary_cam]
+        # 主相机 color 作为协调者，单独提交。
+        sub_tasks: list[tuple[str, str, str]] = []  # (env_cam, stream_kind, image_key)
+        for env_cam, props in cameras_conf.items():
+            if props.get("capture_rgb", False) and env_cam != primary_cam:
+                sub_tasks.append((env_cam, "color", env_cam))
+            if props.get("capture_depth", False):
+                sub_tasks.append((env_cam, "depth", f"{env_cam}_depth"))
 
-        # 副相机回调返回 decoded_frame，供主相机回调通过 future.result() 收集
-        secondary_futures: dict[str, Future] = {}
-        for env_cam in secondary_cams:
-            sec_task = SingleFrameTask(
+        sub_futures: dict[tuple[str, str], Future] = {}
+        for env_cam, stream_kind, _key in sub_tasks:
+            task = SingleFrameTask(
                 simulate_index=simulate_index,
                 on_frame=lambda _entry, decoded: decoded,
             )
-            secondary_futures[env_cam] = manager.submit_task(env_cam, sec_task, "color")
+            sub_futures[(env_cam, stream_kind)] = manager.submit_task(env_cam, task, stream_kind)
 
         def on_frame(frame_entry: FrameEntry, decoded_frame) -> None:
-            """主相机回调：等待所有副相机 future，合并图像后 add_frame。"""
-            images: dict = {}
+            """主相机回调：等待所有副 future，合并图像后 add_frame。"""
             if decoded_frame is None:
                 _logger.warning(
                     f"[LeRobot] 主相机解码帧为 None "
                     f"(cam={primary_cam}, sim_idx={simulate_index})，丢弃该帧"
                 )
                 return
-            images[camera_map[primary_cam]] = decoded_frame
-            for env_cam in secondary_cams:
-                fut = secondary_futures[env_cam]
+            images: dict = {primary_cam: decoded_frame}
+            for env_cam, stream_kind, image_key in sub_tasks:
+                fut = sub_futures[(env_cam, stream_kind)]
                 try:
-                    sec_decoded = fut.result()
+                    decoded = fut.result()
                 except Exception as e:
                     _logger.warning(
-                        f"[LeRobot] 副相机 future 异常 "
+                        f"[LeRobot] {stream_kind} future 异常 "
                         f"(cam={env_cam}, sim_idx={simulate_index}): {e}，丢弃该帧"
                     )
                     return
-                if sec_decoded is None:
+                if decoded is None:
                     _logger.warning(
-                        f"[LeRobot] 副相机解码帧为 None "
+                        f"[LeRobot] {stream_kind} 解码帧为 None "
                         f"(cam={env_cam}, sim_idx={simulate_index})，丢弃该帧"
                     )
                     return
-                images[camera_map[env_cam]] = sec_decoded
+                images[image_key] = decoded
             writer.add_frame(
                 state=state_prev,
                 action=action,
@@ -632,10 +641,8 @@ class LerobotDataStorage(AbstractDataStorage):
                 task=task_desc,
             )
 
-        # 提交主相机任务（on_frame 内会等待副相机 future）
         primary_task = SingleFrameTask(simulate_index=simulate_index, on_frame=on_frame)
         primary_future = manager.submit_task(primary_cam, primary_task, "color")
-        # 只跟踪主相机 future（副相机 future 由主相机回调内部等待）
         self._lr_pending_futures.append(primary_future)
 
     def save_data(self, env: OrcaGymLocalEnv | None = None, **kwargs) -> None:
@@ -650,10 +657,9 @@ class LerobotDataStorage(AbstractDataStorage):
         """
         if self._lr_writer is None:
             return
-        # 等待所有已提交的 SingleFrameTask 完成（异步回调 add_frame 全部落地）
+        # 等待异步回调 add_frame 全部落地
         self._wait_pending_frames()
-        # 从 LeRobot episode_buffer 获取实际写入的帧数
-        # （被 SingleFrameTask 丢弃的帧不计入）
+        # episode_frame_count 不含被丢弃的帧
         actual_frames = self._lr_writer.episode_frame_count
         if actual_frames < 1:
             _logger.warning(
