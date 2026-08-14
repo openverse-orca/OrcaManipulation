@@ -9,6 +9,7 @@
 1. 请启动 OrcaLab 6.3，并加载与任务对应的布局（`g1_button.json` 或 `g1_tool.json`）。
 2. 请按采集文档配置相机端口并启动仿真（`localhost:50051`）。
 3. 请确认已按仓库根目录 README 执行 `bash scripts/install_runtime.sh`。
+4. 策略服务器需要独立的 **openpi uv 环境**（与本仓库的 `orcalab_lerobot` Conda 环境相互独立）。如尚未完成 openpi 安装与训练，请先阅读 [openpi_deployment.md](openpi_deployment.md) 第 1–8 节完成环境配置、数据准备与训练，再回到本文执行推理。
 
 ---
 
@@ -16,12 +17,19 @@
 
 ### 启动策略服务
 
-请在策略侧的独立终端启动服务（以端口 `8010` 为例）：
+请在 **openpi 工作目录**的独立终端中启动服务（以端口 `8010` 为例），完整命令见 [openpi_deployment.md § 8](openpi_deployment.md#8-启动推理服务)：
 
 ```bash
-python serve_policy.py \
+cd /path/to/openpi
+
+CUDA_VISIBLE_DEVICES=0 \
+XLA_PYTHON_CLIENT_PREALLOCATE=false \
+XLA_PYTHON_CLIENT_ALLOCATOR=platform \
+uv run scripts/serve_policy.py \
     --port 8010 \
-    --checkpoint /path/to/checkpoint
+    policy:checkpoint \
+    --policy.config=<your_config_name> \
+    --policy.dir=checkpoints/<your_config_name>/<exp_name>/<step>
 ```
 
 ### 按钮任务推理
