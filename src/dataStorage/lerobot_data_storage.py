@@ -351,8 +351,6 @@ class LeRobotDatasetWriter:
             本集 episode_index（供日志使用）。
         """
         ep_idx = self._next_ep_idx
-        # save_episode 是 lerobot 公共 API：流式编码下只需 flush 编码器
-        # + 写 parquet + 更新 meta（近瞬时，不阻塞）
         self._dataset.save_episode()
         self._next_ep_idx += 1
         return ep_idx
@@ -360,13 +358,13 @@ class LeRobotDatasetWriter:
     def discard_episode(self) -> None:
         """丢弃本集缓存（任务失败时调用）。
 
-        同步 flush PNG（保证 rmtree 安全）→ 删 PNG 目录 → 用 _next_ep_idx 重置缓冲。
-        _next_ep_idx 不递增（下次重试同一 episode_index）。
+        ``clear_episode_buffer`` 会调用 ``_streaming_encoder.cancel_episode()``
+        删除临时 MP4 + 清空内存队列 + 重置 episode_buffer。
+        ``_next_ep_idx`` 不递增（下次重试同一 episode_index）。
         """
-        # clear_episode_buffer() 是 lerobot 公共 API：flush PNG + rmtree + 重置 buffer
         self._dataset.clear_episode_buffer()
-        # clear_episode_buffer 内部用 meta.total_episodes 创建新缓冲；若
-        # save_episode 尚未执行，meta.total_episodes 可能落后于 _next_ep_idx，需修正。
+        # clear_episode_buffer 重置 buffer 时用 meta.total_episodes 作 episode_index，
+        # 若 save_episode 尚未执行，meta 落后于 _next_ep_idx，需显式修正。
         self._dataset.episode_buffer = self._dataset.create_episode_buffer(
             episode_index=self._next_ep_idx
         )
