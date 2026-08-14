@@ -1,0 +1,57 @@
+# 由 g1_pick_waypoint_calib.py 自动生成  2026-08-13 17:54:24
+# 采样：双 squeeze 记录右臂 7 关节角 q（rad）
+# 共 8 个 waypoint
+
+gripper_open: -0.8
+gripper_close: 2.0
+
+joint_names:
+  - right_shoulder_pitch_joint
+  - right_shoulder_roll_joint
+  - right_shoulder_yaw_joint
+  - right_elbow_joint
+  - right_wrist_roll_joint
+  - right_wrist_pitch_joint
+  - right_wrist_yaw_joint
+
+waypoints:
+  # waypoint 1  录制时间: 2026-08-13 17:53:51.547  # 接近位（夹爪 open）
+  - q: [0.3135, -0.6472, -0.4984, -0.3265, -0.5605, -0.1509, 0.2046]
+    gripper_r: open
+    # R_arm(deg) pitch=+18.0 roll=-37.1 yaw=-28.6 elbow=-18.7
+
+  # waypoint 2  录制时间: 2026-08-13 17:53:57.731  # 抓取闭爪位（夹爪 close）
+  - q: [-0.2983, -0.9512, 0.2215, 0.5725, -0.5825, -0.1493, 0.5381]
+    gripper_r: open
+    # R_arm(deg) pitch=-17.1 roll=-54.5 yaw=+12.7 elbow=+32.8
+
+  # waypoint 3  录制时间: 2026-08-13 17:54:01.305  # 箱上方（夹爪 close）
+  - q: [-0.3389, -0.9244, 0.2751, 0.6568, -0.6164, -0.1235, 0.5176]
+    gripper_r: close
+    # R_arm(deg) pitch=-19.4 roll=-53.0 yaw=+15.8 elbow=+37.6
+
+  # waypoint 4  录制时间: 2026-08-13 17:54:03.437  # 箱上松开位（夹爪 open）
+  - q: [-0.2293, -1.0706, -0.3300, -0.1916, -0.2422, 0.0891, 0.5911]
+    gripper_r: close
+    # R_arm(deg) pitch=-13.1 roll=-61.3 yaw=-18.9 elbow=-11.0
+
+  # waypoint 5  录制时间: 2026-08-13 17:54:05.035
+  - q: [-1.0644, -0.1482, 0.3213, -0.1102, -0.5602, 0.3025, 0.5664]
+    gripper_r: close
+    # R_arm(deg) pitch=-61.0 roll=-8.5 yaw=+18.4 elbow=-6.3
+
+  # waypoint 6  录制时间: 2026-08-13 17:54:07.208
+  - q: [-1.1659, 0.3389, 0.5467, 0.7750, -0.5868, 0.1048, 0.2412]
+    gripper_r: close
+    # R_arm(deg) pitch=-66.8 roll=+19.4 yaw=+31.3 elbow=+44.4
+
+  # waypoint 7  录制时间: 2026-08-13 17:54:08.659
+  - q: [-1.1612, 0.3440, 0.5454, 0.7546, -0.5888, 0.1455, 0.2035]
+    gripper_r: open
+    # R_arm(deg) pitch=-66.5 roll=+19.7 yaw=+31.3 elbow=+43.2
+
+  # waypoint 8  录制时间: 2026-08-13 17:54:13.872
+  - q: [-0.6975, -0.2793, 0.0657, 0.0144, -0.2893, 0.1376, 0.1691]
+    gripper_r: open
+    # R_arm(deg) pitch=-40.0 roll=-16.0 yaw=+3.8 elbow=+0.8
+

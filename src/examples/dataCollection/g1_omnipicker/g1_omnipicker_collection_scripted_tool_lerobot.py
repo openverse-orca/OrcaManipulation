@@ -1161,15 +1161,15 @@ def main() -> None:
     # 单位均为「帧」（1/fps 秒）；内部按 env.dt 自动放大为控制步。
     # 默认偏快：抓取仍留足沉降；放箱侧（尤其经由/松开，wp 几乎重合）尽量压缩。
     parser.add_argument(
-        "--steps_transit", type=int, default=90,
+        "--steps_transit", type=int, default=50,
         help="高位过渡帧数（默认90；内部按 env.dt 放大为控制步）",
     )
     parser.add_argument(
-        "--steps_descend", type=int, default=110,
+        "--steps_descend", type=int, default=30,
         help="垂直下降帧数（默认110；内部按 env.dt 放大为控制步）",
     )
     parser.add_argument(
-        "--steps_grasp", type=int, default=55,
+        "--steps_grasp", type=int, default=35,
         help="移到抓取点帧数（默认55；内部按 env.dt 放大为控制步）",
     )
     parser.add_argument(
@@ -1177,31 +1177,31 @@ def main() -> None:
         help="抓取点沉降+闭爪驻留帧数（默认75；内部按 env.dt 放大为控制步）",
     )
     parser.add_argument(
-        "--steps_lift", type=int, default=70,
+        "--steps_lift", type=int, default=35,
         help="抬升帧数（默认70；内部按 env.dt 放大为控制步）",
     )
     parser.add_argument(
         "--steps_place_via",
         type=int,
-        default=35,
+        default=45,
         help="6 点模式：两条放箱经由段各自帧数（默认35≈1.8s@20fps；内部按 env.dt 放大；4 点 YAML 忽略）",
     )
     parser.add_argument(
-        "--steps_to_box", type=int, default=70,
+        "--steps_to_box", type=int, default=50,
         help="移到工具箱上方帧数（默认70；内部按 env.dt 放大为控制步）",
     )
     parser.add_argument(
         "--steps_release",
         type=int,
-        default=40,
+        default=45,
         help="闭爪逼近松开位帧数（默认40；内部按 env.dt 放大；当前 wp 箱上/松开几乎重合）",
     )
     parser.add_argument(
-        "--steps_release_settle", type=int, default=30,
+        "--steps_release_settle", type=int, default=20,
         help="松开位沉降+张开驻留帧数（默认55；内部按 env.dt 放大为控制步）",
     )
     parser.add_argument(
-        "--steps_lift_after", type=int, default=55,
+        "--steps_lift_after", type=int, default=15,
         help="放置后抬升帧数（默认55；内部按 env.dt 放大为控制步）",
     )
     parser.add_argument(
@@ -1504,6 +1504,8 @@ def main() -> None:
     cam_shape = (3, cam_hw[0], cam_hw[1])
     orca_logger.info(f"相机分辨率 {cam_hw[0]}x{cam_hw[1]}，fps={args.fps}")
 
+    orca_logger.info("正在初始化数据集写入器（LeRobotDatasetWriter）...")
+    print("  正在初始化数据集写入器，请稍候...", flush=True)
     writer = LeRobotDatasetWriter.create(
         repo_id=args.repo_id,
         root=lerobot_out,
@@ -1525,6 +1527,8 @@ def main() -> None:
         task=args.task,
         clock=args.clock,
     )
+    orca_logger.info("数据集写入器初始化完成，即将开始采集")
+    print("  数据集写入器初始化完成，即将开始采集", flush=True)
 
     orca_logger.info(f"开始采集，共 {num_episodes} 轮，任务: {args.task}，输出: {lerobot_out}")
 
