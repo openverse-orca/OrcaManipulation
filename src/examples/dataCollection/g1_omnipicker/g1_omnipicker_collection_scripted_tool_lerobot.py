@@ -515,7 +515,6 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
         r_quat_xyzw: np.ndarray,
         l_grip_motor: np.ndarray,
         r_grip_motor: np.ndarray,
-        seg_bounds=None,
         place_arm_at=None,
         box_bottom=None,
         base_body_query: str | None = None,
@@ -542,8 +541,6 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
         self.l_grip_motor = l_grip_motor
         self.r_grip_motor = r_grip_motor
         self.t = 0
-        # 段边界诊断：{step_index: (label, commanded_r_target_b)}
-        self.seg_bounds = seg_bounds or {}
         # 入箱监视：该工具全部路点结束步 → tool_idx
         self.place_arm_at = place_arm_at or {}  # {step: tool_idx}
         self.box_bottom = box_bottom
@@ -713,25 +710,6 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
                 still_active.append(w)
         self._place_watchers = still_active
 
-    def _log_tracking(self, step_idx):
-        """查询右臂末端实际 base 系位置，与命令目标对比，打印跟踪误差。"""
-        label, cmd = self.seg_bounds[step_idx]
-        try:
-            ee_b = self.r_arm.env.query_site_pos_and_quat_B(
-                [self.r_arm.ee_name], [self.r_arm.base_link]
-            )
-            actual = np.asarray(ee_b[self.r_arm.ee_name]["xpos"], dtype=np.float64)
-            cmd = np.asarray(cmd, dtype=np.float64)
-            err = actual - cmd
-            err_norm = float(np.linalg.norm(err))
-            orca_logger.info(
-                f"[跟踪诊断] {label} @step{step_idx} | "
-                f"命令={cmd.round(4).tolist()} 实际={actual.round(4).tolist()} "
-                f"误差={err.round(4).tolist()} |误差|={err_norm * 1000:.1f}mm"
-            )
-        except Exception as e:
-            orca_logger.warning(f"[跟踪诊断] {label} 查询失败: {e}")
-
     def update(self):
         if self.t >= len(self.l_pos):
             return
@@ -746,8 +724,6 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
         if self.place_failed:
             self.t = len(self.l_pos)
             return
-        if self.t in self.seg_bounds:
-            self._log_tracking(self.t)
         self.l_arm.update_action_position(self.l_pos[self.t])
         self.l_arm.update_action_axisangle(self.l_quat_xyzw[self.t])
         self.r_arm.update_action_position(self.r_pos[self.t])
@@ -949,18 +925,36 @@ _SLOT4_IDX = 3
 _SLOT4_WRENCH_GRASP_DY = 0.008  # Y +8 mm
 _SLOT4_WRENCH_GRASP_DZ = -0.035  # Z -35 mm
 
+# 电工刀(左) 默认路点闭爪时 EE 实际比命令高约 30mm，夹空后掉到箱外。
+_KNIFE_L_IDX = 2
+_TOOL3_GRASP_DZ = -0.015  # Z -15 mm
+_TOOL3_GRASP_DY = -0.02  # 往手电筒方向（y 减小）偏右 10 mm
 
-def _bias_grasp_waypoints(
-    tool_spec: dict, dy: float = 0.0, dz: float = 0.0
+
+def _bias_waypoints(
+    tool_spec: dict,
+    dy: float = 0.0,
+    dz: float = 0.0,
+    wp_indices: tuple[int, ...] = (0, 1),
 ) -> dict:
-    """仅平移 wp0/wp1 的 y/z（放箱路点不变）。"""
+    """平移指定路点的 y/z。"""
     out = _copy_tool_spec(tool_spec)
-    for wp_idx in (0, 1):
+    n = len(out["waypoints"])
+    for wp_idx in wp_indices:
+        if wp_idx < 0 or wp_idx >= n:
+            continue
         pos = list(out["waypoints"][wp_idx]["pos"])
         pos[1] = float(pos[1]) + float(dy)
         pos[2] = float(pos[2]) + float(dz)
         out["waypoints"][wp_idx]["pos"] = pos
     return out
+
+
+def _bias_grasp_waypoints(
+    tool_spec: dict, dy: float = 0.0, dz: float = 0.0
+) -> dict:
+    """仅平移 wp0/wp1 的 y/z（放箱路点不变）。"""
+    return _bias_waypoints(tool_spec, dy=dy, dz=dz, wp_indices=(0, 1))
 
 
 def _bias_grasp_waypoints_y(tool_spec: dict, dy: float) -> dict:
@@ -1158,7 +1152,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--num_tools", type=int, default=5,
-        help="本集实际抓取的工具数量（默认5；调试时可设 1 只验证第一把）",
+        help="本集实际抓取的工具数量（默认5；调试时可设 1 只验证第一把）。被 --tools 覆盖",
+    )
+    parser.add_argument(
+        "--tools", type=str, default="",
+        help="要抓的工具编号，1-based，逗号分隔（如 3 或 1,3）。空=按 --num_tools 取前 N 把",
     )
     # 单位均为「帧」（1/fps 秒）；内部按 env.dt 自动放大为控制步。
     # 默认偏快：抓取仍留足沉降；放箱侧（尤其经由/松开，wp 几乎重合）尽量压缩。
@@ -1175,7 +1173,7 @@ def main() -> None:
         help="移到抓取点帧数（默认55；内部按 env.dt 放大为控制步）",
     )
     parser.add_argument(
-        "--steps_settle", type=int, default=75,
+        "--steps_settle", type=int, default=30,
         help="抓取点沉降+闭爪驻留帧数（默认75；内部按 env.dt 放大为控制步）",
     )
     parser.add_argument(
@@ -1199,7 +1197,7 @@ def main() -> None:
         help="闭爪逼近松开位帧数（默认40；内部按 env.dt 放大；当前 wp 箱上/松开几乎重合）",
     )
     parser.add_argument(
-        "--steps_release_settle", type=int, default=55,
+        "--steps_release_settle", type=int, default=30,
         help="松开位沉降+张开驻留帧数（默认55；内部按 env.dt 放大为控制步）",
     )
     parser.add_argument(
@@ -1391,18 +1389,37 @@ def main() -> None:
     )
 
     traj_speed = max(0.1, float(args.speed))
-    num_tools = int(np.clip(args.num_tools, 1, 5))
+    tool_select: list[int] | None = None
+    if str(args.tools).strip():
+        raw = [int(x.strip()) for x in str(args.tools).split(",") if x.strip()]
+        bad = [n for n in raw if n < 1 or n > 5]
+        if not raw or bad:
+            orca_logger.error(f"--tools 必须是 1..5 的编号，收到 {args.tools!r}")
+            env.close()
+            return
+        tool_select = [n - 1 for n in raw]  # 1-based → 0-based
+    num_tools = (
+        len(tool_select) if tool_select is not None
+        else int(np.clip(args.num_tools, 1, 5))
+    )
 
     def _ctrl_steps(frames: int) -> int:
         """轨迹帧数（1/fps）→ 控制步数：按 env.dt 放大，再按 speed 提速。"""
         return max(1, int(round(float(frames) * steps_scale / traj_speed)))
 
-    if traj_speed != 1.0 or num_tools != 5:
+    pick_names = (
+        [_TOOL_NAMES[i] for i in tool_select]
+        if tool_select is not None
+        else _TOOL_NAMES[:num_tools]
+    )
+    if traj_speed != 1.0 or num_tools != 5 or tool_select is not None:
         orca_logger.info(
-            f"[轨迹] speed={traj_speed:.2f}x，抓取工具数={num_tools}/5"
+            f"[轨迹] speed={traj_speed:.2f}x，抓取 {num_tools}/5 把："
+            f"{' → '.join(pick_names)}"
         )
         print(
-            f"  [轨迹] speed={traj_speed:.2f}x | 抓取 {num_tools}/5 把工具",
+            f"  [轨迹] speed={traj_speed:.2f}x | "
+            f"抓取 {' → '.join(pick_names)}",
             flush=True,
         )
 
@@ -1653,6 +1670,35 @@ def main() -> None:
                     flush=True,
                 )
 
+                # 电工刀(左)：接近/抓取 wp0、wp1 同时下探并往手电筒方向偏。
+                k_before = [
+                    list(episode_tool_data[_KNIFE_L_IDX]["waypoints"][i]["pos"])
+                    for i in (0, 1)
+                ]
+                episode_tool_data[_KNIFE_L_IDX] = _bias_waypoints(
+                    episode_tool_data[_KNIFE_L_IDX],
+                    dy=_TOOL3_GRASP_DY,
+                    dz=_TOOL3_GRASP_DZ,
+                    wp_indices=(0, 1),
+                )
+                k_after = [
+                    list(episode_tool_data[_KNIFE_L_IDX]["waypoints"][i]["pos"])
+                    for i in (0, 1)
+                ]
+                orca_logger.info(
+                    f"[电工刀(左)偏置] wp0/wp1 "
+                    f"y += {_TOOL3_GRASP_DY*1000:.1f}mm（向手电筒） "
+                    f"z += {_TOOL3_GRASP_DZ*1000:.1f}mm "
+                    f"wp0 {k_before[0]}→{k_after[0]} "
+                    f"wp1 {k_before[1]}→{k_after[1]}"
+                )
+                print(
+                    f"  [电工刀(左)偏置] wp0/wp1 "
+                    f"y {_TOOL3_GRASP_DY*1000:+.1f}mm（向手电筒） "
+                    f"z {_TOOL3_GRASP_DZ*1000:+.1f}mm",
+                    flush=True,
+                )
+
                 # 槽位 4 扳手抓取路点补偿。
                 if int(slot_for_tool.get(_WRENCH_IDX, -1)) == _SLOT4_IDX:
                     w_before = episode_tool_data[_WRENCH_IDX]["waypoints"][1]["pos"]
@@ -1688,7 +1734,10 @@ def main() -> None:
                 cum_steps = 0
                 last_release_quat = None
                 last_release_pos = None
-                active_order = grasp_order[:num_tools]
+                if tool_select is not None:
+                    active_order = [i for i in tool_select if i in grasp_order]
+                else:
+                    active_order = grasp_order[:num_tools]
                 for slot_idx, tool_idx in enumerate(active_order):
                     td = episode_tool_data[tool_idx]
                     tool_segs = _build_tool_segments(
@@ -1797,14 +1846,6 @@ def main() -> None:
                     flush=True,
                 )
 
-                # ── 段边界诊断表 ────────────────────────────────────────────
-                seg_bounds = {}
-                cum = 0
-                for s in all_segments:
-                    cum += int(s["steps"])
-                    last_idx = cum - 1
-                    seg_bounds[last_idx] = (s["label"], list(s["r_target_b"]))
-
                 # ── 离线预构建完整轨迹 ──────────────────────────────────────
                 l_pos, l_quat, r_pos, r_quat_traj, l_gm, r_gm = (
                     scripted.build_segmented_trajectory(
@@ -1815,7 +1856,6 @@ def main() -> None:
                 device = G1ScriptedTrajectoryDevice(
                     l_arm, r_arm, l_grip, r_grip, task_status,
                     l_pos, l_quat, r_pos, r_quat_traj, l_gm, r_gm,
-                    seg_bounds=seg_bounds,
                     place_arm_at=place_arm_at if box_bottom is not None else None,
                     box_bottom=box_bottom,
                     base_body_query=base_body,

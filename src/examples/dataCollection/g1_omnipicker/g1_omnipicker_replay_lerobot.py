@@ -94,7 +94,6 @@ class G1ParquetReplayDevice(AbstractDevice):
     def __init__(
         self, l_arm, r_arm, l_grip, r_grip, task_status, data, steps_per_frame,
         lock_left_arm: bool = True,
-        track_log_every: int = 1,
         cmd_bias_b: np.ndarray | None = None,
         cmd_bias_z_below: float = 0.25,
         sync_nullspace: bool = True,
@@ -111,7 +110,6 @@ class G1ParquetReplayDevice(AbstractDevice):
         self.steps_per_frame = max(1, steps_per_frame)
         self.n_frames = data["n_frames"]
         self.lock_left_arm = bool(lock_left_arm)
-        self.track_log_every = max(0, int(track_log_every))
         # 近桌高度条件下为右臂目标添加基座坐标系偏移。
         self.cmd_bias_b = np.zeros(3, dtype=np.float64)
         if cmd_bias_b is not None:
@@ -161,58 +159,6 @@ class G1ParquetReplayDevice(AbstractDevice):
                 [_L_GRIP_OPEN_MOTOR, _L_GRIP_OPEN_MOTOR], dtype=np.float32
             )
 
-    def _query_actual_ee_b(self):
-        """查询左右臂末端在基座坐标系下的位置；失败返回 (None, None)。"""
-        try:
-            env = self.r_arm.env
-            # 与 _query_ee_b 一致：base 列表只传一次（重复同名会触发 body not found）
-            ee_b = env.query_site_pos_and_quat_B(
-                [self.l_arm.ee_name, self.r_arm.ee_name],
-                [self.r_arm.base_link],
-            )
-            l_act = np.asarray(ee_b[self.l_arm.ee_name]["xpos"], dtype=np.float64)
-            r_act = np.asarray(ee_b[self.r_arm.ee_name]["xpos"], dtype=np.float64)
-            return l_act, r_act
-        except Exception as e:
-            orca_logger.warning(f"[跟踪] 查询 EE 失败: {e}")
-            return None, None
-
-    def _log_tracking(self, frame: int, sub: int):
-        """比较末端位置与 parquet 目标，并打印 OSC 前馈目标。"""
-        if self._cmd_r_pos is None:
-            return
-        _, r_act = self._query_actual_ee_b()
-        if r_act is None:
-            return
-        cmd = np.asarray(self._cmd_r_pos, dtype=np.float64)
-        ff = (
-            np.asarray(self._cmd_r_pos_ff, dtype=np.float64)
-            if self._cmd_r_pos_ff is not None
-            else cmd
-        )
-        err = r_act - cmd
-        err_ff = r_act - ff
-        err_mm = float(np.linalg.norm(err) * 1000.0)
-        bias_mm = (self._applied_bias * 1000.0).round(1)
-        integ = self.r_arm.get_integral_bias_b()
-        corrected = self.r_arm.get_last_corrected_b()
-        corr_str = (
-            f" 积分偏置={integ.round(4).tolist()} "
-            f"积分修正={np.asarray(corrected).round(4).tolist()}"
-            if corrected is not None
-            else f" 积分偏置={integ.round(4).tolist()}"
-        )
-        msg = (
-            f"[跟踪] frame={frame:04d}/{self.n_frames} sub={sub}/{self.steps_per_frame} | "
-            f"原始={cmd.round(4).tolist()} 下发={ff.round(4).tolist()} "
-            f"实际={r_act.round(4).tolist()} "
-            f"对原始 dz={err[2]*1000:+.1f}mm 对下发 dz={err_ff[2]*1000:+.1f}mm "
-            f"|err原始|={err_mm:.1f}mm 本帧前馈={bias_mm.tolist()}mm"
-            f"{corr_str}"
-        )
-        orca_logger.info(msg)
-        print(msg, flush=True)
-
     def _apply_grasp_integral_gate(self, r_pos_raw: np.ndarray) -> None:
         """近桌高度开启外环积分；上升沿清零，离开近桌后关闭并清零。"""
         if not self.grasp_integral:
@@ -247,27 +193,12 @@ class G1ParquetReplayDevice(AbstractDevice):
         self._call_count += 1
         frame = call // self.steps_per_frame
         if frame >= self.n_frames:
-            # 越界首拍：上一帧（末帧）已跑满 steps_per_frame，补打跟踪
-            if (
-                self._frame_idx >= 0
-                and self.track_log_every > 0
-                and self._frame_idx % self.track_log_every == 0
-            ):
-                self._log_tracking(self._frame_idx, self.steps_per_frame)
-                self._frame_idx = -1  # 只打一次
             if self.task_status.current_status == TaskStatus.RUNNING:
                 self.task_status.update_task_status(True)
             return
         if call == 0:
             self.task_status.update_task_status(True)
         if frame != self._frame_idx:
-            # 换帧前：上一帧已跑满 steps_per_frame，打跟踪
-            if self._frame_idx >= 0:
-                if (
-                    self.track_log_every > 0
-                    and self._frame_idx % self.track_log_every == 0
-                ):
-                    self._log_tracking(self._frame_idx, self.steps_per_frame)
             self._frame_idx = frame
             if self.sync_nullspace and np.any(self.cmd_bias_b != 0.0):
                 self._sync_nullspace()
@@ -344,10 +275,6 @@ def main() -> None:
     parser.add_argument(
         "--kp", type=float, default=200.0,
         help="OSC 阻抗刚度 kp（推荐 200；范围约 1~300；kd=2√kp 临界阻尼）",
-    )
-    parser.add_argument(
-        "--track_log_every", type=int, default=1,
-        help="每 N 个 parquet 帧打印一次末端位置与数据目标的比较；0 表示关闭",
     )
     parser.add_argument(
         "--cmd_bias_x", type=float, default=0.0,
@@ -485,6 +412,7 @@ def main() -> None:
     )
     env = manager.env
     manager.save_video = False
+    manager.mode = manager.DataCollectionMode.INFERENCE
 
     # ── 首次初始化（严格按数采顺序）────────────────────────────────────
     orca_logger.info("=== 首次初始化（同数采：reset → update_scene → set_default）===")
@@ -610,9 +538,11 @@ def main() -> None:
                 orca_logger.info("update_scene 失败，停止")
                 break
 
+            scene_manager.show_ui_message(1, "回放中...", "0x00bfff", showtime=0)
+
             env.set_default_joint_values(default_joint_values)
 
-            # ── 每集控制侧（同推理）────────────────────────────────────
+            # ── 每集控制侧（同回放）────────────────────────────────────
             env.mj_forward()
             manager.set_init_ctrl()
             env.set_ctrl(manager.ctrl)
@@ -659,7 +589,6 @@ def main() -> None:
                 l_arm=l_arm, r_arm=r_arm, l_grip=l_grip, r_grip=r_grip,
                 task_status=task_status, data=ep_data, steps_per_frame=spf,
                 lock_left_arm=True,
-                track_log_every=args.track_log_every,
                 cmd_bias_b=cmd_bias_b,
                 cmd_bias_z_below=args.cmd_bias_z_below,
                 sync_nullspace=args.sync_nullspace,
