@@ -238,3 +238,17 @@ python -u g1_pick_collection_scripted_button_lerobot.py \
 **现象**：关节名报错。**原因**：机器人前缀与场景不一致。**处理**：请确认布局中的机器人名称，并在启动命令中将 `--agent_name` 设为相同值（默认为 `unitree_humanoid_robot_1`）。
 
 **现象**：手柄已连接但机器人不动。**原因**：尚未开始当前集。**处理**：请轻按左手柄 squeeze 开始采集。
+
+**现象**：进入头显后弹出「房间标定」向导，无法进入 VR 页面。**原因**：Pico 系统的 `com.pvr.roomcapture` 未禁用。**处理**：请在头显中退出房间标定界面，然后在电脑终端执行（每台 Pico 只需做一次，恢复出厂后需重做）：
+
+```bash
+adb shell pm disable-user --user 0 com.pvr.roomcapture
+```
+
+禁用后重新进入头显浏览器，按正常流程打开 `http://127.0.0.1:8012/`。
+
+**现象**：按左手柄 squeeze 毫无反应，终端也无任何日志。**原因**：8012 端口已被上一次未退出干净的脚本或其他进程占用，TeleVuer 服务器实际未启动。**处理**：请先释放端口，再重新启动数采脚本：
+
+```bash
+fuser -k 8012/tcp
+```
