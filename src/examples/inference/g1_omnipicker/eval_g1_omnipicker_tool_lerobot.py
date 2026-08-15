@@ -684,6 +684,7 @@ def main():
             while step < args.max_steps and not truncated and not _interrupt.is_set():
                 # state 由本体感知构造，与采集数据集 observation.state 一致。
                 state = storage.build_state(storage.obs_callback(env))
+                action_chunk = policy_runner.infer_action_chunk(state)
 
                 for model_action in action_chunk:
                     if step >= args.max_steps or truncated or _interrupt.is_set():
