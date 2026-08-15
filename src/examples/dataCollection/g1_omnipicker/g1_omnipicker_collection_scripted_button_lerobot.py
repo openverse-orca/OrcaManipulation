@@ -31,12 +31,17 @@ from controllers.controllers import (
 )
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from dataStorage.lerobot_camera import (
-    DEFAULT_CAMERA_MAP,
     DEFAULT_HW,
     bring_up_cameras,
     close_cameras,
     probe_camera_hw,
 )
+
+# 本机 OrcaStudio 只开了两路：7070 右腕、7080 头部（不再等 7090 / 左腕）。
+BUTTON_CAMERA_MAP = {
+    "camera_head_color": ("cam_head", 7080),
+    "camera_wrist_r_color": ("cam_wrist_r", 7070),
+}
 from dataStorage.lerobot_data_storage import G1OmniPickerLeRobotStorage, LeRobotDatasetWriter
 from devices.abstract_device import AbstractDevice
 from orca_gym.log.orca_log import OrcaLog, get_orca_logger
@@ -135,13 +140,27 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
 # 阻塞式终端询问四色集数
 # ---------------------------------------------------------------------------
 
-def _prompt_counts(fallback: dict[str, int]) -> dict[str, int] | None:
-    """终端阻塞式询问红/绿/黄/蓝四色各采集集数。
+def _parse_counts(text: str) -> dict[str, int] | None:
+    parts = [p.strip() for p in text.split(",")]
+    if len(parts) != 4:
+        return None
+    out: dict[str, int] = {}
+    for color, raw in zip(_COLOR_ORDER, parts):
+        if not raw or len(raw) > 4 or not raw.isdigit():
+            return None
+        out[color] = int(raw)
+    return out
 
-    - TTY 模式：打印盒式 UI，逐色读取非负整数，Ctrl+C 返回 None（退出）。
-    - 非 TTY（管道/CI）：直接使用 fallback（来自 --counts 参数）。
-    返回 None 表示用户取消退出。
-    """
+
+def _print_counts_plan(counts: dict[str, int]) -> None:
+    total = sum(counts.values())
+    print("  本次采集计划：", flush=True)
+    for c in _COLOR_ORDER:
+        print(f"    {_COLOR_NAMES[c]:>3}色按钮：{counts[c]:>4} 集", flush=True)
+    print(f"    {'合计':>5}：{total:>4} 集", flush=True)
+
+
+def _prompt_counts(fallback: dict[str, int]) -> dict[str, int] | None:
     if not sys.stdin.isatty():
         total = sum(fallback.values())
         print(
@@ -165,7 +184,7 @@ def _prompt_counts(fallback: dict[str, int]) -> dict[str, int] | None:
     print(f"\n{'═' * W}", flush=True)
     print("  按钮采集数量设置（Ctrl+C 退出）", flush=True)
     print(f"{'─' * W}", flush=True)
-    print("  请依次输入红/绿/黄/蓝按钮各需采集的集数（非负整数）。", flush=True)
+    print("  请依次输入红/绿/黄/蓝按钮各需采集的集数（0–9999）。", flush=True)
     print("  四色将随机打乱后依次执行，保证训练数据均匀。", flush=True)
     print(f"{'═' * W}", flush=True)
 
@@ -175,14 +194,14 @@ def _prompt_counts(fallback: dict[str, int]) -> dict[str, int] | None:
         while True:
             try:
                 raw = input(f"  {cname}按钮集数 > ").strip()
-                val = int(raw)
-                if val < 0:
+                if len(raw) > 4:
+                    print("  ✗ 最多 4 位数字（0–9999）", flush=True)
+                    continue
+                if not raw.isdigit():
                     print("  ✗ 请输入非负整数", flush=True)
                     continue
-                counts[color] = val
+                counts[color] = int(raw)
                 break
-            except ValueError:
-                print("  ✗ 请输入整数", flush=True)
             except (KeyboardInterrupt, EOFError):
                 aborted = True
                 print("\n  ⚠ 收到中断，退出采集...", flush=True)
@@ -201,10 +220,7 @@ def _prompt_counts(fallback: dict[str, int]) -> dict[str, int] | None:
 
     total = sum(counts.values())
     print(f"{'─' * W}", flush=True)
-    print("  本次采集计划：", flush=True)
-    for c in _COLOR_ORDER:
-        print(f"    {_COLOR_NAMES[c]:>3}色按钮：{counts[c]:>4} 集", flush=True)
-    print(f"    {'合计':>5}：{total:>4} 集", flush=True)
+    _print_counts_plan(counts)
     print(f"{'═' * W}\n", flush=True)
 
     if total == 0:
@@ -296,8 +312,8 @@ def main() -> None:
     parser.add_argument(
         "--counts",
         type=str,
-        default="5,5,5,5",
-        help="非交互模式：红,绿,黄,蓝各采集集数（逗号分隔，默认 5,5,5,5）",
+        default=None,
+        help="红,绿,黄,蓝各采集集数（逗号分隔，例如 1,0,0,0）。给出后不再询问。",
     )
     parser.add_argument(
         "--shuffle_seed",
@@ -335,27 +351,28 @@ def main() -> None:
     approach_back: float = float(cand_spec.get("approach_back", 0.12))
     buttons: dict = cand_spec["buttons"]
 
-    # ── 解析 --counts 供非 TTY 回退 ────────────────────────────────────────
-    try:
-        raw_counts = [int(x.strip()) for x in args.counts.split(",")]
-        if len(raw_counts) != 4:
-            raise ValueError
-        fallback_counts = dict(zip(_COLOR_ORDER, raw_counts))
-    except Exception:
-        orca_logger.error("--counts 格式错误，应为 R,G,Y,B 四个非负整数，例如 5,5,5,5")
-        return
-
-    # ── 阻塞式询问（启动最前面，场景加载前，确保终端无其它日志干扰）────────
     print("=" * 62, flush=True)
     print("  G1 OmniPicker 四色按钮自动化采集", flush=True)
     print(f"  候选文件: {cand_path}", flush=True)
     print(f"  输出目录: {os.path.abspath(os.path.expanduser(args.lerobot_out))}", flush=True)
     print("=" * 62, flush=True)
 
-    counts = _prompt_counts(fallback_counts)
-    if counts is None:
-        print("[退出] 用户取消，程序退出", flush=True)
-        return
+    if args.counts is not None:
+        counts = _parse_counts(args.counts)
+        if counts is None:
+            orca_logger.error("--counts 格式错误，应为 R,G,Y,B 四个 0–9999 的整数，例如 1,0,0,0")
+            return
+        print("", flush=True)
+        _print_counts_plan(counts)
+        print("", flush=True)
+        if sum(counts.values()) == 0:
+            print("[退出] 总集数为 0，无需采集", flush=True)
+            return
+    else:
+        counts = _prompt_counts({"red": 5, "green": 5, "yellow": 5, "blue": 5})
+        if counts is None:
+            print("[退出] 用户取消，程序退出", flush=True)
+            return
 
     # ── 生成随机打乱的颜色序列 ─────────────────────────────────────────────
     color_seq: list[str] = []
@@ -473,7 +490,7 @@ def main() -> None:
     # ── 相机初始化 ──────────────────────────────────────────────────────────
     cameras: dict = {}
     cam_hw = DEFAULT_HW
-    camera_map = DEFAULT_CAMERA_MAP
+    camera_map = dict(BUTTON_CAMERA_MAP)
 
     try:
         os.makedirs(STREAM_TRIGGER_PATH, exist_ok=True)

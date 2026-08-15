@@ -2,9 +2,9 @@
     "version": "3.0",
     "viewport_camera_transform": {
         "position": [
-            19.496244430541992,
-            -24.229665756225586,
-            2.459800958633423
+            18.959060668945312,
+            -24.213773727416992,
+            2.787480592727661
         ],
         "rotation": [
             0.9538427417785791,
@@ -324,7 +324,7 @@
             "transform": {
                 "position": [
                     18.91224479675293,
-                    -23.007061004638672,
+                    -23.007036209106445,
                     0.2026619017124176
                 ],
                 "rotation": [
@@ -335,7 +335,215 @@
                 ],
                 "scale": 1.0
             },
-            "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/g1_omnipicker_usda"
+            "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/g1_omnipicker_usda",
+            "entity_overrides": [
+                {
+                    "entity_path": [],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.y",
+                                    "value": -22.950000762939453,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 1
+                        },
+                        {
+                            "name": "robot_holder1",
+                            "index": 0
+                        },
+                        {
+                            "name": "robot_holder1",
+                            "index": 0
+                        },
+                        {
+                            "name": "body_link1",
+                            "index": 3
+                        },
+                        {
+                            "name": "body_link2",
+                            "index": 2
+                        },
+                        {
+                            "name": "head_link1",
+                            "index": 3
+                        },
+                        {
+                            "name": "head_link2",
+                            "index": 0
+                        },
+                        {
+                            "name": "camera_head_body1",
+                            "index": 3
+                        },
+                        {
+                            "name": "camera_head_body2",
+                            "index": 1
+                        },
+                        {
+                            "name": "cameras",
+                            "index": 0
+                        },
+                        {
+                            "name": "camera_head",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "IsRecording",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "ColorPort",
+                                    "value": 7080,
+                                    "type": "int"
+                                },
+                                {
+                                    "name": "DepthPort",
+                                    "value": 7081,
+                                    "type": "int"
+                                },
+                                {
+                                    "name": "Enable",
+                                    "value": true,
+                                    "type": "bool"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 1
+                        },
+                        {
+                            "name": "robot_holder1",
+                            "index": 0
+                        },
+                        {
+                            "name": "robot_holder1",
+                            "index": 0
+                        },
+                        {
+                            "name": "body_link1",
+                            "index": 3
+                        },
+                        {
+                            "name": "body_link2",
+                            "index": 2
+                        },
+                        {
+                            "name": "arm_r_link1",
+                            "index": 2
+                        },
+                        {
+                            "name": "arm_r_link2",
+                            "index": 1
+                        },
+                        {
+                            "name": "arm_r_link3",
+                            "index": 1
+                        },
+                        {
+                            "name": "arm_r_link4",
+                            "index": 1
+                        },
+                        {
+                            "name": "arm_r_link5",
+                            "index": 2
+                        },
+                        {
+                            "name": "arm_r_link6",
+                            "index": 0
+                        },
+                        {
+                            "name": "arm_r_end_link",
+                            "index": 2
+                        },
+                        {
+                            "name": "camera_right_body1",
+                            "index": 0
+                        },
+                        {
+                            "name": "camera_right_body2",
+                            "index": 0
+                        },
+                        {
+                            "name": "cameras",
+                            "index": 0
+                        },
+                        {
+                            "name": "camera_right",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "IsRecording",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "Enable",
+                                    "value": true,
+                                    "type": "bool"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
         }
     ]
 }

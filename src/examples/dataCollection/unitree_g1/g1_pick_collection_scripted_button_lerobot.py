@@ -1250,6 +1250,26 @@ class G1PickQScriptedDevice(AbstractDevice):
 # 终端询问 / 轨迹构建
 # ---------------------------------------------------------------------------
 
+def _parse_counts(text: str) -> dict[str, int] | None:
+    parts = [p.strip() for p in text.split(",")]
+    if len(parts) != 4:
+        return None
+    out: dict[str, int] = {}
+    for color, raw in zip(_COLOR_ORDER, parts):
+        if not raw or len(raw) > 4 or not raw.isdigit():
+            return None
+        out[color] = int(raw)
+    return out
+
+
+def _print_counts_plan(counts: dict[str, int]) -> None:
+    total = sum(counts.values())
+    print("  本次采集计划：", flush=True)
+    for c in _COLOR_ORDER:
+        print(f"    {_COLOR_NAMES[c]:>3}按钮：{counts[c]:>4} 集", flush=True)
+    print(f"    {'合计':>5}：{total:>4} 集", flush=True)
+
+
 def _prompt_counts(fallback: dict[str, int]) -> dict[str, int] | None:
     if not sys.stdin.isatty():
         total = sum(fallback.values())
@@ -1273,7 +1293,7 @@ def _prompt_counts(fallback: dict[str, int]) -> dict[str, int] | None:
     print(f"\n{'═' * W}", flush=True)
     print("  宇树 g1_pick 按钮采集数量设置（Ctrl+C 退出）", flush=True)
     print(f"{'─' * W}", flush=True)
-    print("  请依次输入红/绿/黄/蓝按钮各需采集的集数（非负整数）。", flush=True)
+    print("  请依次输入红/绿/黄/蓝按钮各需采集的集数（0–9999）。", flush=True)
     print("  默认按 红→绿→黄→蓝 顺序执行（加 --shuffle 才打乱）。", flush=True)
     print(f"{'═' * W}", flush=True)
 
@@ -1283,14 +1303,14 @@ def _prompt_counts(fallback: dict[str, int]) -> dict[str, int] | None:
         while True:
             try:
                 raw = input(f"  {cname}按钮集数 > ").strip()
-                val = int(raw)
-                if val < 0:
+                if len(raw) > 4:
+                    print("  ✗ 最多 4 位数字（0–9999）", flush=True)
+                    continue
+                if not raw.isdigit():
                     print("  ✗ 请输入非负整数", flush=True)
                     continue
-                counts[color] = val
+                counts[color] = int(raw)
                 break
-            except ValueError:
-                print("  ✗ 请输入整数", flush=True)
             except (KeyboardInterrupt, EOFError):
                 aborted = True
                 print("\n  ⚠ 收到中断，退出采集...", flush=True)
@@ -1309,10 +1329,7 @@ def _prompt_counts(fallback: dict[str, int]) -> dict[str, int] | None:
 
     total = sum(counts.values())
     print(f"{'─' * W}", flush=True)
-    print("  本次采集计划：", flush=True)
-    for c in _COLOR_ORDER:
-        print(f"    {_COLOR_NAMES[c]:>3}按钮：{counts[c]:>4} 集", flush=True)
-    print(f"    {'合计':>5}：{total:>4} 集", flush=True)
+    _print_counts_plan(counts)
     print(f"{'═' * W}\n", flush=True)
     if total == 0:
         print("  [警告] 总集数为 0，退出", flush=True)
@@ -1669,8 +1686,9 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--counts", default="5,5,5,5",
-        help="非交互：红,绿,黄,蓝各集数（默认 5,5,5,5）",
+        "--counts",
+        default=None,
+        help="红,绿,黄,蓝各集数（逗号分隔，例如 1,0,0,0）。给出后不再询问。",
     )
     parser.add_argument(
         "--shuffle",
@@ -1895,15 +1913,6 @@ def main() -> None:
                 )
                 return
 
-    try:
-        raw_counts = [int(x.strip()) for x in args.counts.split(",")]
-        if len(raw_counts) != 4:
-            raise ValueError
-        fallback_counts = dict(zip(_COLOR_ORDER, raw_counts))
-    except Exception:
-        orca_logger.error("--counts 格式错误，应为 R,G,Y,B，例如 5,5,5,5")
-        return
-
     lerobot_out = tele.resolve_lerobot_out(args.lerobot_out)
 
     print("=" * 62, flush=True)
@@ -1936,10 +1945,22 @@ def main() -> None:
         print(f"  diag_csv: {args.diag_csv}", flush=True)
     print("=" * 62, flush=True)
 
-    counts = _prompt_counts(fallback_counts)
-    if counts is None:
-        print("[退出] 用户取消", flush=True)
-        return
+    if args.counts is not None:
+        counts = _parse_counts(args.counts)
+        if counts is None:
+            orca_logger.error("--counts 格式错误，应为 R,G,Y,B 四个 0–9999 的整数，例如 1,0,0,0")
+            return
+        print("", flush=True)
+        _print_counts_plan(counts)
+        print("", flush=True)
+        if sum(counts.values()) == 0:
+            print("[退出] 总集数为 0，无需采集", flush=True)
+            return
+    else:
+        counts = _prompt_counts({"red": 5, "green": 5, "yellow": 5, "blue": 5})
+        if counts is None:
+            print("[退出] 用户取消", flush=True)
+            return
 
     color_seq: list[str] = []
     for color in _COLOR_ORDER:
