@@ -1300,6 +1300,12 @@ def main() -> None:
 
     lerobot_out = os.path.abspath(os.path.expanduser(args.lerobot_out))
     num_episodes = args.num_episodes
+    if num_episodes < 1 or num_episodes > 9999:
+        orca_logger.error("--num_episodes 必须是 1–9999 的整数")
+        return
+    if args.num_tools < 1 or args.num_tools > 5:
+        orca_logger.error("--num_tools 必须是 1–5 的整数")
+        return
 
     # ── 配置与环境初始化 ────────────────────────────────────────────────────
     from conf import g1_omnipicker_conf as agent_conf
