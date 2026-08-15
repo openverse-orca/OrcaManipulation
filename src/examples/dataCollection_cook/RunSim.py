@@ -265,10 +265,7 @@ def main() -> int:
     wait_port(pbd_grpc_port, "PBDRender", wait_sec)
 
     # ---------- 3. 同步 XPBD session ----------
-    from envs.softbody.common.debug_session import (
-        build_p2_session_from_mjcf,
-        export_xpbd_scene_for_session,
-    )
+    from envs.softbody.attach_coupling import build_p2_session_from_mjcf, export_xpbd_scene_for_session
 
     if mjcf is None or not mjcf.is_file():
         log(f"FAIL: MJCF not found; Studio Play {level} first")

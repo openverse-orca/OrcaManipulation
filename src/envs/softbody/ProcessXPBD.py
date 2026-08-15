@@ -17,14 +17,6 @@ from typing import Any, Dict, Optional
 
 from ..cpu_affinity import wrap_cmd_with_taskset
 from ..fluid.launch.process_utils import ProcessManager, _fluid_subprocess_preexec
-from .common.debug_session import (
-    apply_cloth_init_compare_environment,
-    apply_xpbd_debug_environment,
-    is_cloth_debug_enabled,
-    is_cloth_init_compare_enabled,
-    is_pbd_grpc_self_check_enabled,
-    resolve_session_debug_dir,
-)
 from .common.paths import CLOTH_3D_DIR, XPBD_ROOT
 
 logger = logging.getLogger(__name__)
@@ -354,12 +346,12 @@ def start_xpbd_if_configured(
     if pbd_grpc_env in ("0", "false", "no"):
         env["PBD_GRPC"] = "0"
         logger.info("XPBD PBD_GRPC=0（跳过 Studio 布料 gRPC UpdateMesh）")
-    elif pr.get("enabled", False) or is_pbd_grpc_self_check_enabled(config) or is_cloth_debug_enabled(config):
+    elif pr.get("enabled", False):
         env.setdefault("PBD_GRPC", "1")
-        # 环境变量优先（test20260508 PBDRender 常为 :50261；JSON 基配置可能仍为 50251）
+        # 环境变量优先（test20260508 PBDRender 常为 :50261）
         grpc_addr = os.environ.get("PBD_GRPC_ADDRESS", "").strip()
         if not grpc_addr:
-            grpc_addr = str(pr.get("grpc_address", "localhost:50251"))
+            grpc_addr = str(pr.get("grpc_address", "localhost:50261"))
         if not grpc_addr.startswith("localhost:") and ":" not in grpc_addr:
             grpc_addr = f"localhost:{grpc_addr}"
         env["PBD_GRPC_ADDRESS"] = grpc_addr
@@ -374,22 +366,6 @@ def start_xpbd_if_configured(
             env["PBD_GRPC_SBT_ROTATION"] = sbt_rot
             logger.info("XPBD PBD_GRPC_SBT_ROTATION=%s", sbt_rot)
         logger.info("XPBD PBD_GRPC=1 -> Studio PBDRender %s", grpc_addr)
-
-    if is_cloth_debug_enabled(config):
-        dbg_dir = Path(str(config.get("debug", {}).get("debug_log_dir", "")))
-        if not dbg_dir.is_dir():
-            dbg_dir = resolve_session_debug_dir(
-                config, session_timestamp=session_timestamp, log_dir=log_dir
-            )
-        apply_xpbd_debug_environment(config, env, dbg_dir)
-
-    if is_cloth_init_compare_enabled(config):
-        cmp_dir = Path(str(config.get("debug", {}).get("debug_log_dir", "")))
-        if not cmp_dir.is_dir():
-            cmp_dir = resolve_session_debug_dir(
-                config, session_timestamp=session_timestamp, log_dir=log_dir
-            )
-        apply_cloth_init_compare_environment(config, env, cmp_dir)
 
     cloth_cfg = config.get("cloth", {})
     finger_close_ratio = cloth_cfg.get("finger_close_ratio")

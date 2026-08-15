@@ -1,6 +1,6 @@
-# Cloth Robot P23c 运行指南（Python 编排）
+# 机器人抓面包场景 运行指南
 
-本文档说明如何在 **OrcaManipulation 仓库内**运行软体三进程联调（P23c）。
+本文档说明如何在 **OrcaManipulation 仓库内**运行 机器人抓面包场景。
 
 ## 目录
 

@@ -23,22 +23,13 @@ from .ProcessOrcaGym import (
 )
 from .ProcessPico import write_grip_triggers
 from .ProcessOrcaGym import sync_gripper_mocap_from_bodies
-from .common.cloth_session import register_cloth_handle_for_atexit, set_cloth_owns_shared_services
 from .ProcessOrcaLink import OrcaLinkPoseRemapper, resolve_pose_remap, start_orcalink_if_configured
-from .common.paths import CLOTH_3D_DIR, ORCALINK_CLIENT_PYTHON, default_cloth_config_path
-from .common.debug_session import (
-    build_xpbd_session_config,
-    export_xpbd_scene_for_session,
-    is_cloth_debug_enabled,
-    is_cloth_init_compare_enabled,
-    prepare_cloth_debug_session,
-    resolve_session_debug_dir,
-    run_cloth_init_compare_if_configured,
-    write_xpbd_runtime_session_config,
-)
+from .common.paths import CLOTH_3D_DIR, ORCA_REPO_ROOT, ORCALINK_CLIENT_PYTHON, default_cloth_config_path
 from .ProcessXPBD import start_xpbd_if_configured
 
 logger = logging.getLogger(__name__)
+
+_XPBD_DEBUG_LOG = ORCA_REPO_ROOT / "XPBD" / "MjcPBD_orcalink" / "debug_log"
 
 
 def _ensure_cloth_3d_import_path() -> None:
@@ -212,6 +203,165 @@ def load_cloth_config(config_path: str | Path) -> Dict[str, Any]:
     return _deep_merge(base, raw)
 
 
+def build_xpbd_session_config(base_cfg: dict[str, Any], adapted_cfg: dict[str, Any]) -> dict[str, Any]:
+    """
+    构造供 ``MJC_PBD_CONFIG`` 使用的会话 JSON。
+
+    P2 默认 ``xpbd.cloth_discover_only=true``：仅将 ``cloth`` discovered 段交给 XPBD，
+    ``rigid_body_map`` 保持基配置短链（暂不向 XPBD 传递 Studio 扫描的 N 刚体）。
+    """
+    out = copy.deepcopy(adapted_cfg)
+    xpbd_blk = out.setdefault("xpbd", {})
+    if bool(xpbd_blk.get("cloth_discover_only", True)):
+        if "rigid_body_map" in base_cfg:
+            out["rigid_body_map"] = copy.deepcopy(base_cfg["rigid_body_map"])
+        if "orcalink_rigid_body_map" in base_cfg:
+            out["orcalink_rigid_body_map"] = copy.deepcopy(base_cfg["orcalink_rigid_body_map"])
+        elif "orcagym_rigid_body_map" in base_cfg:
+            out["orcalink_rigid_body_map"] = copy.deepcopy(base_cfg["orcagym_rigid_body_map"])
+    cloth = out.setdefault("cloth", {})
+    level = str((out.get("orcagym") or {}).get("level") or cloth.get("level") or "").strip()
+    if level:
+        cloth["level"] = level
+        if not str(cloth.get("asset_dir") or "").strip():
+            from envs.softbody.common.paths import studio_cloth_assets_dir  # noqa: WPS433
+
+            cloth["asset_dir"] = str(studio_cloth_assets_dir(level))
+    return out
+
+
+def write_xpbd_runtime_session_config(
+    config: dict[str, Any],
+    *,
+    session_timestamp: str,
+    source_config_path: Path | None = None,
+    source_mjcf_path: Path | None = None,
+) -> Path:
+    """
+    将运行时 effective config 写入 ``cloth_3d/cloth_sim_session_{ts}.json``，供 XPBD 子进程加载。
+
+    路径须在 ``OrcaPlayground/examples/cloth_3d/`` 下，以便 XPBD 侧脚本相对解析。
+    """
+    session_path = (CLOTH_3D_DIR / f"cloth_sim_session_{session_timestamp}.json").resolve()
+    payload = copy.deepcopy(config)
+    meta: dict[str, str] = {
+        "session_timestamp": session_timestamp,
+        "source_config": str(source_config_path.resolve()) if source_config_path else "",
+    }
+    if source_mjcf_path is not None and source_mjcf_path.is_file():
+        meta["source_mjcf"] = str(source_mjcf_path.resolve())
+    payload["_cloth_robot_session_meta"] = meta
+    session_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    logger.info("XPBD session config: %s", session_path)
+    return session_path
+
+
+def export_xpbd_scene_for_session(
+    session_path: Path,
+    *,
+    out_path: Path | None = None,
+) -> Path:
+    """
+    调用 ``cloth_3d/scripts/export_xpbd_scene_from_mjcf.py``，从 session JSON 导出
+    ``xpbd_scene_from_mjcf.json``（与 XPBD ``mjc_pbd_bridge`` 自动导出同源）。
+
+    session 须含 ``rigid_body_map`` 与 ``mujoco.model_path`` 或 ``_cloth_robot_session_meta.source_mjcf``。
+    返回写出 JSON 的绝对路径。
+    """
+    import subprocess
+    import sys
+
+    session_path = session_path.resolve()
+    if not session_path.is_file():
+        raise FileNotFoundError(f"session config not found: {session_path}")
+
+    export_script = CLOTH_3D_DIR / "scripts" / "export_xpbd_scene_from_mjcf.py"
+    if not export_script.is_file():
+        raise FileNotFoundError(f"export script not found: {export_script}")
+
+    cmd = [sys.executable, str(export_script), "--config", str(session_path)]
+    if out_path is not None:
+        cmd.extend(["--out", str(out_path.resolve())])
+
+    logger.info("export xpbd scene: %s", " ".join(cmd))
+    proc = subprocess.run(cmd, cwd=str(CLOTH_3D_DIR), capture_output=True, text=True)
+    if proc.returncode != 0:
+        detail = (proc.stdout or "") + (proc.stderr or "")
+        raise RuntimeError(f"export_xpbd_scene_from_mjcf failed (rc={proc.returncode}): {detail}")
+
+    if out_path is not None:
+        return out_path.resolve()
+
+    cfg = json.loads(session_path.read_text(encoding="utf-8"))
+    dbg = cfg.get("debug", {})
+    dbg_dir = Path(str(dbg.get("debug_log_dir", _XPBD_DEBUG_LOG)))
+    if not dbg_dir.is_absolute():
+        dbg_dir = (CLOTH_3D_DIR / dbg_dir).resolve()
+    return (dbg_dir / "xpbd_scene_from_mjcf.json").resolve()
+
+
+def build_p2_session_from_mjcf(
+    mjcf_path: Path,
+    config_path: Path,
+    *,
+    session_timestamp: str | None = None,
+    level: str | None = None,
+) -> tuple[dict, dict, Path]:
+    """
+    从 Studio MJCF 扫描布片位姿（含 Entity3 旋转）并写出 XPBD session JSON。
+
+    流程：``mj_forward`` → ``adapt_config_for_orcagym``（含 ``enrich_cloth_discovery_pose``）
+    → ``build_xpbd_session_config`` → ``cloth_sim_session_*.json``。
+    Studio 中旋转布料后须重新 Play 生成 MJCF，再调用本函数刷新 session。
+
+    返回 ``(xpbd_session, adapted_config, session_path)``。
+    """
+    import mujoco
+
+    if str(CLOTH_3D_DIR) not in sys.path:
+        sys.path.insert(0, str(CLOTH_3D_DIR))
+
+    base_cfg = load_cloth_config(config_path)
+    if level:
+        from .common.paths import apply_runtime_orcagym_level
+
+        base_cfg = apply_runtime_orcagym_level(base_cfg, level)
+    model = mujoco.MjModel.from_xml_path(str(mjcf_path.resolve()))
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
+    from modules.identify_xpbd_bodies import merge_body_discovery  # noqa: WPS433
+    from modules.identify_xpbd_cloth import (  # noqa: WPS433
+        enrich_cloth_discovery_pose,
+        identify_xpbd_cloth,
+        merge_cloth_discovery,
+    )
+
+    cloths = enrich_cloth_discovery_pose(model, data, identify_xpbd_cloth(model))
+    base_cfg = merge_cloth_discovery(base_cfg, cloths)
+    base_cfg = merge_body_discovery(base_cfg, model, data)
+    adapted = adapt_config_for_orcagym(model, base_cfg, data=data)
+    xpbd_session = build_xpbd_session_config(base_cfg, adapted)
+    xpbd_session.setdefault("mujoco", {})["model_path"] = str(mjcf_path.resolve())
+    try:
+        from .ProcessOrcaGym import (  # noqa: WPS433
+            apply_tele_layout_to_session,
+            scan_tele_layout_from_model,
+        )
+
+        tele = scan_tele_layout_from_model(model)
+        xpbd_session = apply_tele_layout_to_session(xpbd_session, tele)
+    except (ImportError, RuntimeError, KeyError, ValueError) as exc:
+        logger.warning("tele_layout scan skipped: %s", exc)
+    ts = session_timestamp or datetime.now().strftime("view_%Y%m%d_%H%M%S")
+    session_path = write_xpbd_runtime_session_config(
+        xpbd_session,
+        session_timestamp=ts,
+        source_config_path=config_path,
+        source_mjcf_path=mjcf_path,
+    )
+    return xpbd_session, adapted, session_path
+
+
 def _connect_cloth_bridge(
     env: OrcaGymLocalEnv,
     config: dict[str, Any],
@@ -290,12 +440,6 @@ def start_cloth_coupling(
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = Path(log_dir).resolve() if log_dir else None
-    cfg, path = prepare_cloth_debug_session(
-        cfg,
-        config_path=path,
-        session_timestamp=ts,
-        log_dir=log_path,
-    )
 
     if auto_start_orcalink is not None:
         cfg.setdefault("orcalink", {})["auto_start"] = bool(auto_start_orcalink)
@@ -310,14 +454,6 @@ def start_cloth_coupling(
     cfg = apply_masked_cloth_from_level(cfg, resolved_level)
 
     ctx = ClothCouplingContext(config=cfg, config_path=path, env=env, session_timestamp=ts)
-    if is_cloth_debug_enabled(cfg):
-        dbg_dir = resolve_session_debug_dir(cfg, session_timestamp=ts, log_dir=log_path)
-        logger.info("Debug CSV/monitor dir: %s", dbg_dir)
-    elif is_cloth_init_compare_enabled(cfg):
-        cmp_dir = resolve_session_debug_dir(cfg, session_timestamp=ts, log_dir=log_path)
-        cmp_dir.mkdir(parents=True, exist_ok=True)
-        cfg.setdefault("debug", {})["debug_log_dir"] = str(cmp_dir)
-        logger.info("Cloth init compare dir: %s", cmp_dir)
 
     model, data = get_mujoco_model_data(env)
     base_env = env.unwrapped if hasattr(env, "unwrapped") else env
@@ -390,32 +526,9 @@ def start_cloth_coupling(
         cpu_affinity=cpu_affinity,
     )
 
-    if is_cloth_init_compare_enabled(cfg):
-        compare_dir = Path(str(cfg.get("debug", {}).get("debug_log_dir", "")))
-        if not compare_dir.is_dir():
-            compare_dir = resolve_session_debug_dir(cfg, session_timestamp=ts, log_dir=log_path)
-        result = run_cloth_init_compare_if_configured(
-            cfg,
-            model=model,
-            data=data,
-            session_cfg=xpbd_session_cfg,
-            out_dir=compare_dir,
-            session_path=session_path,
-            config_path=path,
-        )
-        if result is not None:
-            logger.info(
-                "ClothInit compare: %s (PASS=%s, max_studio_xpbd=%.3f mm)",
-                result.csv_path,
-                result.passed,
-                result.max_studio_vs_xpbd_mm,
-            )
-
     if not _connect_cloth_bridge(env, cfg, ctx, adapted=adapted):
         ctx.process_manager.cleanup_all()
         raise RuntimeError("布料 OrcaLink 桥接初始化失败")
 
     handle = ClothCouplingHandle(config=adapted, ctx=ctx, enabled=True)
-    register_cloth_handle_for_atexit(handle)
-    set_cloth_owns_shared_services(True)
     return handle

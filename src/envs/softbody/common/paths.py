@@ -39,18 +39,6 @@ def cloth_scene_assets_config_path() -> Path:
     return (CLOTH_3D_DIR / CLOTH_SCENE_ASSETS_BASENAME).resolve()
 
 
-def load_cloth_scene_assets_config(*, ensure_level: str | None = None) -> dict[str, Any]:
-    """读取合并后的场景布料配置（模板 + ~/.orcagym/cloth/scene_levels.json）。"""
-    import sys
-
-    modules_dir = CLOTH_3D_DIR / "modules"
-    if str(modules_dir) not in sys.path:
-        sys.path.insert(0, str(modules_dir))
-    from scene_cloth_config import load_scene_assets_config  # noqa: WPS433
-
-    return load_scene_assets_config(ensure_level=ensure_level)
-
-
 def _ensure_level_scene_config(level: str) -> None:
     """解析关卡后自动同步本机 scene_levels（失败不阻断联调）。"""
     import logging
@@ -67,22 +55,6 @@ def _ensure_level_scene_config(level: str) -> None:
             logging.getLogger(__name__).debug("cloth scene config synced for level=%s", level)
     except Exception as exc:
         logging.getLogger(__name__).debug("cloth scene auto-sync skipped: %s", exc)
-
-
-def studio_project_dir() -> Path:
-    """
-    Studio 工程根目录。
-
-    默认 ``OrcaStudio_2409``（相对 ``ORCA_REPO_ROOT``），可用 ``ORCA_STUDIO_PROJECT`` 覆盖。
-    """
-    import sys
-
-    modules_dir = CLOTH_3D_DIR / "modules"
-    if str(modules_dir) not in sys.path:
-        sys.path.insert(0, str(modules_dir))
-    from scene_cloth_config import studio_project_dir as _studio_project_dir  # noqa: WPS433
-
-    return _studio_project_dir(load_template_config_for_paths())
 
 
 def load_template_config_for_paths() -> dict[str, Any]:

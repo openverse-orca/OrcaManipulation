@@ -9,7 +9,6 @@ from .common.paths import (
     resolve_cloth_config_path,
     resolve_cloth_level,
     studio_cloth_assets_dir,
-    studio_project_dir,
 )
 
 __all__ = [
@@ -26,7 +25,6 @@ __all__ = [
     "run_masked_vtk_prefab_check_at_startup",
     "start_cloth_coupling",
     "studio_cloth_assets_dir",
-    "studio_project_dir",
 ]
 
 
