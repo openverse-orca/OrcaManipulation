@@ -17,10 +17,6 @@
 
 ## 1. 目录结构与介绍
 
-本目录（`src/examples/dataCollection_cook/`）只保留纯 Python 编排，不含 shell 脚本。
-原 shell 流程（`run_cloth_robot_p23c.sh`、`ensure_xpbd_pip.py`、`resolve_orca_conda_python.sh` 等）
-已迁至 `dataCollection_cloth/RunCloth/`。
-
 | 文件 | 说明 |
 |------|------|
 | `RunSim.py` | 三进程联调编排入口（解析配置 → 进程就绪 → session → 启动 tele） |
@@ -99,11 +95,10 @@ python RunSim.py
 
 #### 2.4.1 完整命令（默认 G1 Cook 布料遥操）
 
-以下等价于 `4-RunClothRobotP23c.sh` 在容器内设置的环境变量 + 启动脚本：
 先设置环境变量、再调用 `RunSim.py`。
 
 ```bash
-cd ${ORCA_WORKING_PATH:-/opt}/OrcaManipulation/src/examples/dataCollection_cook
+cd OrcaManipulation/src/examples/dataCollection_cook
 
 export DEBUG=0
 export CLOTH_DEBUG=0
@@ -127,8 +122,7 @@ python3 RunSim.py
 
 #### 2.4.2 常用环境变量
 
-> 下表为 `RunSim.py` 内部默认值；P23c 实际联调会由 `4-RunClothRobotP23c.sh` 显式覆盖
-> `AGENT` / `MJC_PREFIX` / `LEVEL` / `MAX_MACRO_FRAMES` / `CLOTH_NO_REALTIME` 等（见上方「完整命令」）。
+> 下表为 `RunSim.py` 内部默认值；P23c 实际联调会由 上方「完整命令」显式覆盖
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|

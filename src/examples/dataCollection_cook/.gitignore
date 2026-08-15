@@ -1,9 +1,8 @@
-# 运行时日志与 debug 目录（父级 .gitignore 已含 logs/）
-logs/
-
 # 遥操运行时写入
 grip_triggers.txt
 data_collection_cloth.log
 
-# XPBD 二进制同步产物（EnsureXPBD.py pip 模式从 pip 包拷贝到 build/，运行时生成）
+# 二进制同步产物
 build/
+# 运行时日志与 debug 目录（父级 .gitignore 已含 logs/）
+logs/
