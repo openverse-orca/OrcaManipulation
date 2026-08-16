@@ -56,6 +56,9 @@ orca_logger = get_orca_logger(
     force_reinit=True,
 )
 
+# 左臂平举初值（与 scripted_tool / 开发仓 tele 一致）；右臂仍用 conf.neutral。
+_L_INIT_JOINT_VALUES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -117,9 +120,9 @@ def main() -> None:
         orca_logger.warning(f"--cam_resolution 格式错误 '{args.cam_resolution}'，使用默认 {DEFAULT_HW}")
         cam_hw_override = DEFAULT_HW
 
-    # ── 关节初值 ──────────────────────────────────────────────────────────────
+    # ── 关节初值（左臂平举，与 scripted_tool 一致）────────────────────────────
     default_joint_values: dict = {}
-    for jn, v in zip(g1_omnipicker_conf.l_arm["joint_names"], g1_omnipicker_conf.l_arm["neutral_joint_values"]):
+    for jn, v in zip(g1_omnipicker_conf.l_arm["joint_names"], _L_INIT_JOINT_VALUES):
         default_joint_values[jn] = v
     for jn, v in zip(g1_omnipicker_conf.r_arm["joint_names"], g1_omnipicker_conf.r_arm["neutral_joint_values"]):
         default_joint_values[jn] = v
@@ -495,7 +498,7 @@ def main() -> None:
     print(f"  数据输出: {lerobot_out}", flush=True)
     print("-" * 60, flush=True)
     print("  【操作按键】", flush=True)
-    print("  左臂移动    已锁定（左臂全程静止）", flush=True)
+    print("  左臂移动    已锁定（停靠平举初值，全程静止）", flush=True)
     print("  右臂移动    右手柄位姿 (持握激活)", flush=True)
     print("  左夹爪      X / Y 键 或 左扳机", flush=True)
     print("  右夹爪      A / B 键 或 右扳机", flush=True)
@@ -555,6 +558,7 @@ def main() -> None:
                 if not manager.update_scene():
                     orca_logger.info("update_scene 失败，停止采集")
                     break
+                env.set_default_joint_values(default_joint_values)
 
                 # mp4 模式：每集开录
                 ep_dir: str | None = None
