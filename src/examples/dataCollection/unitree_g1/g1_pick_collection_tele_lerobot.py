@@ -722,6 +722,7 @@ class TeleopConfig:
     arm_kv_ratio: float
     arm_kv_eff: float         # derived: arm_kv if set, else arm_kv_ratio * arm_kp
     arm_gravcomp: float       # MuJoCo gravcomp scale for arm+hand bodies (0=off, 1=full)
+    freethumb: bool           # True: 右手拇指随扳机，不锁折叠
 
     @classmethod
     def from_args(cls, args) -> "TeleopConfig":
@@ -775,6 +776,7 @@ class TeleopConfig:
             arm_kv_ratio=args.arm_kv_ratio,
             arm_kv_eff=kv_eff,
             arm_gravcomp=args.arm_gravcomp,
+            freethumb=args.freethumb,
         )
 
 
@@ -914,14 +916,22 @@ class ControllerWiring:
         dual.reset()
         self.dual_arm_ctrl = dual
 
-        # 灵巧手
+        # 灵巧手（--freethumb 时关闭右手拇指折叠锁定）
+        r_hand = g1_pick_conf.r_hand
+        if cfg.freethumb:
+            r_hand = dict(g1_pick_conf.r_hand)
+            r_hand["pin_thumb_fold"] = False
+            _init = list(r_hand["positions_init_ctrl"])
+            _init[:3] = [0.0, 0.0, 0.0]
+            r_hand["positions_init_ctrl"] = _init
+            orca_logger.info("右手 freethumb：pin_thumb_fold=False，拇指随扳机开合")
         if cfg.xr_backend == "pico":
             create_hand_pico_controller(
                 manager, env, g1_pick_conf.l_hand,
                 pico_device, PicoJoystickKey.L_TRIGGER, "L",
             )
             create_hand_pico_controller(
-                manager, env, g1_pick_conf.r_hand,
+                manager, env, r_hand,
                 pico_device, PicoJoystickKey.R_TRIGGER, "R",
             )
         else:
@@ -930,7 +940,7 @@ class ControllerWiring:
                 is_running_fn=_is_tele_running,
             )
             create_hand_televuer_controller(
-                manager, env, g1_pick_conf.r_hand, xr_device, "R",
+                manager, env, r_hand, xr_device, "R",
                 is_running_fn=_is_tele_running,
             )
 
@@ -1698,6 +1708,11 @@ def main() -> None:
         default=1.0,
         help="臂+手 body 重力补偿比例 0~1（默认 1.0=全补偿；0 关闭）",
     )
+    parser.add_argument(
+        "--freethumb",
+        action="store_true",
+        help="放开右手拇指：关闭 pin_thumb_fold，拇指 3 关节随扳机开合（默认锁定折叠）",
+    )
     args = parser.parse_args()
     cert_supplied = bool(args.tv_cert_file or args.tv_key_file)
     if bool(args.tv_cert_file) != bool(args.tv_key_file):
@@ -1778,6 +1793,9 @@ def main() -> None:
                  g1_pick_conf.l_hand, g1_pick_conf.r_hand]:
         for jn, v in zip(conf["joint_names"], conf["neutral_joint_values"]):
             default_joint_values[jn] = v
+    if cfg.freethumb:
+        for jn in g1_pick_conf.r_hand["joint_names"][:3]:
+            default_joint_values[jn] = 0.0
 
     # ── VR 设备 ──────────────────────────────────────────────────────────────
     print("=" * 60, flush=True)
@@ -2012,6 +2030,7 @@ def main() -> None:
     print("  g1_pick VR 遥操作采集 (Unitree G1_29 CasADi IK)", flush=True)
     print(f"  任务: {cfg.task}", flush=True)
     print(f"  XR backend: {cfg.xr_backend}", flush=True)
+    print(f"  右手拇指: {'freethumb（随扳机）' if cfg.freethumb else '锁定折叠'}", flush=True)
     print(f"  数据输出: {cfg.lerobot_out}", flush=True)
     print("-" * 60, flush=True)
     if cfg.xr_backend == "pico":
