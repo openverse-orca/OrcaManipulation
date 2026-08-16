@@ -6,17 +6,17 @@
 
 ## 环境
 
-请先在仓库根目录按 README 创建全新环境并执行：
+请先在运行本项目的主机上，按仓库根目录 README 的「环境安装」一节创建全新环境并执行：
 
 ```bash
 conda activate orcalab_lerobot
 bash scripts/install_runtime.sh
 ```
 
-该脚本安装仓内 TeleVuer，并验证 Conda Pinocchio 3.9.0、CasADi 3.7.2 与 pinocchio.casadi。不要手工安装 pin/pinocchio。
+该脚本会安装仓库内的 TeleVuer，并验证 Conda 提供的 Pinocchio 3.9.0、CasADi 3.7.2。请勿自行安装 pin 或 pinocchio。
 
 G1 的 IK 模型（`src/examples/dataCollection/assets/g1/`）随仓库提供，无需另外下载。
-首次启动会在 `src/examples/dataCollection/_ik_cache/` 生成约化模型缓存，耗时数秒。
+首次启动会在 `src/examples/dataCollection/_ik_cache/` 生成模型缓存，耗时数秒。
 
 ---
 
@@ -24,8 +24,8 @@ G1 的 IK 模型（`src/examples/dataCollection/assets/g1/`）随仓库提供，
 
 ### 加载场景
 
-1. 请启动 OrcaLab 6.3。
-2. 请加载布局文件 `unitree_button.json`（位于 `src/examples/dataCollection/unitree_g1/`）。
+1. 请在运行本项目的主机上启动 OrcaLab 7.1。
+2. 请在 OrcaLab 的加载布局对话框中选择布局文件 `src/examples/dataCollection/unitree_g1/unitree_button.json`。
 3. 请确认场景中的机器人名称为 `unitree_humanoid_robot_1`。
 
 ### 配置两路相机
@@ -35,9 +35,9 @@ G1 的 IK 模型（`src/examples/dataCollection/assets/g1/`）随仓库提供，
 | 头部 `head_cam` | 7070 |
 | 右腕 `wrist_cam` | 7080 |
 
-每路相机请勾选 **UseNvEnc**、**Color Camera**、**Enable**，并设置上表端口。两路全部配完后，再统一勾选 **Recording**。Recording 勾选后请勿取消，也不要写回布局文件；每次重新打开布局都需要重新配置。
+每路相机请勾选 **UseNvEnc**、**Color Camera**、**Enable**，并设置上表端口。两路全部配完后，再统一勾选 **Recording**。
 
-配置完成后，请点击运行，等待 OrcaGym gRPC 服务就绪，默认地址为：
+配置完成后，请点击 OrcaLab 的运行按钮启动仿真，并等待 OrcaLab 界面显示仿真已运行。默认的 OrcaGym 服务地址为：
 
 ```
 localhost:50051
@@ -67,7 +67,7 @@ adb reverse tcp:8012 tcp:8012
 
 ### 2. 启动数采脚本
 
-请激活环境并进入脚本目录：
+请在运行本项目的主机上激活环境，再从仓库根目录进入脚本所在目录：
 
 ```bash
 conda activate orcalab_lerobot
@@ -94,25 +94,23 @@ python -u g1_pick_collection_tele_lerobot.py \
     --tv_ee_dx 0.03
 ```
 
-请等到终端打印出访问地址后再继续。USB/adb reverse 模式默认只监听
-`127.0.0.1` 并使用 HTTP/WS；`--tv_no_tls` 仅为兼容旧命令，可以省略。地址形如：
+请等到终端打印出访问地址后再继续。USB 与 `adb reverse` 模式下，地址形如：
 
 ```text
 http://127.0.0.1:8012/
 ```
 
 如需改走无线连接（头显直接访问本机 IP），必须同时传入
-`--tv_host <本机IP>`、`--tv_cert_file <cert.pem>` 与 `--tv_key_file <key.pem>`：
-WebXR 只在安全上下文中进入沉浸式会话，所以非回环地址必须启用 TLS。
-程序不会搜索环境变量、HOME 或源码目录中的证书。
+`--tv_host <本机IP>`、`--tv_cert_file <cert.pem>` 与 `--tv_key_file <key.pem>`。
+非回环地址必须启用 TLS，才能在头显中进入沉浸式会话。
 
-脚本还会打印操作提示。正常进入采集后，终端会周期性出现「正在采集第 N 集」。若只有连接类提示而没有该信息，请停止并检查终端报错。
+脚本还会打印操作提示。正常进入采集后，终端会周期性出现「正在采集第 N 集」。若终端只出现连接提示而没有该信息，请停止脚本并检查终端报错。
 
 断点续采时请在命令中追加 `--resume`。
 
 ### 3. 打开头显页面并开始采集
 
-1. 请另开一个终端，用 adb 在头显浏览器中打开上述地址：
+1. 请在主机上打开另一个终端，在该主机终端中执行下列 adb 命令，以便在头显浏览器中打开下述地址：
 
 ```bash
 adb reverse tcp:8012 tcp:8012
@@ -123,13 +121,13 @@ adb shell am start -a android.intent.action.VIEW \
 2. 请在头显页面中点击 **Virtual Reality**。
 3. 请轻按**左 squeeze（侧握键）**开始数采。
 
-每次重新运行数采前：请先关闭头显当前浏览器页面，再按本节顺序重新执行（先启脚本，再 adb 打开页面）。
+每次重新运行数采前，请先关闭头显当前浏览器页面，再按本节顺序重新执行：先启动数采脚本，再在主机终端中用 adb 打开页面。
 
 ---
 
 ## 脚本化四色按钮采集
 
-可在无头显时，用候选接触关节角自动采集：
+请先在 OrcaLab 中加载 `src/examples/dataCollection/unitree_g1/unitree_button.json`，再在运行本项目的主机上执行脚本化四色按钮采集：
 
 ```bash
 conda activate orcalab_lerobot
@@ -148,7 +146,7 @@ python -u g1_pick_collection_scripted_button_lerobot.py \
     --cam_resolution 480x640
 ```
 
-`--pose_candidates` 默认使用目录 `pose_g1_pick_button/`（每色一个 YAML）。也可指定旧版单文件 `pose_g1_pick_button_candidates.yaml`。臂部刚度、积分、到位检测与补压等控制参数已内置默认值；如需调整，请通过脚本 `--help` 查看对应选项。
+`--pose_candidates` 默认使用目录 `pose_g1_pick_button/`（每种颜色对应一个 YAML）。也可指定单文件 `pose_g1_pick_button_candidates.yaml`。臂部刚度、到位检测等控制参数已内置默认值；如需调整，请通过脚本 `--help` 查看对应选项。
 
 
 ---
@@ -156,14 +154,6 @@ python -u g1_pick_collection_scripted_button_lerobot.py \
 ## 按键映射
 
 宇树遥操作使用 **Pico VR 手柄**，通过 TeleVuer 接入（端口 `8012`）。双臂均可跟随手柄；灵巧手通过扳机控制开合；腿部与腰部保持锁定。
-
-### 硬件 ↔ 代码键名对照
-
-| 物理按键（Pico） | 左手 | 右手 | 代码枚举 `PicoJoystickKey` | 底层字段 |
-|------------------|------|------|---------------------------|----------|
-| 6DOF 位姿 | ✓ | ✓ | `L_TRANSFORM` / `R_TRANSFORM` | `position`, `rotation` |
-| 侧握 Grip / squeeze | ✓ | ✓ | `L_GRIPBUTTON` / `R_GRIPBUTTON` | `gripButtonPressed` |
-| 扳机 Trigger | ✓ | ✓ | `L_TRIGGER` / `R_TRIGGER` | `triggerValue` ∈ [0, 1] |
 
 ### 机器人控制功能
 
@@ -178,11 +168,11 @@ python -u g1_pick_collection_scripted_button_lerobot.py \
 
 | 功能 | 操作 | 说明 |
 |------|------|------|
-| 开始当前集 | 轻按**左 squeeze** ×1 | 防抖 ≥ 0.2 s；开始后机器人才会跟随手柄 |
-| 结束并保存 | 再次轻按**左 squeeze** ×1 | 强制保存当前集 |
-| 放弃本集 | 轻按**右 squeeze**（仅右，不含左） | 丢弃当前集并重置场景；防抖 0.3 s |
-| 终止全部采集 | **左 + 右 squeeze 同时按下** | 丢弃未保存集，等待视频编码后退出 |
-| 强制退出 | 终端 `Ctrl+C` | 中断采集 |
+| 开始当前集 | 第一次按**左 squeeze** | 进入采集中；开始后机器人才会跟随手柄 |
+| 结束并保存 | 第二次按**左 squeeze** | 结束并保存当前集 |
+| 放弃本集 | 按**右 squeeze**（仅右，不含左） | 丢弃当前集并重置场景 |
+| 终止全部采集 | **左 squeeze 与右 squeeze 同时按下** | 丢弃未保存集，等待视频编码后退出 |
+| 强制退出 | 在运行采集脚本的主机终端中按 `Ctrl+C` | 中断采集 |
 
 未开始采集时，双臂保持静止。脚本连接成功并不等于已开始采集，请再按一次左 squeeze 后机器人才会跟随手柄。握持时请避免左右侧握同时按下，以免误触「终止全部采集」。
 
@@ -190,9 +180,7 @@ python -u g1_pick_collection_scripted_button_lerobot.py \
 
 ## 续采说明
 
-断点续采时请在启动命令中追加 `--resume`。续采启动后，终端应打印已加载的集数与帧数（如 `[resume] 已加载 N 集 / M 帧`），随后周期性出现「正在采集第 … 集」。若只有连接提示而没有上述信息，说明数据集加载失败，请查看终端报错。
-
-异常退出可能导致 meta / parquet / mp4 不一致；此时请用备份覆盖数据集后再续采，或不加 `--resume` 覆写重采。
+断点续采时请在启动命令中追加 `--resume`。续采启动后，终端应打印已加载的集数与帧数（如 `[resume] 已加载 N 集 / M 帧`），随后周期性出现「正在采集第 … 集」。若终端只出现连接提示而没有上述信息，说明数据集加载失败，请查看终端报错。
 
 ---
 
@@ -225,7 +213,7 @@ python -u g1_pick_collection_scripted_button_lerobot.py \
 | `[14:21]` | 左手 7 关节角 |
 | `[21:28]` | 右手 7 关节角 |
 
-`observation.state` 为实测关节角 `q`；`action` 为相对增量 `Δq`。
+各维度均为对应关节的角度，单位为弧度。
 
 ---
 
@@ -247,7 +235,7 @@ adb shell pm disable-user --user 0 com.pvr.roomcapture
 
 禁用后重新进入头显浏览器，按正常流程打开 `http://127.0.0.1:8012/`。
 
-**现象**：按左手柄 squeeze 毫无反应，终端也无任何日志。**原因**：8012 端口已被上一次未退出干净的脚本或其他进程占用，TeleVuer 服务器实际未启动。**处理**：请先释放端口，再重新启动数采脚本：
+**现象**：按左手柄 squeeze 毫无反应，终端也无任何日志。**原因**：8012 端口已被其它进程占用，TeleVuer 服务未能启动。**处理**：请先释放端口，再重新启动数采脚本：
 
 ```bash
 fuser -k 8012/tcp
