@@ -42,7 +42,7 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(line_buffering=True)
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 # forkserver preload("dataStorage.encoder_proc") 需要子进程也能 import dataStorage
@@ -52,7 +52,7 @@ if project_root not in _pp.split(os.pathsep):
         project_root + (os.pathsep + _pp if _pp else "")
     )
 
-_ORCA_MANIP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+_ORCA_MANIP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
 DEFAULT_LEROBOT_ROOT = os.path.join(_ORCA_MANIP_ROOT, "L_dataset", "unitree")
 DEFAULT_LEROBOT_OUT = os.path.join(DEFAULT_LEROBOT_ROOT, "g1_unitree_gripper_test2")
 
@@ -1888,8 +1888,8 @@ def main() -> None:
     )
     parser.add_argument("--log_file", default=None,
                         help="终端输出日志路径（同时输出到文件和终端）")
-    parser.add_argument("--diag_tele", action=argparse.BooleanOptionalAction, default=True,
-                        help="启用分层遥操诊断日志（默认开；--no-diag_tele 关闭）")
+    parser.add_argument("--diag_tele", action=argparse.BooleanOptionalAction, default=False,
+                        help="启用分层遥操诊断日志")
     parser.add_argument("--diag_every", type=int, default=50,
                         help="诊断日志节流间隔（步），默认 50")
     parser.add_argument(
@@ -2076,7 +2076,7 @@ def main() -> None:
             flush=True,
         )
     # CTRL# 等 manager 调试行仅在诊断开启时挂接，避免正常采集刷屏
-    if diag.enabled:
+    if diag.enabled and hasattr(DataCollectionManager, "set_debug_log_fh"):
         DataCollectionManager.set_debug_log_fh(diag._dbg_fh)
 
     # ── 相机配置 ─────────────────────────────────────────────────────────────
