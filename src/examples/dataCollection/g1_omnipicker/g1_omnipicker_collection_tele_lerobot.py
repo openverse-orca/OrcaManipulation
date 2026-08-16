@@ -518,7 +518,7 @@ def main() -> None:
     try:
         scene_manager.show_ui_message(
             1,
-            "左Grip×1=开始 左Grip×2=保存 右Grip=丢弃重置 左右Grip同按=退出",
+            "第一次按左侧握键=开始 第二次按左侧握键=保存 右侧握键=丢弃重置 左右同按=退出",
             "0x00ff00", showtime=0,
         )
     except Exception as ui_err:

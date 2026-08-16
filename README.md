@@ -17,13 +17,13 @@
 
 运行本项目前，请先完成以下两步。
 
-**1. 安装 OrcaLab 6.3**
+**1. 安装 OrcaLab 7.1**
 
-本项目所有场景均依赖 OrcaLab 6.3 提供的仿真服务。请从 OrcaLab 官方渠道获取并安装 6.3 版本。
+本项目所有场景均依赖 OrcaLab 7.1 提供的仿真服务。请从 OrcaLab 官方网站下载 7.1 版本安装包，并在运行本项目的主机上完成安装。
 
 **2. 订阅场景资产**
 
-登录 OrcaLab 资产库，订阅以下三个资产包（每个资产在打开场景时会自动加载）：
+请登录 OrcaLab 资产库，订阅以下三个资产包（每个资产在打开场景时会自动加载）：
 
 - `SouthGrid_Competition_2026`
 - `G1_omnipicker`
@@ -40,7 +40,7 @@ git clone -b g1_lerobot https://github.com/openverse-orca/OrcaManipulation.git
 cd OrcaManipulation
 ```
 
-克隆后，请确认根目录下存在以下文件和目录，否则说明获取的不是本交付包：
+克隆后，请确认仓库根目录下存在以下文件和目录，以核对本仓库已完整获取：
 
 ```
 environment-unitree.yml
@@ -54,11 +54,11 @@ src/
 
 ## 兼容环境
 
-以下为经过完整验证的运行环境，必须满足全部要求方可运行。
+以下为经过完整验证的运行环境。请确认运行本项目的主机满足下表全部要求后再继续安装。
 
 | 组件 | 版本 / 要求 |
 |------|-------------|
-| OrcaLab / OrcaGym | **6.3 / 26.6.3** |
+| OrcaLab / OrcaGym | **7.1 / 26.6.3** |
 | Python | **3.12.13** |
 | NumPy / SciPy | 2.4.6 / 1.15.3（由 Conda 管理，不可用 pip 覆盖） |
 | Pinocchio / CasADi | 3.9.0 / 3.7.2（由 Conda 管理，不可用 pip 覆盖） |
@@ -73,7 +73,7 @@ src/
 
 ## 环境安装
 
-必须新建 Conda 环境；请勿在已有环境上执行 `conda env update`，也不要将本机其他环境的 `site-packages` 目录复制过来：
+请在运行本项目的主机上新建 Conda 环境；请勿在已有环境上执行 `conda env update`，也不要将运行本项目的主机上其他环境的 `site-packages` 目录复制过来：
 
 ```bash
 cd /path/to/OrcaManipulation
@@ -82,10 +82,9 @@ conda activate orcalab_lerobot
 bash scripts/install_runtime.sh
 ```
 
-`install_runtime.sh` 会先验证 Conda 管理的数值 ABI，再按哈希锁安装 pip wheel；
-`orca-gym==26.6.3` 使用 `--no-deps` 安装（其发布元数据所声明的 NumPy/SciPy 版本与本交付栈不一致）；最后从仓库内 `third_party/` 以非 editable 方式安装 LeRobot、TeleVuer 和 OpenPI client，并执行数据集写入、编码器、GUI 与资产路径自检。
+`install_runtime.sh` 会先验证 Conda 管理的数值库版本，再按哈希锁安装 pip 依赖；随后安装 `orca-gym==26.6.3`；最后从仓库内 `third_party/` 安装 LeRobot、TeleVuer 和 OpenPI client，并执行数据集写入、编码器、GUI 与资产路径自检。
 
-以下命令**禁止单独执行**，否则可能让 pip/cmeel 安装的 Pinocchio 覆盖 Conda 提供的版本：
+以下命令**禁止单独执行**：
 
 ```bash
 # 禁止：
@@ -95,7 +94,7 @@ pip install casadi
 pip install -r requirements.txt   # 不要单独运行，应通过 install_runtime.sh 调用
 ```
 
-安装完成后，运行统一复检命令确认环境正常：
+安装完成后，请在仓库根目录运行统一复检命令，确认环境正常：
 
 ```bash
 python scripts/verify_environment.py
@@ -105,8 +104,7 @@ python scripts/verify_environment.py
 
 宇树 IK 所需的 G1 描述文件（`g1_body29_hand14.urdf` 与它引用的 49 个 STL）
 已随仓库提供，来源为 Unitree `unitree_ros` 的 `g1_description`（BSD-3-Clause，
-见该目录下的 `LICENSE`）。Pinocchio 建模会解析全部网格，缺一个就无法启动，
-所以不要删减该目录中的文件。
+见该目录下的 `LICENSE`）。该目录中的文件请勿删减或改名。
 
 ---
 
@@ -118,12 +116,13 @@ OrcaManipulation/
 ├── requirements.txt              # 含哈希的 pip 锁（安装时使用）
 ├── requirements.in               # pip 顶层输入（维护锁时使用，安装时无需关注）
 ├── constraints.txt               # 传递依赖锁定输入（维护锁时使用）
-├── environment-unitree.yml       # Conda 数值 ABI 精确构建
+├── environment-unitree.yml       # Conda 数值库精确构建
 ├── scripts/                      # 安装与环境验证
 ├── third_party/
 │   ├── lerobot/                  # LeRobot 数据集运行时
 │   ├── televuer/                 # TeleVuer XR 运行时
-│   └── openpi-client/            # OpenPI 推理客户端
+│   ├── openpi-client/            # OpenPI 推理客户端
+│   └── openpi-rtc/               # OpenPI RTC 异步推理扩展
 ├── docs/
 │   ├── g1_omnipicker_collection.md   # 智元 · 采集
 │   ├── g1_omnipicker_inference.md    # 智元 · 推理
@@ -140,6 +139,7 @@ OrcaManipulation/
     ├── envs/dataCollection/
     ├── scene/
     ├── task/
+    ├── utils/
     └── examples/
         ├── dataCollection/
         │   ├── assets/g1/              # 宇树 G1 URDF + STL（IK 必需）
@@ -161,7 +161,7 @@ OrcaManipulation/
 |------|--------|------|
 | `g1_omnipicker/g1_omnipicker_collection_scripted_tool_lerobot.py` | 智元 | 工具整理脚本化自动采集 |
 | `g1_omnipicker/g1_omnipicker_collection_scripted_button_lerobot.py` | 智元 | 四色按钮脚本化自动采集 |
-| `g1_omnipicker/g1_omnipicker_collection_tele_lerobot.py` | 智元 | Pico VR 遥操作采集（左臂锁定） |
+| `g1_omnipicker/g1_omnipicker_collection_tele_lerobot.py` | 智元 | Pico VR 手柄遥操作采集 |
 | `g1_omnipicker/g1_omnipicker_replay_lerobot.py` | 智元 | LeRobot Parquet 数据集回放 |
 | `unitree_g1/g1_pick_collection_tele_lerobot.py` | 宇树 | TeleVuer 遥操作采集（双臂） |
 | `unitree_g1/g1_pick_collection_scripted_button_lerobot.py` | 宇树 | 四色按钮脚本化自动采集 |
@@ -191,7 +191,7 @@ OrcaManipulation/
 │   └── episode_XXXXXX.parquet # action / observation.state / timestamp
 └── videos/chunk-000/
     ├── observation.images.cam_head/
-    ├── observation.images.cam_wrist_l/    # 智元专有
+    ├── observation.images.cam_wrist_l/    # 部分任务会包含左腕相机
     └── observation.images.cam_wrist_r/
 ```
 

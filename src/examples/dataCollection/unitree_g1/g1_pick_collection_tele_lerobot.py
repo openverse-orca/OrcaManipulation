@@ -2041,9 +2041,9 @@ def main() -> None:
         print("  右手抓握    右扳机", flush=True)
         print("-" * 60, flush=True)
         print("  【采集流程】", flush=True)
-        print("  左Grip×1=开始  左Grip×2=保存", flush=True)
-        print("  右Grip=丢弃重置  左右Grip同按=退出", flush=True)
-        ui_msg = "左Grip×1=开始 左Grip×2=保存 右Grip=丢弃 左右Grip同按=退出"
+        print("  第一次按左侧握键=开始  第二次按左侧握键=保存", flush=True)
+        print("  右侧握键=丢弃重置  左右同按=退出", flush=True)
+        ui_msg = "第一次按左侧握键=开始 第二次按左侧握键=保存 右侧握键=丢弃 左右同按=退出"
     else:
         print("  【操作按键 · TeleVuer】", flush=True)
         print("  左臂移动    已锁定（左臂全程静止）", flush=True)

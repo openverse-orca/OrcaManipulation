@@ -1,6 +1,6 @@
 # OpenPI 部署指南
 
-本文档面向需要基于本仓库采集数据、训练策略并部署推理服务的工程师。本仓库（OrcaManipulation）负责机器人数据采集与在线推理客户端，策略训练与推理服务由 [Physical Intelligence openpi](https://github.com/Physical-Intelligence/openpi) 框架承担。
+本文档面向需要基于本仓库采集数据、训练策略并部署推理服务的工程师。本仓库（OrcaManipulation）负责机器人数据采集与在线推理客户端，策略训练与推理服务由 [Physical Intelligence openpi](https://github.com/Physical-Intelligence/openpi) 框架承担。下文命令如无另行说明，均在运行训练或推理服务的那台机器上执行。
 
 **如需启用 RTC 异步推理**（降低策略执行延迟），请在完成本文档主线流程后，参阅第 [9. RTC 异步推理（可选）](#9-rtc-异步推理可选) 节。
 
@@ -42,7 +42,9 @@ eval 推理脚本（本仓库）
 
 ### 2.1 拉取并锁定版本
 
-> 请务必锁定到以下 commit。本仓库的 RTC 扩展包（第 9 节）与该版本的内部 API 严格绑定；即便不使用 RTC，也建议固定版本以保证训练与推理行为的可复现性。
+> 请务必锁定到以下 commit。即便不使用 RTC，也建议固定版本以保证训练与推理行为的可复现性。
+
+请在运行训练与推理服务的那台机器上执行：
 
 ```bash
 git clone --recurse-submodules https://github.com/Physical-Intelligence/openpi.git
@@ -114,11 +116,9 @@ uv run python -c "import jax; print(jax.devices())"
 
 请将数据集放置在 `HF_LEROBOT_HOME/<数据集名称>/` 下，训练时以 `<数据集名称>` 作为 `repo_id`。
 
-### 已知问题：本地数据集加载
+### 适配本地数据集
 
-上游 openpi（`981483d`）的 `src/openpi/training/data_loader.py` 默认从 HuggingFace Hub 解析元信息，对纯本地数据集会报连接错误。
-
-请在 openpi 工作区手动应用以下补丁（一次性操作）：
+使用本仓库采集的本地数据集训练时，请在 openpi 工作区对 `src/openpi/training/data_loader.py` 应用以下修改（一次性操作）：
 
 ```diff
 --- a/src/openpi/training/data_loader.py
@@ -181,7 +181,7 @@ uv run python -c "import jax; print(jax.devices())"
      return dataset
 ```
 
-**补丁说明**：优先检查 `HF_LEROBOT_HOME/<repo_id>/` 是否存在本地数据集；存在时从 `meta/info.json` 读取真实帧率（本仓库采集默认 20 FPS，上游代码假设 30 FPS 会导致时间步错位），任务列表从 `meta/tasks.jsonl` 读取。不影响从 Hub 加载数据集的原有路径。
+**修改说明**：优先检查 `HF_LEROBOT_HOME/<repo_id>/` 是否存在本地数据集；存在时从 `meta/info.json` 读取数据集自带的帧率，任务列表从 `meta/tasks.jsonl` 读取。从 HuggingFace Hub 加载数据集的路径不受影响。
 
 ---
 
@@ -302,6 +302,8 @@ _CONFIGS = [
 
 训练之前必须先计算数据集的归一化统计：
 
+请在运行训练的那台机器上执行：
+
 ```bash
 cd /path/to/openpi
 HF_LEROBOT_HOME=/path/to/datasets \
@@ -313,6 +315,8 @@ uv run scripts/compute_norm_stats.py --config-name pi05_my_robot_lora
 ---
 
 ## 7. 启动训练
+
+请在运行训练的那台机器上执行：
 
 ```bash
 cd /path/to/openpi
@@ -334,7 +338,7 @@ uv run scripts/train.py pi05_my_robot_lora \
 
 ## 8. 启动推理服务
 
-训练完成后，启动策略服务器，等待本仓库推理脚本的连接。
+训练完成后，请在运行推理服务的那台机器上启动策略服务器，等待本仓库推理脚本的连接。
 
 ```bash
 cd /path/to/openpi
@@ -368,7 +372,7 @@ server listening on 0.0.0.0:8010
 
 ### 9.1 安装 openpi-rtc
 
-将本仓库 `third_party/openpi-rtc/` 安装到 openpi 环境中：
+请在运行推理服务的那台机器上，将本仓库 `third_party/openpi-rtc/` 安装到 openpi 环境中：
 
 ```bash
 # 将 openpi-rtc 目录拷贝到 openpi 的 packages/ 下
@@ -392,7 +396,7 @@ uv run python -c "from openpi_rtc import check_openpi_compat; check_openpi_compa
 
 ### 9.2 启动 RTC 推理服务
 
-使用 `openpi-rtc-serve` 替代第 8 节的 `serve_policy.py`，其余参数（config、dir、port）完全一致：
+请在运行推理服务的那台机器上，使用 `openpi-rtc-serve` 替代第 8 节的 `serve_policy.py`，其余参数（config、dir、port）完全一致：
 
 ```bash
 cd /path/to/openpi
@@ -482,7 +486,7 @@ requests.exceptions.ConnectionError: ...
 [openpi-rtc] 兼容性校验失败：...
 ```
 
-请确认 openpi 已锁定到正确版本：
+请在运行推理服务的那台机器上确认 openpi 已锁定到正确版本：
 
 ```bash
 cd /path/to/openpi
@@ -493,4 +497,4 @@ git rev-parse --short HEAD  # 应输出 981483d
 
 **推理时机械臂动作抖动或跟踪发散**
 
-请确认 eval 脚本使用开环积分（每步以上一步输出的绝对位置为基础叠加 Δq），而非每步用实测关节角重基。若使用 RTC 模式，请检查 `inference_delay` 的估计逻辑。
+请确认评估脚本与训练时使用同一套动作约定，并检查策略服务是否已加载正确的 checkpoint。若使用 RTC 模式，请检查推理延迟设置。
