@@ -7,7 +7,8 @@
 
 模型适配 g1_pick_osc_2.xml：
   - free joint 在代码中钉死（pin_floating_base，不改 XML、不改 nq）
-  - 腿部 / 腰部 position 执行器保持 ctrl=0（站立位），不额外锁定
+  - waist_yaw/roll/pitch 三关节用 JointHoldController 定死
+  - 腿部 position 执行器保持 ctrl=0（站立位），不额外锁定
 """
 import argparse
 import os
@@ -68,6 +69,127 @@ orca_logger = get_orca_logger(
 # 双臂初始关节值（全零 = 站立位，手臂自然下垂）
 _L_INIT_JOINT_VALUES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 _R_INIT_JOINT_VALUES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+
+class JointHoldController:
+    """将指定关节锁定在给定位置，每 episode 重置时重新读取 qpos。"""
+
+    def __init__(self, env, ctrl_name: list[str], init_positions: np.ndarray,
+                 joint_names: list[str]):
+        self.env = env
+        self.ctrl_name = ctrl_name
+        self._joint_names = joint_names
+        self._joint_ids = [env.joint(n) for n in joint_names]
+        self.ctrl_index = self.init_ctrl_index()
+        self.hold_positions = np.asarray(
+            [self._as_scalar(v) for v in np.asarray(init_positions).reshape(-1)],
+            dtype=np.float32,
+        )
+        self.init_ctrl = self._build_init_ctrl()
+
+    @staticmethod
+    def _as_scalar(v) -> float:
+        return float(np.asarray(v, dtype=np.float64).reshape(-1)[0])
+
+    def _build_init_ctrl(self) -> dict[int, float]:
+        return {
+            self.env.model.actuator_name2id(n): self._as_scalar(self.hold_positions[i])
+            for i, n in enumerate(self.ctrl_name)
+        }
+
+    def init_ctrl_index(self) -> list[int]:
+        return [self.env.model.actuator_name2id(n) for n in self.ctrl_name]
+
+    def get_init_ctrl(self) -> dict[int, float]:
+        return self._build_init_ctrl()
+
+    def reset(self):
+        """每 episode 重新读取当前 qpos 并更新 hold 值。"""
+        qpos = self.env.query_joint_qpos(self._joint_ids)
+        self.hold_positions = np.array(
+            [self._as_scalar(qpos[j]) for j in self._joint_ids], dtype=np.float32
+        )
+        self.init_ctrl = self._build_init_ctrl()
+
+    def run_controller(self) -> dict[int, float]:
+        return {
+            self.ctrl_index[i]: self._as_scalar(self.hold_positions[i])
+            for i in range(len(self.ctrl_index))
+        }
+
+
+def lock_waist_joints(manager: DataCollectionManager, env):
+    """锁定腰部三个关节（waist_yaw/roll/pitch），保持初始 qpos。
+
+    软锁：JointHoldController 把 position 执行器 ctrl 设为初值，
+    依赖 XML 的 PD 增益（kp≈28-40）维持位置。单独使用时手臂 OSC 反作用力矩
+    会让腰部出现可见晃动，必须配合 pin_waist_joints 硬钉死。
+    """
+    joint_names = g1_pick_osc_conf.locked_waist_joints
+    ctrl_name = [env.actuator(n) for n in joint_names]
+    joint_ids = [env.joint(n) for n in joint_names]
+    qpos = env.query_joint_qpos(joint_ids)
+    init_positions = np.array(
+        [float(np.asarray(qpos[j], dtype=np.float64).reshape(-1)[0]) for j in joint_ids],
+        dtype=np.float32,
+    )
+
+    holder = JointHoldController(env, ctrl_name, init_positions, joint_names)
+    manager.add_controller(holder)
+    return holder
+
+
+def pin_waist_joints(env, agent_name: str) -> bool:
+    """硬钉死腰部三个关节（waist_yaw/roll/pitch），与 pin_floating_base 同款做法。
+
+    原因：XML 中腰部 position 执行器 kp 仅 28-40（软 PD），
+    仅靠 JointHoldController 设 ctrl 无法抵抗手臂 OSC 的反作用力矩，
+    腰部会出现可见晃动。此处包装 gym.mj_step，每子步前后强制把 waist 关节
+    的 qpos/qvel 写回初值，实现硬约束（不改 XML、不改 nq）。
+    """
+    import mujoco
+
+    gym = getattr(env, "gym", None) or getattr(getattr(env, "unwrapped", env), "gym", None)
+    if gym is None or not hasattr(gym, "_mjModel") or not hasattr(gym, "_mjData"):
+        orca_logger.warning("[WAIST-PIN] env.gym._mjModel/_mjData unavailable")
+        return False
+
+    mj, md = gym._mjModel, gym._mjData
+    joint_names = g1_pick_osc_conf.locked_waist_joints
+    qadrs: list[int] = []
+    dadrs: list[int] = []
+    q0s: list[float] = []
+    for short in joint_names:
+        full = f"{agent_name}_{short}"
+        jid = mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_JOINT, full)
+        if jid < 0:
+            orca_logger.warning(f"[WAIST-PIN] joint not found: {full}")
+            return False
+        qadr = int(mj.jnt_qposadr[jid])
+        dadr = int(mj.jnt_dofadr[jid])
+        qadrs.append(qadr)
+        dadrs.append(dadr)
+        q0s.append(float(md.qpos[qadr]))
+
+    _orig_mj_step = gym.mj_step
+
+    def _mj_step_waist_pinned(nstep=1):
+        n = int(nstep) if nstep is not None else 1
+        for _ in range(max(n, 1)):
+            for qadr, q0 in zip(qadrs, q0s):
+                md.qpos[qadr] = q0
+            for dadr in dadrs:
+                md.qvel[dadr] = 0.0
+            _orig_mj_step(1)
+            for qadr, q0 in zip(qadrs, q0s):
+                md.qpos[qadr] = q0
+            for dadr in dadrs:
+                md.qvel[dadr] = 0.0
+        mujoco.mj_forward(mj, md)
+
+    gym.mj_step = _mj_step_waist_pinned
+    orca_logger.info(f"[WAIST-PIN] 已硬钉死腰部关节: {joint_names}")
+    return True
 
 
 def pin_floating_base(env, agent_name: str) -> bool:
@@ -324,6 +446,14 @@ def main() -> None:
                 PicoJoystickKey.R_TRANSFORM,
             )
 
+            # 腰部关节锁定（waist_yaw/roll/pitch）
+            # 软锁：把 position 执行器 ctrl 设为初值（避免 PD 反向施力）
+            orca_logger.info("Locking waist joints (soft: ctrl := init qpos)")
+            lock_waist_joints(manager, env)
+            # 硬锁：包装 mj_step 每步强制写回 qpos/qvel（避免手臂反作用力导致晃动）
+            orca_logger.info("Pinning waist joints (hard: qpos/qvel write-back)")
+            pin_waist_joints(env, args.agent_name)
+
             # 钉住浮动基座（不改 XML，不改 nq）
             orca_logger.info("Pinning floating base")
             pin_floating_base(env, args.agent_name)
@@ -561,6 +691,7 @@ def main() -> None:
     print("  左夹爪      X / Y 键 或 左扳机", flush=True)
     print("  右夹爪      A / B 键 或 右扳机", flush=True)
     print("  浮动基座    已钉死（代码锁定，不改 XML）", flush=True)
+    print("  腰部关节    已锁定（waist_yaw/roll/pitch）", flush=True)
     print("-" * 60, flush=True)
     if teleop_only:
         print("  【遥操流程（不保存）】", flush=True)
