@@ -21,19 +21,10 @@ if project_root not in sys.path:
 from scene.scene_manager import SceneManager
 from scene.scene_config_util import create_task, load_scene_config, should_use_empty_task
 from devices.abstract_device import PicoJoystickDevice
-from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
+from orca_gym.devices.pico_joytsick import PicoJoystick
 from orca_gym.log.orca_log import get_orca_logger
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
-from controllers import controllers
-from controllers.g1_arm_pico_remap import (
-    G1_ARM_POSITION_REMAP,
-    G1_L_ARM_POSITION_FLIP,
-    G1_L_ARM_ROTATION_OFFSET,
-    G1_R_ARM_POSITION_FLIP,
-    G1_R_ARM_ROTATION_OFFSET,
-    add_g1_arm_osc_pico_controller,
-)
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
 
@@ -388,91 +379,9 @@ def main():
         data_collection_manager.enable_bench(args.bench)
         orca_logger.info(f"Bench enabled: {args.bench}")
 
-    if agent_name == "openloong":
-        from envs.softbody.ProcessOrcaGym import setup_openloong_dual_arm_osc_actuators
+    from envs.softbody.attach_coupling import setup_teleop_controllers
 
-        def _bind_osc_actuators() -> None:
-            setup_openloong_dual_arm_osc_actuators(env, agent_conf.l_arm, agent_conf.r_arm)
-
-        _bind_osc_actuators()
-        data_collection_manager.add_physics_reinit_callback(_bind_osc_actuators)
-        # 保留：若 MJCF 将 P_arm 置于 group 1 时仍生效；Studio 实场景全为 group 0，主要靠 trnid 断开
-        data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
-    else:
-        orca_logger.info(
-            f"Skip openloong P_arm detach for agent={agent_name} "
-            "(G1 仅 mctrl/pctrl，无 P_arm 双控)"
-        )
-
-    if agent_name == "g1_omnipicker":
-        # 使用 dev_g1 的 reverse + joint2；不再做 joint1 从动断开
-        orca_logger.info("Creating left G1 reverse gripper controller")
-        controllers.add_gripper_2f85_reverse_pico_controller(
-            data_collection_manager,
-            env,
-            agent_conf.gripper_l,
-            agent_conf.base_body,
-            pico_joystick_device,
-            [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
-        )
-        orca_logger.info("Creating right G1 reverse gripper controller")
-        controllers.add_gripper_2f85_reverse_pico_controller(
-            data_collection_manager,
-            env,
-            agent_conf.gripper_r,
-            agent_conf.base_body,
-            pico_joystick_device,
-            [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
-        )
-    else:
-        orca_logger.info("Creating left gripper controller")
-        controllers.add_gripper_2f85_pico_controller(
-            data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body,
-            pico_joystick_device, [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
-        )
-        orca_logger.info("Creating right gripper controller")
-        controllers.add_gripper_2f85_pico_controller(
-            data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body,
-            pico_joystick_device, [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
-        )
-
-
-    if agent_name == "g1_omnipicker":
-        orca_logger.info("Creating left G1 arm controller (Pico remap)")
-        add_g1_arm_osc_pico_controller(
-            data_collection_manager,
-            env,
-            agent_conf.l_arm,
-            agent_conf.base_body,
-            pico_joystick_device,
-            PicoJoystickKey.L_TRANSFORM,
-            G1_L_ARM_ROTATION_OFFSET,
-            G1_ARM_POSITION_REMAP,
-            G1_L_ARM_POSITION_FLIP,
-        )
-        orca_logger.info("Creating right G1 arm controller (Pico remap)")
-        add_g1_arm_osc_pico_controller(
-            data_collection_manager,
-            env,
-            agent_conf.r_arm,
-            agent_conf.base_body,
-            pico_joystick_device,
-            PicoJoystickKey.R_TRANSFORM,
-            G1_R_ARM_ROTATION_OFFSET,
-            G1_ARM_POSITION_REMAP,
-            G1_R_ARM_POSITION_FLIP,
-        )
-    else:
-        orca_logger.info("Creating left arm controller")
-        controllers.add_arm_osc_pico_controller(
-            data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body,
-            pico_joystick_device, PicoJoystickKey.L_TRANSFORM,
-        )
-        orca_logger.info("Creating right arm controller")
-        controllers.add_arm_osc_pico_controller(
-            data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body,
-            pico_joystick_device, PicoJoystickKey.R_TRANSFORM,
-        )
+    setup_teleop_controllers(agent_name, data_collection_manager, env, agent_conf, pico_joystick_device)
 
 
     if should_use_empty_task(config, task_config):

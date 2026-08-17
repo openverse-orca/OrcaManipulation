@@ -741,3 +741,343 @@ def start_cloth_coupling(
 
     handle = ClothCouplingHandle(config=adapted, ctx=ctx, enabled=True)
     return handle
+
+
+def _pids_on_tcp_port(port: int) -> list[int]:
+    import re
+    import subprocess
+
+    try:
+        out = subprocess.run(["ss", "-tlnp"], capture_output=True, text=True, check=False)
+    except FileNotFoundError:
+        return []
+    pids: set[int] = set()
+    for line in out.stdout.splitlines():
+        if f":{port}" in line:
+            for m in re.finditer(r"pid=(\d+)", line):
+                pids.add(int(m.group(1)))
+    return sorted(pids)
+
+
+def _kill_stale_cloth_processes(orcalink_port: int, pico_port: int) -> None:
+    from .ProcessXPBD import kill_pids_gracefully, pgrep
+
+    tele_pids = pgrep(r"data_collection_cloth_tele\.py")
+    orca_pids = _pids_on_tcp_port(orcalink_port)
+    pico_pids = _pids_on_tcp_port(pico_port)
+
+    if not (tele_pids or orca_pids or pico_pids):
+        logger.info(f"无陈旧 cloth 联调进程（:{orcalink_port} / :{pico_port}）")
+        return
+
+    logger.info(f"清理陈旧 cloth 联调进程（OrcaLink :{orcalink_port}、Pico :{pico_port}）...")
+    if tele_pids:
+        kill_pids_gracefully("data_collection_cloth_tele", tele_pids)
+    kill_pids_gracefully(f"orcalink(:{orcalink_port})", _pids_on_tcp_port(orcalink_port))
+    kill_pids_gracefully(f"Pico(:{pico_port})", _pids_on_tcp_port(pico_port))
+
+    time.sleep(1)
+    if _pids_on_tcp_port(orcalink_port) or _pids_on_tcp_port(pico_port):
+        logger.info(
+            f"WARN: :{orcalink_port} 或 :{pico_port} 仍被占用，请手动检查: "
+            f"ss -tlnp | grep -E '{orcalink_port}|{pico_port}'"
+        )
+    else:
+        logger.info(f"陈旧进程已清理，:{orcalink_port} / :{pico_port} 已释放")
+
+
+def _wait_port(port: int, label: str, max_sec: int) -> bool:
+    import socket
+
+    logger.info(f"等待 {label} localhost:{port} (最多 {max_sec}s)...")
+    waited = 0
+    while waited < max_sec:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1):
+                logger.info(f"OK {label} :{port}")
+                return True
+        except OSError:
+            pass
+        time.sleep(2)
+        waited += 2
+    logger.info(f"超时：{label} :{port} 未监听")
+    return False
+
+
+def _run_with_tee(cmd: list[str], log_path: Path, cwd: Path) -> int:
+    import subprocess
+
+    with log_path.open("w", encoding="utf-8") as fh:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, bufsize=1, cwd=str(cwd))
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            fh.write(line)
+        proc.wait()
+        return proc.returncode
+
+
+def run_p23c(
+    *,
+    python: str,
+    tele_script: Path,
+    log_dir: Path,
+    repo_root: Path,
+    level: str | None,
+    agent: str,
+    mjc_prefix: str,
+    config_path: str,
+    orcagym_port: int,
+    pbd_grpc_port: int,
+    orcalink_port: int,
+    pico_port: int,
+    wait_sec: int,
+    kill_stale: bool,
+    auto_start_studio: bool,
+    collect_data: bool,
+    cloth_debug: bool,
+    xpbd_ui: bool,
+    cloth_sync_studio_vis: bool,
+    cloth_no_realtime: bool,
+    max_macro_frames: int | None,
+    max_sec: int,
+    xpbd_auto_build: bool,
+    xpbd_build_target: str,
+    agent_user_set: bool,
+    config_explicit: bool,
+    mujoco_viewer: bool,
+    bench_json: str,
+) -> int:
+    """P23c 完整编排：清旧进程 → 等端口 → 扫描 MJCF → 准备 XPBD → 建 session → 导场景 → 启动 tele。"""
+    from .common.paths import resolve_cloth_config_path
+    from .ProcessOrcaGym import scan_tele_layout_from_mjcf
+    from .ProcessStudio import ensure_ready, find_latest_studio_mjcf_path
+    from .ProcessXPBD import DEFAULT_TARGET, cleanup, prepare
+
+    # 下游环境变量（tele / XPBD 读取）
+    os.environ["PYTHONPATH"] = (
+        f"{repo_root / 'OrcaGym'}:"
+        f"{repo_root / 'OrcaManipulation' / 'src'}:"
+        + os.environ.get("PYTHONPATH", "")
+    )
+    os.environ["PBD_GRPC_ADDRESS"] = (
+        os.environ.get("PBD_GRPC_ADDRESS", "").strip() or f"localhost:{pbd_grpc_port}"
+    )
+    os.environ["XPBD_UI"] = "1" if xpbd_ui else "0"
+    os.environ.setdefault("PBDX_FORCE_GS_ONLY", "1")
+    os.environ.setdefault("PBDX_SOLVER", "gs")
+
+    # 关卡 / 配置解析
+    level = resolve_cloth_level(level)
+    if not config_path:
+        config_path = str(resolve_cloth_config_path(level=level, agent=agent, debug=cloth_debug))
+
+    # MJCF 扫描：检测 agent / mjc_prefix
+    mjcf = find_latest_studio_mjcf_path()
+    if mjcf is not None and mjcf.is_file():
+        try:
+            layout = scan_tele_layout_from_mjcf(mjcf)
+            detected_agent = getattr(layout, "tele_agent_name", "") or ""
+            detected_prefix = getattr(layout, "mjc_agent_prefix", "") or ""
+        except Exception:
+            detected_agent = detected_prefix = ""
+        if not agent_user_set:
+            if detected_agent and detected_agent != agent:
+                logger.info(f"MJCF 扫描 tele_agent={detected_agent}（覆盖默认 openloong）")
+                agent, mjc_prefix = detected_agent, detected_prefix
+                if not config_explicit:
+                    config_path = str(resolve_cloth_config_path(level=level, agent=agent, debug=cloth_debug))
+                    logger.info(f"重解析 config={config_path}")
+        elif detected_prefix and detected_prefix != mjc_prefix:
+            logger.info(f"MJCF 扫描 mjc_prefix={detected_prefix}（覆盖默认 {mjc_prefix}）")
+            mjc_prefix = detected_prefix
+
+    os.environ["LEVEL"] = level or ""
+    os.environ["AGENT"] = agent
+    os.environ["MJC_PREFIX"] = mjc_prefix
+    os.environ["CFG"] = config_path
+    os.environ["CLOTH_DEBUG"] = "1" if cloth_debug else "0"
+
+    if cloth_sync_studio_vis:
+        os.environ["CLOTH_SYNC_STUDIO_VIS"] = "1"
+        os.environ.setdefault("CLOTH_STUDIO_VIS_STRIDE", "1")
+    if xpbd_ui:
+        os.environ.pop("MJC_PBD_NO_UI", None)
+        os.environ.setdefault("DISPLAY", ":0")
+    else:
+        os.environ["MJC_PBD_NO_UI"] = "1"
+
+    # XPBD 二进制（清旧 + 准备）
+    if xpbd_auto_build:
+        target = xpbd_build_target or DEFAULT_TARGET
+        os.environ["XPBD_BUILD_TARGET"] = target
+        cleanup(target)
+        if prepare(target) != 0:
+            logger.error("XPBD 准备失败")
+            return 1
+
+    # 进程 / 端口就绪
+    if kill_stale:
+        _kill_stale_cloth_processes(orcalink_port, pico_port)
+    else:
+        logger.info("KILL_STALE=0：跳过陈旧进程清理")
+    ensure_ready(auto_start_studio)
+    _wait_port(orcagym_port, "OrcaGym", wait_sec)
+    _wait_port(pbd_grpc_port, "PBDRender", wait_sec)
+
+    # 同步 XPBD session
+    if mjcf is None or not mjcf.is_file():
+        logger.error(f"MJCF not found; Studio Play {level} first")
+        return 2
+    ts = f"p23c_{time.strftime('%Y%m%d_%H%M%S')}"
+    _, _, session_path = build_p2_session_from_mjcf(
+        mjcf, Path(config_path), session_timestamp=ts, level=level,
+    )
+    export_xpbd_scene_for_session(session_path)
+
+    # 启动 tele
+    tele_args = [
+        "--level", level or "",
+        "--agent_name", agent,
+        "--mjc-agent-prefix", mjc_prefix,
+        "--frame-skip", "20",
+        "--time-step", "0.001",
+        "--cloth-coupling",
+        "--cloth-config", config_path,
+    ]
+    if max_macro_frames is not None:
+        tele_args += ["--max-macro-frames", str(max_macro_frames)]
+    else:
+        tele_args += ["--max-episode-sec", str(max_sec)]
+    if cloth_debug:
+        tele_args += ["--cloth-debug"]
+    if not collect_data:
+        tele_args += ["--no-collect"]
+    if cloth_no_realtime:
+        tele_args += ["--no-realtime"]
+        os.environ["CLOTH_NO_REALTIME"] = "1"
+    if mujoco_viewer:
+        tele_args += ["--gui"]
+    if bench_json:
+        tele_args += ["--bench", bench_json]
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_tag = f"p23c_{time.strftime('%Y%m%d_%H%M%S')}"
+    log_path = log_dir / f"{log_tag}_tele.log"
+
+    logger.info("启动 data_collection_cloth_tele（OrcaLink + XPBD + bridge）...")
+    cmd = [python, str(tele_script), *tele_args]
+    ret = _run_with_tee(cmd, log_path, cwd=tele_script.parent)
+    logger.info(f"完成。日志: {log_path}")
+    return ret
+
+
+def setup_teleop_controllers(
+    agent_name: str,
+    data_collection_manager: Any,
+    env: Any,
+    agent_conf: Any,
+    pico_joystick_device: Any,
+) -> None:
+    """给指定机器人装配遥操控制器/执行器（P_arm 断开 + 夹爪 + 手臂）。"""
+    from controllers import controllers
+    from orca_gym.devices.pico_joytsick import PicoJoystickKey
+
+    # 1) openloong P_arm 双控断开 / OSC 执行器
+    if agent_name == "openloong":
+        from .ProcessOrcaGym import setup_openloong_dual_arm_osc_actuators
+
+        def _bind_osc_actuators() -> None:
+            setup_openloong_dual_arm_osc_actuators(env, agent_conf.l_arm, agent_conf.r_arm)
+
+        _bind_osc_actuators()
+        data_collection_manager.add_physics_reinit_callback(_bind_osc_actuators)
+        # 保留：若 MJCF 将 P_arm 置于 group 1 时仍生效；Studio 实场景全为 group 0，主要靠 trnid 断开
+        data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
+    else:
+        logger.info(
+            f"Skip openloong P_arm detach for agent={agent_name} "
+            "(G1 仅 mctrl/pctrl，无 P_arm 双控)"
+        )
+
+    # 2) 夹爪控制器
+    if agent_name == "g1_omnipicker":
+        # 使用 dev_g1 的 reverse + joint2；不再做 joint1 从动断开
+        logger.info("Creating left G1 reverse gripper controller")
+        controllers.add_gripper_2f85_reverse_pico_controller(
+            data_collection_manager,
+            env,
+            agent_conf.gripper_l,
+            agent_conf.base_body,
+            pico_joystick_device,
+            [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
+        )
+        logger.info("Creating right G1 reverse gripper controller")
+        controllers.add_gripper_2f85_reverse_pico_controller(
+            data_collection_manager,
+            env,
+            agent_conf.gripper_r,
+            agent_conf.base_body,
+            pico_joystick_device,
+            [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
+        )
+    else:
+        logger.info("Creating left gripper controller")
+        controllers.add_gripper_2f85_pico_controller(
+            data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body,
+            pico_joystick_device, [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
+        )
+        logger.info("Creating right gripper controller")
+        controllers.add_gripper_2f85_pico_controller(
+            data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body,
+            pico_joystick_device, [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
+        )
+
+    # 3) 手臂控制器
+    if agent_name == "g1_omnipicker":
+        from controllers.g1_arm_pico_remap import (
+            G1_ARM_POSITION_REMAP,
+            G1_L_ARM_POSITION_FLIP,
+            G1_L_ARM_ROTATION_OFFSET,
+            G1_R_ARM_POSITION_FLIP,
+            G1_R_ARM_ROTATION_OFFSET,
+            add_g1_arm_osc_pico_controller,
+        )
+
+        logger.info("Creating left G1 arm controller (Pico remap)")
+        add_g1_arm_osc_pico_controller(
+            data_collection_manager,
+            env,
+            agent_conf.l_arm,
+            agent_conf.base_body,
+            pico_joystick_device,
+            PicoJoystickKey.L_TRANSFORM,
+            G1_L_ARM_ROTATION_OFFSET,
+            G1_ARM_POSITION_REMAP,
+            G1_L_ARM_POSITION_FLIP,
+        )
+        logger.info("Creating right G1 arm controller (Pico remap)")
+        add_g1_arm_osc_pico_controller(
+            data_collection_manager,
+            env,
+            agent_conf.r_arm,
+            agent_conf.base_body,
+            pico_joystick_device,
+            PicoJoystickKey.R_TRANSFORM,
+            G1_R_ARM_ROTATION_OFFSET,
+            G1_ARM_POSITION_REMAP,
+            G1_R_ARM_POSITION_FLIP,
+        )
+    else:
+        logger.info("Creating left arm controller")
+        controllers.add_arm_osc_pico_controller(
+            data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body,
+            pico_joystick_device, PicoJoystickKey.L_TRANSFORM,
+        )
+        logger.info("Creating right arm controller")
+        controllers.add_arm_osc_pico_controller(
+            data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body,
+            pico_joystick_device, PicoJoystickKey.R_TRANSFORM,
+        )
