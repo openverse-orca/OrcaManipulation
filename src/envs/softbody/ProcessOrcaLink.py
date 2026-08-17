@@ -15,7 +15,7 @@ from typing import Any, Dict, Iterable, Optional
 import mujoco
 import numpy as np
 
-from ..fluid.launch.process_utils import ProcessManager, _fluid_subprocess_preexec
+from .common.process_utils import ProcessManager, _subprocess_preexec
 from .common.paths import ORCA_REPO_ROOT
 
 logger = logging.getLogger(__name__)
@@ -150,25 +150,15 @@ class OrcaLinkPoseRemapper:
 
 
 def _find_orcalink_binary() -> Path:
-    for rel in (
-        "OrcaLink/bin/orcalink",
-        "OrcaLink/build/Server/orcalink",
-        "OrcaLink/build/orcalink",
-    ):
-        candidate = (ORCA_REPO_ROOT / rel).resolve()
-        if candidate.is_file():
-            return candidate
     try:
         import orcalink_client
+
         candidate = (Path(orcalink_client.__file__).parent / "bin" / "orcalink").resolve()
         if candidate.is_file():
             return candidate
     except ImportError:
         pass
-    raise FileNotFoundError(
-        f"OrcaLink server binary not found under {ORCA_REPO_ROOT / 'OrcaLink'} "
-        f"or in installed orcalink_client package"
-    )
+    raise FileNotFoundError("OrcaLink server binary not found in installed orcalink_client package")
 
 
 def stop_orcalink_on_port(port: int) -> None:
@@ -229,14 +219,14 @@ def start_orcalink_if_configured(
             cwd=str(server_bin.parent),
             stdout=log_handle,
             stderr=subprocess.STDOUT,
-            preexec_fn=_fluid_subprocess_preexec,
+            preexec_fn=_subprocess_preexec,
         )
         proc.log_file = log_handle
     else:
         proc = subprocess.Popen(
             cmd,
             cwd=str(server_bin.parent),
-            preexec_fn=_fluid_subprocess_preexec,
+            preexec_fn=_subprocess_preexec,
         )
 
     process_manager.processes["OrcaLink"] = proc

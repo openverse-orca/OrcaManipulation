@@ -14,7 +14,8 @@ from typing import Any, Callable, Dict, Optional
 
 from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
 
-from ..fluid.launch.process_utils import ProcessManager
+from .common.process_utils import ProcessManager
+
 from .ProcessOrcaGym import (
     adapt_config_for_orcagym,
     get_mujoco_model_data,
@@ -24,21 +25,20 @@ from .ProcessOrcaGym import (
 from .ProcessPico import write_grip_triggers
 from .ProcessOrcaGym import sync_gripper_mocap_from_bodies
 from .ProcessOrcaLink import OrcaLinkPoseRemapper, resolve_pose_remap, start_orcalink_if_configured
-from .common.paths import CLOTH_3D_DIR, ORCA_REPO_ROOT, ORCALINK_CLIENT_PYTHON, default_cloth_config_path
 from .ProcessXPBD import start_xpbd_if_configured
+
+from .common.paths import CLOTH_3D_DIR, ORCA_REPO_ROOT, default_cloth_config_path
 
 logger = logging.getLogger(__name__)
 
 _XPBD_DEBUG_LOG = ORCA_REPO_ROOT / "XPBD" / "MjcPBD_orcalink" / "debug_log"
+CLOTH_SCENE_ASSETS_BASENAME = "cloth_scene_assets.json"
 
 
 def _ensure_cloth_3d_import_path() -> None:
     root = str(CLOTH_3D_DIR)
     if root not in sys.path:
         sys.path.insert(0, root)
-    ol_py = str(ORCALINK_CLIENT_PYTHON)
-    if ol_py not in sys.path:
-        sys.path.insert(0, ol_py)
 
 
 @dataclass
@@ -224,8 +224,6 @@ def build_xpbd_session_config(base_cfg: dict[str, Any], adapted_cfg: dict[str, A
     if level:
         cloth["level"] = level
         if not str(cloth.get("asset_dir") or "").strip():
-            from envs.softbody.common.paths import studio_cloth_assets_dir  # noqa: WPS433
-
             cloth["asset_dir"] = str(studio_cloth_assets_dir(level))
     return out
 
@@ -300,6 +298,218 @@ def export_xpbd_scene_for_session(
     return (dbg_dir / "xpbd_scene_from_mjcf.json").resolve()
 
 
+def cloth_scene_assets_config_path() -> Path:
+    """``cloth_scene_assets.json`` 路径；可用 ``CLOTH_SCENE_ASSETS_CONFIG`` 覆盖。"""
+    override = os.environ.get("CLOTH_SCENE_ASSETS_CONFIG", "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    return (CLOTH_3D_DIR / CLOTH_SCENE_ASSETS_BASENAME).resolve()
+
+
+def load_template_config_for_paths() -> dict[str, Any]:
+    """仅读仓库模板（场景/资产解析内部用）。"""
+    path = cloth_scene_assets_config_path()
+    if not path.is_file():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {}
+
+
+def studio_cloth_assets_dir(level: str) -> Path:
+    """
+    场景权威布料资产目录：``{studio_project}/Assets/{level}/``。
+
+    首次访问某关卡时会尝试扫描 prefab 并更新 ``~/.orcagym/cloth/scene_levels.json``。
+    """
+    level_name = str(level).strip()
+    if not level_name:
+        raise ValueError("studio_cloth_assets_dir requires non-empty level")
+
+    import sys
+
+    modules_dir = CLOTH_3D_DIR / "modules"
+    if str(modules_dir) not in sys.path:
+        sys.path.insert(0, str(modules_dir))
+    from scene_cloth_config import ensure_level_scene_config, level_entry  # noqa: WPS433
+
+    ensure_level_scene_config(level_name)
+    level_entry(level_name, auto_sync=False)
+    return (_studio_project_dir_from_template() / "Assets" / level_name).resolve()
+
+
+def _studio_project_dir_from_template() -> Path:
+    import sys
+
+    modules_dir = CLOTH_3D_DIR / "modules"
+    if str(modules_dir) not in sys.path:
+        sys.path.insert(0, str(modules_dir))
+    from scene_cloth_config import studio_project_dir  # noqa: WPS433
+
+    return studio_project_dir(load_template_config_for_paths())
+
+
+def level_primary_masked_stem(level: str) -> str | None:
+    """
+    从 ``scene_levels.json`` 读取关卡主掩码布 stem。
+
+    当 MJCF 尚无 ``_XPBD_CLOTHSHEET_*`` 标记时，用此 stem 解析 ``cloth.mesh``，
+    避免回退到基配置里的 ``shirt_v4.vtk``。
+    """
+    level_name = str(level).strip()
+    if not level_name:
+        return None
+    import sys
+
+    modules_dir = CLOTH_3D_DIR / "modules"
+    if str(modules_dir) not in sys.path:
+        sys.path.insert(0, str(modules_dir))
+    if str(CLOTH_3D_DIR) not in sys.path:
+        sys.path.insert(0, str(CLOTH_3D_DIR))
+    from scene_cloth_config import level_entry  # noqa: WPS433
+
+    _ensure_level_scene_config(level_name)
+    entry = level_entry(level_name, auto_sync=False)
+    if not isinstance(entry, dict):
+        return None
+    if str(entry.get("cloth_mode") or "").strip() != "masked_vtk":
+        return None
+    stems = entry.get("masked_cloth_stems") or []
+    if not stems:
+        prefabs = entry.get("prefabs") or []
+        if prefabs and isinstance(prefabs[0], dict):
+            vtk_path = str(prefabs[0].get("vtk_asset_path") or "").strip()
+            if vtk_path:
+                return Path(vtk_path).stem
+        return None
+    return str(stems[0]).strip() or None
+
+
+def apply_masked_cloth_from_level(config: dict[str, Any], level: str) -> dict[str, Any]:
+    """
+    MJCF 未扫描到布片时，用关卡 ``scene_levels.json`` 写入掩码 ``cloth`` 块。
+
+    已 ``discovered`` 的布片不覆盖；程序化关卡（无 masked stem）不改动。
+    """
+    out = copy.deepcopy(config)
+    cloth = out.setdefault("cloth", {})
+    if cloth.get("discovered"):
+        return out
+
+    stem = level_primary_masked_stem(level)
+    if not stem:
+        return out
+
+    current_mesh = str(cloth.get("mesh") or "").strip()
+    legacy_meshes = ("shirt_v4.vtk", "shirt_new.vtk", "")
+    if current_mesh and current_mesh not in legacy_meshes and stem in current_mesh:
+        mesh_name = current_mesh
+    else:
+        mesh_name = f"{stem}.vtk"
+
+    import sys
+
+    if str(CLOTH_3D_DIR) not in sys.path:
+        sys.path.insert(0, str(CLOTH_3D_DIR))
+    from modules.masked_vtk_assets import enrich_cloth_entry_with_masked_assets  # noqa: WPS433
+
+    enriched = enrich_cloth_entry_with_masked_assets(
+        {"mesh": mesh_name, "vtk_asset_path": mesh_name},
+        level=level,
+    )
+    cloth.update(enriched)
+    cloth.setdefault("level", level)
+    cloth.setdefault("asset_dir", str(studio_cloth_assets_dir(level)))
+    return out
+
+
+@dataclass
+class ResolvedSceneAssets:
+    """编排器对某关卡「查一次」得到的布料场景/资产结果，传给各 Process* 模块。"""
+
+    asset_dir: str
+    primary_masked_stem: str | None
+    masked_cloth_block: dict[str, Any] | None
+
+
+def _resolve_scene_assets(config: dict[str, Any]) -> ResolvedSceneAssets:
+    """解析某关卡的 asset_dir、掩码布 stem 与掩码布块（原 paths.apply_masked_cloth_from_level 的「查」部分）。"""
+    level = str((config.get("orcagym") or {}).get("level") or "").strip()
+    if not level:
+        return ResolvedSceneAssets(asset_dir="", primary_masked_stem=None, masked_cloth_block=None)
+
+    asset_dir = str(studio_cloth_assets_dir(level))
+    stem = level_primary_masked_stem(level)
+    cloth = config.get("cloth") or {}
+    masked: dict[str, Any] | None = None
+    if stem and not cloth.get("discovered"):
+        current_mesh = str(cloth.get("mesh") or "").strip()
+        legacy_meshes = ("shirt_v4.vtk", "shirt_new.vtk", "")
+        mesh_name = (
+            current_mesh
+            if (current_mesh and current_mesh not in legacy_meshes and stem in current_mesh)
+            else f"{stem}.vtk"
+        )
+        if str(CLOTH_3D_DIR) not in sys.path:
+            sys.path.insert(0, str(CLOTH_3D_DIR))
+        from modules.masked_vtk_assets import enrich_cloth_entry_with_masked_assets  # noqa: WPS433
+
+        masked = enrich_cloth_entry_with_masked_assets(
+            {"mesh": mesh_name, "vtk_asset_path": mesh_name}, level=level
+        )
+    return ResolvedSceneAssets(
+        asset_dir=asset_dir, primary_masked_stem=stem, masked_cloth_block=masked
+    )
+
+
+def apply_runtime_cloth_overrides(
+    config: dict[str, Any],
+    *,
+    level: str | None = None,
+    mjc_agent_prefix: str | None = None,
+) -> dict[str, Any]:
+    """
+    将运行时关卡名、MuJoCo 机器人前缀写入配置（深拷贝）。
+
+    关卡与机器人型号不写进 ``cloth_sim_config.json``，由 CLI / 环境变量注入。
+    """
+    out = copy.deepcopy(config)
+    og = out.setdefault("orcagym", {})
+    if level and str(level).strip():
+        og["level"] = str(level).strip()
+    prefix = (mjc_agent_prefix or "").strip()
+    if prefix:
+        og["mjc_agent_prefix"] = prefix
+    return out
+
+
+def apply_runtime_orcagym_level(config: dict[str, Any], level: str) -> dict[str, Any]:
+    """将运行时关卡名写入 ``orcagym.level``（深拷贝，不改原 dict）。"""
+    return apply_runtime_cloth_overrides(config, level=level)
+
+
+def _ensure_level_scene_config(level: str) -> None:
+    """解析关卡后自动同步本机 scene_levels（失败不阻断联调）。"""
+    modules_dir = CLOTH_3D_DIR / "modules"
+    if str(modules_dir) not in sys.path:
+        sys.path.insert(0, str(modules_dir))
+    try:
+        from scene_cloth_config import ensure_level_scene_config  # noqa: WPS433
+
+        if ensure_level_scene_config(level):
+            logger.debug("cloth scene config synced for level=%s", level)
+    except Exception as exc:
+        logger.debug("cloth scene auto-sync skipped: %s", exc)
+
+
+def resolve_cloth_level(level: str | None = None) -> str:
+    """委托 ``ProcessStudio.resolve_cloth_level_with_studio``，并自动同步本机关卡配置。"""
+    from .ProcessStudio import resolve_cloth_level_with_studio
+
+    resolved = resolve_cloth_level_with_studio(level)
+    _ensure_level_scene_config(resolved)
+    return resolved
+
+
 def build_p2_session_from_mjcf(
     mjcf_path: Path,
     config_path: Path,
@@ -323,8 +533,6 @@ def build_p2_session_from_mjcf(
 
     base_cfg = load_cloth_config(config_path)
     if level:
-        from .common.paths import apply_runtime_orcagym_level
-
         base_cfg = apply_runtime_orcagym_level(base_cfg, level)
     model = mujoco.MjModel.from_xml_path(str(mjcf_path.resolve()))
     data = mujoco.MjData(model)
@@ -339,7 +547,8 @@ def build_p2_session_from_mjcf(
     cloths = enrich_cloth_discovery_pose(model, data, identify_xpbd_cloth(model))
     base_cfg = merge_cloth_discovery(base_cfg, cloths)
     base_cfg = merge_body_discovery(base_cfg, model, data)
-    adapted = adapt_config_for_orcagym(model, base_cfg, data=data)
+    scene_assets = _resolve_scene_assets(base_cfg)
+    adapted = adapt_config_for_orcagym(model, base_cfg, scene_assets=scene_assets, data=data)
     xpbd_session = build_xpbd_session_config(base_cfg, adapted)
     xpbd_session.setdefault("mujoco", {})["model_path"] = str(mjcf_path.resolve())
     try:
@@ -375,7 +584,8 @@ def _connect_cloth_bridge(
 
     model, data = get_mujoco_model_data(env)
     if adapted is None:
-        adapted = adapt_config_for_orcagym(model, config, data=data)
+        scene_assets = _resolve_scene_assets(config)
+        adapted = adapt_config_for_orcagym(model, config, scene_assets=scene_assets, data=data)
     publish_entries = load_body_map_ordered(model, adapted)
     errs = validate_orcagym_body_map(model, publish_entries)
     if errs:
@@ -446,8 +656,6 @@ def start_cloth_coupling(
     if auto_start_xpbd is not None:
         cfg.setdefault("xpbd", {})["auto_start"] = bool(auto_start_xpbd)
 
-    from .common.paths import apply_masked_cloth_from_level, resolve_cloth_level
-
     og = cfg.setdefault("orcagym", {})
     resolved_level = resolve_cloth_level(str(og.get("level") or "").strip() or None)
     og["level"] = resolved_level
@@ -461,14 +669,15 @@ def start_cloth_coupling(
 
     from .ProcessStudio import run_masked_vtk_prefab_check_at_startup
 
-    if not run_masked_vtk_prefab_check_at_startup(model, cfg):
+    scene_assets = _resolve_scene_assets(cfg)
+    if not run_masked_vtk_prefab_check_at_startup(model, cfg, scene_assets=scene_assets):
         import logging
         logging.getLogger(__name__).warning(
             "掩码 VTK 预制检查未通过（将继续运行，仅 VTK 加载不受影响）。"
             "跳过: CLOTH_SKIP_MASKED_PREFAB_CHECK=1"
         )
 
-    adapted = adapt_config_for_orcagym(model, cfg, data=data)
+    adapted = adapt_config_for_orcagym(model, cfg, scene_assets=scene_assets, data=data)
     xpbd_session_cfg = build_xpbd_session_config(base_cfg, adapted)
     mjcf_path = get_mujoco_xml_path(env)
     xpbd_session_cfg.setdefault("mujoco", {})["model_path"] = str(mjcf_path)

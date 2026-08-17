@@ -18,13 +18,7 @@ from typing import Any
 
 import mujoco
 
-from .common.paths import (
-    CLOTH_3D_DIR,
-    level_primary_masked_stem,
-    normalize_vtk_asset_name,
-    resolve_cloth_level,
-    studio_cloth_assets_dir,
-)
+from .common.paths import CLOTH_3D_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +270,7 @@ def resolve_prefab_check_level(config: dict[str, Any] | None = None) -> str:
     """
     解析预制检查使用的关卡名。
 
-    优先级：``config.orcagym.level`` → ``config.cloth.level`` → 环境变量 ``LEVEL`` → ``resolve_cloth_level``。
+    优先级：``config.orcagym.level`` → ``config.cloth.level`` → 环境变量 ``LEVEL`` → ``resolve_cloth_level_with_studio``。
     """
     if config:
         og = config.get("orcagym") or {}
@@ -290,7 +284,7 @@ def resolve_prefab_check_level(config: dict[str, Any] | None = None) -> str:
     env_level = os.environ.get("LEVEL", "").strip()
     if env_level:
         return env_level
-    return resolve_cloth_level(None)
+    return resolve_cloth_level_with_studio(None)
 
 
 def _missing_companion_names(asset_dir: Path, stem: str) -> list[str]:
@@ -322,9 +316,21 @@ def _read_mask_active_count(mask_path: Path) -> int:
     return int(sum(flags))
 
 
+def normalize_vtk_asset_name(vtk_name: str, *, level: str | None = None) -> str:
+    """见 ``modules.masked_vtk_assets.normalize_vtk_asset_name``。"""
+    import sys
+
+    if str(CLOTH_3D_DIR) not in sys.path:
+        sys.path.insert(0, str(CLOTH_3D_DIR))
+    from modules.masked_vtk_assets import normalize_vtk_asset_name as _normalize  # noqa: WPS433
+
+    return _normalize(vtk_name, level=level)
+
+
 def check_masked_vtk_prefab(
     vtk_name: str,
     *,
+    asset_dir: str,
     level: str | None = None,
     body_name: str | None = None,
 ) -> MaskedVtkPrefabCheckResult:
@@ -332,6 +338,7 @@ def check_masked_vtk_prefab(
     在 ``Assets/<level>/`` 中检查掩码 VTK 预制是否完成。
 
     返回结构化结果；``passed`` 为真表示三件套齐全且 ``.mask`` 与 ``meta`` 一致。
+    ``asset_dir`` 为编排器预先解析好的资产目录。
     """
     mesh_name = str(vtk_name).strip()
     resolved_level = str(level or resolve_prefab_check_level(None)).strip()
@@ -356,7 +363,7 @@ def check_masked_vtk_prefab(
         result.errors.append("未指定关卡名（orcagym.level / LEVEL 环境变量）")
         return result
 
-    asset_dir = studio_cloth_assets_dir(resolved_level)
+    asset_dir = Path(asset_dir)
     result.asset_dir = asset_dir
     stem = Path(mesh_name).stem
     result.missing = _missing_companion_names(asset_dir, stem)
@@ -429,8 +436,10 @@ def print_masked_vtk_prefab_report(result: MaskedVtkPrefabCheckResult) -> None:
     print(f"  compact  : {result.compact_count} / embed {result.embed_count}")
 
 
-def _cloth_mesh_names_from_model(model: mujoco.MjModel, config: dict[str, Any]) -> list[tuple[str, str | None]]:
-    """从 MJCF 扫描得到待检查的 cloth mesh；无标记时用关卡 scene_levels 或 config.cloth.mesh。"""
+def _cloth_mesh_names_from_model(
+    model: mujoco.MjModel, config: dict[str, Any], *, primary_masked_stem: str | None
+) -> list[tuple[str, str | None]]:
+    """从 MJCF 扫描得到待检查的 cloth mesh；无标记时用传入的 stem 或 config.cloth.mesh。"""
     import sys
 
     if str(CLOTH_3D_DIR) not in sys.path:
@@ -439,7 +448,6 @@ def _cloth_mesh_names_from_model(model: mujoco.MjModel, config: dict[str, Any]) 
     names: list[tuple[str, str | None]] = []
     cloth_cfg = config.get("cloth") or {}
     cfg_mesh = str(cloth_cfg.get("mesh") or "").strip()
-    level = resolve_prefab_check_level(config)
     try:
         from modules.identify_xpbd_cloth import identify_xpbd_cloth  # noqa: WPS433
 
@@ -451,9 +459,8 @@ def _cloth_mesh_names_from_model(model: mujoco.MjModel, config: dict[str, Any]) 
         logger.warning("identify_xpbd_cloth 失败，回退关卡/config mesh: %s", exc)
 
     if not names:
-        stem = level_primary_masked_stem(level)
-        if stem:
-            names.append((f"{stem}.vtk", cloth_cfg.get("body_name")))
+        if primary_masked_stem:
+            names.append((f"{primary_masked_stem}.vtk", cloth_cfg.get("body_name")))
         elif cfg_mesh:
             names.append((cfg_mesh, cloth_cfg.get("body_name")))
 
@@ -464,6 +471,7 @@ def run_masked_vtk_prefab_check_at_startup(
     model: mujoco.MjModel,
     config: dict[str, Any],
     *,
+    scene_assets: Any,
     strict: bool | None = None,
 ) -> bool:
     """
@@ -484,7 +492,7 @@ def run_masked_vtk_prefab_check_at_startup(
         )
 
     level = resolve_prefab_check_level(config)
-    meshes = _cloth_mesh_names_from_model(model, config)
+    meshes = _cloth_mesh_names_from_model(model, config, primary_masked_stem=scene_assets.primary_masked_stem)
     if not meshes:
         print("[Cloth] 掩码 VTK 预制检查: 未发现 cloth mesh，跳过")
         return True
@@ -502,7 +510,9 @@ def run_masked_vtk_prefab_check_at_startup(
             result.warnings.append(f"mesh={mesh_name!r} 为程序化矩形，跳过")
             print_masked_vtk_prefab_report(result)
             continue
-        result = check_masked_vtk_prefab(mesh_name, level=level, body_name=body_name)
+        result = check_masked_vtk_prefab(
+            mesh_name, asset_dir=scene_assets.asset_dir, level=level, body_name=body_name
+        )
         print_masked_vtk_prefab_report(result)
         if not result.passed:
             all_ok = False
@@ -513,24 +523,3 @@ def run_masked_vtk_prefab_check_at_startup(
             return False
         logger.warning("CLOTH_MASKED_PREFAB_WARN_ONLY=1，继续启动")
     return True if (all_ok or not strict) else False
-
-
-def main(argv: list[str] | None = None) -> int:
-    """CLI：``LEVEL=<场景> python3 -m envs.softbody.ProcessStudio <mesh.vtk>``"""
-    import sys
-
-    args = list(argv if argv is not None else sys.argv[1:])
-    if not args:
-        print(
-            "用法: LEVEL=NursingHome_Tshirt python3 -m envs.softbody.ProcessStudio <cloth_mesh.vtk>",
-            file=sys.stderr,
-        )
-        return 2
-    level = resolve_prefab_check_level(None)
-    result = check_masked_vtk_prefab(args[0], level=level or None)
-    print_masked_vtk_prefab_report(result)
-    return 0 if result.passed else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

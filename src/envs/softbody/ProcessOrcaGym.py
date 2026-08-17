@@ -42,6 +42,7 @@ def adapt_config_for_orcagym(
     model: mujoco.MjModel,
     config: dict[str, Any],
     *,
+    scene_assets: Any,
     data: mujoco.MjData | None = None,
 ) -> dict[str, Any]:
     """
@@ -52,6 +53,9 @@ def adapt_config_for_orcagym(
     - ``xpbd_auto_discover.cloth=true``：``identify_xpbd_cloth`` 合并进 ``config["cloth"]``；
     - 扫描模式下强制 ``pose_remap.enabled=false``；
     - body_track body-only：不要求 anchor SITE。
+
+    ``scene_assets`` 为编排器预先解析好的场景/资产结果（``asset_dir`` / ``masked_cloth_block``），
+    本函数不再自行查 ``studio_cloth_assets_dir`` / ``apply_masked_cloth_from_level``。
     """
     cfg = copy.deepcopy(config)
     disc = cfg.setdefault("anchor_discovery", {})
@@ -81,25 +85,23 @@ def adapt_config_for_orcagym(
                 cloths = enrich_discovered_cloths_with_masked_assets(cloths, level=level or None)
             cfg = merge_cloth_discovery(cfg, cloths)
             if level and cfg.get("cloth"):
-                from envs.softbody.common.paths import studio_cloth_assets_dir  # noqa: WPS433
-
                 cloth_blk = cfg["cloth"]
                 cloth_blk.setdefault("level", level)
-                cloth_blk.setdefault("asset_dir", str(studio_cloth_assets_dir(level)))
+                cloth_blk.setdefault("asset_dir", scene_assets.asset_dir)
             if level and not (cfg.get("cloth") or {}).get("discovered"):
-                from envs.softbody.common.paths import apply_masked_cloth_from_level  # noqa: WPS433
-
-                cfg = apply_masked_cloth_from_level(cfg, level)
+                if scene_assets.masked_cloth_block is not None:
+                    cloth = cfg.setdefault("cloth", {})
+                    cloth.update(scene_assets.masked_cloth_block)
+                    cloth.setdefault("level", level)
+                    cloth.setdefault("asset_dir", scene_assets.asset_dir)
         except ImportError as exc:
             logger.warning("cloth auto discover skipped: %s", exc)
             level = str((cfg.get("orcagym") or {}).get("level") or "").strip()
-            if level:
-                try:
-                    from envs.softbody.common.paths import apply_masked_cloth_from_level  # noqa: WPS433
-
-                    cfg = apply_masked_cloth_from_level(cfg, level)
-                except ImportError:
-                    pass
+            if level and scene_assets.masked_cloth_block is not None:
+                cloth = cfg.setdefault("cloth", {})
+                cloth.update(scene_assets.masked_cloth_block)
+                cloth.setdefault("level", level)
+                cloth.setdefault("asset_dir", scene_assets.asset_dir)
 
     map_key = str(cfg.get("orcagym", {}).get("rigid_body_map_key", "rigid_body_map"))
     rows_in: list[dict[str, Any]] = []

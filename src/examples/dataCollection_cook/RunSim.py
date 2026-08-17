@@ -38,7 +38,6 @@ REPO_ROOT = _repo_root()
 TELE_DIR = Path(__file__).resolve().parent
 
 for _p in (
-    str(REPO_ROOT / "OrcaLink" / "Client" / "Python"),
     str(REPO_ROOT / "OrcaGym"),
     str(REPO_ROOT / "OrcaManipulation" / "src"),
     str(TELE_DIR),
@@ -172,7 +171,6 @@ def main() -> int:
 
     # export 环境变量（下游 tele / XPBD 读取）
     os.environ["PYTHONPATH"] = (
-        f"{REPO_ROOT / 'OrcaLink' / 'Client' / 'Python'}:"
         f"{REPO_ROOT / 'OrcaGym'}:"
         f"{REPO_ROOT / 'OrcaManipulation' / 'src'}:"
         + os.environ.get("PYTHONPATH", "")
@@ -183,7 +181,8 @@ def main() -> int:
     os.environ.setdefault("PBDX_SOLVER", "gs")
 
     # LEVEL / CFG（resolve_cloth_level 内部会兜底自动检测 Studio 关卡）
-    from envs.softbody.common.paths import resolve_cloth_config_path, resolve_cloth_level
+    from envs.softbody.attach_coupling import resolve_cloth_level
+    from envs.softbody.common.paths import resolve_cloth_config_path
 
     level_raw = _env_or("LEVEL", _env_or("ORCA_LEVEL_NAME", "")) or None
     level = resolve_cloth_level(level_raw)

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from ..cpu_affinity import wrap_cmd_with_taskset
-from ..fluid.launch.process_utils import ProcessManager, _fluid_subprocess_preexec
+from .common.process_utils import ProcessManager, _subprocess_preexec
 from .common.paths import CLOTH_3D_DIR, XPBD_ROOT
 
 logger = logging.getLogger(__name__)
@@ -171,20 +171,20 @@ def _resolve_xpbd_executable_from_pip(target: str) -> Optional[Path]:
     5. CLI 不支持 ProcessManager 注册
 
     默认启用 pip 包二进制（无需环境变量）。
-    通过 ORCAXPBD_USE_PIP_PACKAGE=0 显式禁用，回退源码编译模式。
-    pip 包未安装或目标不存在时自动回退源码编译模式。
+    通过 ORCAXPBD_USE_PIP_PACKAGE=0 显式禁用，返回 None。
+    pip 包未安装或目标不存在时返回 None（由调用方抛错）。
     """
     env_val = os.environ.get("ORCAXPBD_USE_PIP_PACKAGE", "1").strip().lower()
     logger.info("[pip_diag] _resolve_xpbd_executable_from_pip called: target=%r, ORCAXPBD_USE_PIP_PACKAGE=%r", target, env_val)
     if env_val in ("0", "false", "no", "off"):
-        logger.info("[pip_diag] ORCAXPBD_USE_PIP_PACKAGE=%r 显式禁用，回退源码编译模式", env_val)
+        logger.info("[pip_diag] ORCAXPBD_USE_PIP_PACKAGE=%r 显式禁用，返回 None", env_val)
         return None
     logger.info("[pip_diag] pip 包模式启用，尝试从 orcaxpbd_client 解析二进制路径")
     try:
         from orcaxpbd_client.binary_runner import get_binary_path
         logger.info("[pip_diag] orcaxpbd_client.binary_runner 导入成功")
     except ImportError as exc:
-        logger.info("[pip_diag] orcaxpbd_client 未安装（import 失败: %s），回退源码编译模式", exc)
+        logger.info("[pip_diag] orcaxpbd_client 未安装（import 失败: %s），返回 None", exc)
         return None
     name = Path(target).name
     logger.info("[pip_diag] 查询 pip 包内二进制: name=%r", name)
@@ -193,7 +193,7 @@ def _resolve_xpbd_executable_from_pip(target: str) -> Optional[Path]:
         logger.info("[pip_diag] get_binary_path 返回: %s (exists=%s, exec=%s)",
                     path, path.is_file(), os.access(path, os.X_OK) if path.is_file() else False)
     except (FileNotFoundError, ValueError) as exc:
-        logger.info("[pip_diag] pip 包内未找到目标 %s: %s，回退源码编译模式", name, exc)
+        logger.info("[pip_diag] pip 包内未找到目标 %s: %s，返回 None", name, exc)
         return None
     logger.info("XPBD 使用 pip 包二进制: %s", path)
     return path
@@ -415,7 +415,7 @@ def start_xpbd_if_configured(
             env=env,
             stdout=log_handle,
             stderr=subprocess.STDOUT,
-            preexec_fn=_fluid_subprocess_preexec,
+            preexec_fn=_subprocess_preexec,
         )
         proc.log_file = log_handle
     else:
@@ -423,7 +423,7 @@ def start_xpbd_if_configured(
             cmd,
             cwd=str(xpbd_cwd),
             env=env,
-            preexec_fn=_fluid_subprocess_preexec,
+            preexec_fn=_subprocess_preexec,
         )
 
     process_manager.processes["XPBD"] = proc
