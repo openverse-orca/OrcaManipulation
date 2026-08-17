@@ -57,8 +57,16 @@ PY
 python -m pip install --no-deps --require-hashes -r requirements.txt
 
 # --no-deps is intentional: the validated Conda NumPy/SciPy versions differ
-# from stale dependency metadata published by orca-gym 26.6.3.
-python -m pip install --no-deps "orca-gym==26.6.3"
+# from stale dependency metadata published by orca-gym 26.7.1.
+python -m pip install --no-deps "orca-gym==26.7.1"
+
+# OrcaLab is the desktop application; the PyPI package is the whole thing, so
+# there is no separate installer to run. --no-deps applies for the same reason as
+# above, plus its pyparsing==3.2.5 pin, which would downgrade the version
+# matplotlib is validated against. Every dependency it actually needs is in
+# requirements.txt. orca-lab and orca-gym must stay on the same version: orca-lab
+# declares an exact orca-gym pin, and a mismatch breaks the gRPC handshake.
+python -m pip install --no-deps "orca-lab==26.7.1"
 
 # Repository-owned sources are installed last. No developer-machine path or
 # unpinned Git checkout is consulted.
@@ -67,3 +75,15 @@ python -m pip install --no-deps --no-build-isolation ./third_party/televuer
 python -m pip install --no-deps --no-build-isolation ./third_party/openpi-client
 
 python scripts/verify_environment.py
+
+# OrcaLab pulls the Qt platform libraries it is missing on first launch. It can do
+# that unprivileged for libxcb-cursor0 (downloaded and copied next to PySide6), but
+# libvdpau1 goes through "sudo apt install", which stalls on a password prompt in a
+# non-interactive session. Report it here instead of letting the first launch block.
+if command -v dpkg-query >/dev/null 2>&1; then
+    if ! dpkg-query -W -f='${Status}' libvdpau1 2>/dev/null | grep -q '^install ok installed$'; then
+        echo
+        echo "warning: libvdpau1 is missing; OrcaLab would prompt for a sudo password on first launch."
+        echo "         install it now with: sudo apt install -y libvdpau1"
+    fi
+fi
