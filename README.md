@@ -13,17 +13,19 @@
 
 ---
 
-## 前置：OrcaLab 与资产订阅
+## 前置：系统依赖与资产订阅
 
-运行本项目前，请先完成以下两步。
+**1. 安装系统依赖**
 
-**1. 安装 OrcaLab 7.1**
+```bash
+sudo apt install -y libvdpau1
+```
 
-本项目所有场景均依赖 OrcaLab 7.1 提供的仿真服务。请从 OrcaLab 官方网站下载 7.1 版本安装包，并在运行本项目的主机上完成安装。
+OrcaLab 首次启动时会自行补齐它缺少的 Qt 平台库，其中 `libxcb-cursor0` 会以普通用户权限下载并放到 PySide6 目录旁，无需 root；但 `libvdpau1` 走的是 `sudo apt install`，先装好可以避免首次启动卡在密码提示上。
 
 **2. 订阅场景资产**
 
-请登录 OrcaLab 资产库，订阅以下三个资产包（每个资产在打开场景时会自动加载）：
+OrcaLab 7.1 本身无需单独下载安装包，它会随下文的 Conda 环境一起装好（见「环境安装」）。环境装好后启动 `orcalab`，登录 OrcaLab 资产库并订阅以下三个资产包（每个资产在打开场景时会自动加载）：
 
 - `SouthGrid_Competition_2026`
 - `G1_omnipicker`
@@ -58,7 +60,7 @@ src/
 
 | 组件 | 版本 / 要求 |
 |------|-------------|
-| OrcaLab / OrcaGym | **7.1 / 26.6.3** |
+| OrcaLab / OrcaGym | **26.7.1 / 26.7.1**（即 OrcaLab 7.1；两者版本号必须一致，由 `install_runtime.sh` 安装） |
 | Python | **3.12.13** |
 | NumPy / SciPy | 2.4.6 / 1.15.3（由 Conda 管理，不可用 pip 覆盖） |
 | Pinocchio / CasADi | 3.9.0 / 3.7.2（由 Conda 管理，不可用 pip 覆盖） |
@@ -82,7 +84,16 @@ conda activate orcalab_lerobot
 bash scripts/install_runtime.sh
 ```
 
-`install_runtime.sh` 会先验证 Conda 管理的数值库版本，再按哈希锁安装 pip 依赖；随后安装 `orca-gym==26.6.3`；最后从仓库内 `third_party/` 安装 LeRobot、TeleVuer 和 OpenPI client，并执行数据集写入、编码器、GUI 与资产路径自检。
+`install_runtime.sh` 会先验证 Conda 管理的数值库版本，再按哈希锁安装 pip 依赖；随后安装 `orca-gym==26.7.1` 和 `orca-lab==26.7.1`；最后从仓库内 `third_party/` 安装 LeRobot、TeleVuer 和 OpenPI client，并执行数据集写入、编码器、GUI 与资产路径自检。
+
+OrcaLab 桌面端就是 `orca-lab` 这个 Python 包，因此上述命令跑完即安装完毕，无需再从官网下载安装包。启动方式：
+
+```bash
+conda activate orcalab_lerobot
+orcalab
+```
+
+**必须先 `conda activate` 再运行 `orcalab`**，不要用 `/path/to/envs/orcalab_lerobot/bin/orcalab` 这类绝对路径直接调用。OrcaLab 的 PySide6 补丁逻辑会通过 `PATH` 里的 `python3` 定位 Qt 库，绕过 activate 会让它找到系统 Python 并在启动时报错。
 
 以下命令**禁止单独执行**：
 
@@ -100,7 +111,7 @@ pip install -r requirements.txt   # 不要单独运行，应通过 install_runti
 python scripts/verify_environment.py
 ```
 
-该命令会验证所有关键包版本、Pinocchio 来源、相机库导入链路、AV1 NVENC GPU 编码能力以及 Unitree G1 IK 模型完整性。全部通过后打印 `Environment verification OK`。
+该命令会验证所有关键包版本、Pinocchio 来源、OrcaLab 与 OrcaGym 的版本一致性、相机库导入链路、AV1 NVENC GPU 编码能力以及 Unitree G1 IK 模型完整性。全部通过后打印 `Environment verification OK`。
 
 宇树 IK 所需的 G1 描述文件（`g1_body29_hand14.urdf` 与它引用的 49 个 STL）
 已随仓库提供，来源为 Unitree `unitree_ros` 的 `g1_description`（BSD-3-Clause，

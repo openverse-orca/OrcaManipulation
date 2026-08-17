@@ -26,7 +26,7 @@ wheel==0.47.0
 numpy==2.4.6
 scipy==1.15.3
 
-# OrcaGym 26.6.3 runtime dependencies. OrcaGym itself is installed separately
+# OrcaGym 26.7.1 runtime dependencies. OrcaGym itself is installed separately
 # with --no-deps because its published NumPy/SciPy metadata does not describe
 # the validated delivery stack.
 aiofiles==25.1.0
@@ -34,6 +34,23 @@ grpcio==1.66.1
 grpcio-tools==1.66.1
 gymnasium==1.2.1
 mujoco==3.7.0
+
+# OrcaLab 26.7.1 (the desktop application) runtime dependencies. OrcaLab is
+# installed with --no-deps for the same reason as OrcaGym; the entries below are
+# the subset of its dependency list that nothing else in this file already pulls.
+# Its remaining dependencies (aiofiles, aiohttp, filelock, matplotlib, pillow,
+# psutil, requests) are declared elsewhere at the versions OrcaLab requires.
+#
+# OrcaLab pins pyparsing==3.2.5, which this lock deliberately does not honour:
+# OrcaLab never imports pyparsing, and its only consumer here is matplotlib,
+# which is validated against the resolved 3.3.2.
+#
+# fastmcp is unpinned in the OrcaLab metadata, so it is pinned explicitly here;
+# leaving it open would let every rebuild pull a different MCP stack.
+fastmcp==3.4.7
+pyside6==6.9.2
+qasync==0.28.0
+tomli_w==1.2.0
 
 # LeRobot v2.1 dataset I/O used by this repository.
 av==17.0.1

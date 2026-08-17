@@ -61,7 +61,8 @@ def main() -> None:
     expected_versions = {
         "numpy": "2.4.6",
         "scipy": "1.15.3",
-        "orca-gym": "26.6.3",
+        "orca-gym": "26.7.1",
+        "orca-lab": "26.7.1",
         "gymnasium": "1.2.1",
         "mujoco": "3.7.0",
         "av": "17.0.1",
@@ -125,6 +126,28 @@ def main() -> None:
     # immediately if matplotlib is absent from the environment.
     import orca_gym.environment  # noqa: F401
     from orca_gym.sensor.rgbd_camera import CameraWrapper  # noqa: F401
+
+    # orca-lab declares an exact orca-gym pin and is installed with --no-deps, so
+    # nothing else catches the two drifting apart. They speak gRPC to each other and
+    # a mismatch surfaces as a connection failure long after setup.
+    _orca_lab_pin = next(
+        (
+            requirement
+            for requirement in importlib.metadata.requires("orca-lab") or ()
+            if requirement.startswith("orca-gym==")
+        ),
+        None,
+    )
+    _orca_gym_version = importlib.metadata.version("orca-gym")
+    if _orca_lab_pin != f"orca-gym=={_orca_gym_version}":
+        raise RuntimeError(
+            f"orca-lab requires {_orca_lab_pin!r}, but orca-gym {_orca_gym_version} is installed"
+        )
+
+    # orcalab.launcher is the console-script entry point. orcalab.main is avoided on
+    # purpose: importing it runs the PySide6 patcher, which shells out to `python3`
+    # and may install system packages.
+    import orcalab.launcher  # noqa: F401
 
     import numpy as np
 
@@ -202,6 +225,7 @@ def main() -> None:
     print(f"  pinocchio.casadi: {cpin_path}")
     print(f"  OpenCV: {gui_line.strip()}")
     print(f"  Unitree G1 model: {urdf_summary}")
+    print(f"  OrcaLab/OrcaGym: {importlib.metadata.version('orca-lab')} / {_orca_gym_version}")
     print("  LeRobot/OpenPI/TeleVuer: installed from repository-owned sources")
 
 
