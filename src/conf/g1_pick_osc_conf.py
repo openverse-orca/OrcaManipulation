@@ -5,7 +5,7 @@
   - 夹爪使用 <general> position 执行器（与 omnipicker 完全一致）
   - 末端 site: ee_center_site_l / ee_center_site_r（夹爪基座上）
   - 基座 body: torso_link_rev_1_0
-  - 腿部 / 腰部使用 <position> 执行器（在控制代码中锁定）
+  - 腿部 / 腰部使用 <position> 执行器
 
 注意：所有名称都是短名（去掉 agent 前缀），
 env.joint()/env.actuator()/env.site()/env.body() 会自动添加 agent 前缀。
@@ -102,14 +102,6 @@ gripper_r = {
     "actuator_ranges": [(-1.0, 2), (-1.0, 2)],
     "init_ctrl": [0, 0],
 }
-
-# ── 需要锁定的腰部关节 ────────────────────────────────────────────────────
-# 这三个关节在控制代码中定死（JointHoldController 保持初始 qpos）。
-locked_waist_joints = [
-    "waist_yaw_joint",
-    "waist_roll_joint",
-    "waist_pitch_joint",
-]
 
 # ── 躯干 base body ────────────────────────────────────────────────────────
 base_body = "torso_link_rev_1_0"
