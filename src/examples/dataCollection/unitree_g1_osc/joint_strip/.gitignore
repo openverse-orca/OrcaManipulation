@@ -1,0 +1,4 @@
+_lerobot_scratch/
+logs/
+__pycache__/
+*.pyc

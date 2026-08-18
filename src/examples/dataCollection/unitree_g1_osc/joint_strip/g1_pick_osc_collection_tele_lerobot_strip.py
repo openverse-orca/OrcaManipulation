@@ -1,14 +1,15 @@
-"""G1 Pick OSC VR 遥操作数据采集（基于 g1_pick_osc_2.xml）。
+"""G1 Pick OSC VR 遥操作数据采集 —— 非右臂自由度编译期剥离版。
 
-仿照 g1_omnipicker_collection_tele_lerobot.py 的 OSC 控制方法：
-  - 双臂 OSC (motor 力矩执行器) + OmniPicker 2F85 夹爪 (position 执行器)
-  - Pico 手柄按键控制（左Grip=开始/保存，右Grip=丢弃，双Grip=退出）
-  - LeRobot v2.1 格式数据采集
+与 g1_pick_osc_collection_tele_lerobot.py 的唯一差别：加了 --joint_strip。
 
-模型适配 g1_pick_osc_2.xml：
-  - free joint 在代码中钉死（pin_floating_base，不改 XML、不改 nq）
-  - waist_yaw/roll/pitch 三关节用 JointHoldController 定死
-  - 腿部 position 执行器保持 ctrl=0（站立位），不额外锁定
+开启后，模型编译前删掉下肢/腰/左臂/左爪的 <joint>（body / geom / camera / site
+全部保留），nq 113→76、nv 104→68，mj_step 不再为这些自由度做积分与约束求解。
+剥离生效时自动跳过 pin_all_joints（freejoint 已不存在，无需也无法再钉）。
+
+qpos 变短后由 mj_joint_strip 在 gym.update_local_env 上挂补全层，推给
+OrcaStudio 的仍是完整长度数组，渲染不受影响。
+
+安全检查不通过会自动回退原始 XML，采集照常，只是没有剥离效果。
 """
 
 import argparse
@@ -23,12 +24,14 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(line_buffering=True)
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 import numpy as np
 from yaml import Loader, load
+
+import mj_joint_strip
 
 from conf import g1_pick_osc_conf
 from controllers import controllers
@@ -452,7 +455,7 @@ def main() -> None:
         "--level", type=str, default="default", help="场景的名称（默认 default）"
     )
     parser.add_argument(
-        "--task_config", default="../common/example.yaml", help="场景配置 YAML 文件名"
+        "--task_config", default="example.yaml", help="场景配置 YAML 文件名"
     )
     parser.add_argument(
         "--lerobot_out",
@@ -529,6 +532,25 @@ def main() -> None:
         "--null_kp", type=float, default=10.0,
         help="零空间关节复原增益 kp（默认 10；临界阻尼 kd=2√kp 自动计算）。",
     )
+    parser.add_argument(
+        "--joint_strip", choices=["off", "on"], default="off",
+        help=(
+            "编译期剥离非右臂自由度：删下肢/腰/左臂/左爪的 <joint>，保留 body/geom/"
+            "camera/site。nq 113→76、nv 104→68，mj_step 不再为这些自由度积分与求解。"
+            "开启后自动跳过 pin_all_joints 与左爪控制器。安全检查不过会自动回退。"
+        ),
+    )
+    parser.add_argument(
+        "--strip_col", choices=["off", "keep"], default="off",
+        help=(
+            "剥离生效时是否同时关掉被剥离部件 geom 的碰撞（contype/conaffinity=0）。"
+            "off（默认）=关掉碰撞，进一步压 ncon/nefc；keep=保留碰撞，只省自由度。"
+        ),
+    )
+    parser.add_argument(
+        "--time_step", type=float, default=0.001, help="MuJoCo 物理步长（秒）。")
+    parser.add_argument(
+        "--frame_skip", type=int, default=5, help="每控制周期的物理子步数。")
     args = parser.parse_args()
 
     teleop_only = bool(args.teleop_only)
@@ -644,7 +666,11 @@ def main() -> None:
         g1_pick_osc_conf.gripper_r["actuator_names"]
     )
 
+    def _name_in_dict(d, name: str) -> bool:
+        return bool(d) and name in d
+
     def _obs_callback_safe(env):
+        """剥离后左臂/左爪 joint、actuator 已不存在，缺项填零，保持原 schema。"""
         if env.model.nu == 0:
             return {
                 "/action/end/position": np.zeros((2, 3), dtype=np.float32),
@@ -652,7 +678,85 @@ def main() -> None:
                 "/action/effector/motor": np.zeros(_n_motor, dtype=np.float32),
                 "/action/drive/ctrl": np.zeros(0, dtype=np.float32),
             }
-        return storage.obs_callback(env)
+        if args.joint_strip != "on":
+            return storage.obs_callback(env)
+
+        jdict = env.model.get_joint_dict() or {}
+        adict = getattr(env.model, "_actuator_dict", None) or {}
+
+        def _joint_q(short_names):
+            full = [env.joint(n) for n in short_names]
+            alive = [n for n in full if _name_in_dict(jdict, n)]
+            q = env.query_joint_qpos(alive) if alive else {}
+            out = []
+            for n in full:
+                v = q.get(n, 0.0) if alive else 0.0
+                out.append(np.asarray(v, dtype=np.float32).reshape(-1)[0])
+            return np.asarray(out, dtype=np.float32)
+
+        def _act_ctrl(short_names):
+            full = [env.actuator(n) for n in short_names]
+            out = []
+            for n in full:
+                if not _name_in_dict(adict, n):
+                    out.append(0.0)
+                    continue
+                aid = env.model.actuator_name2id(n)
+                out.append(float(env.ctrl[aid]) if aid < len(env.ctrl) else 0.0)
+            return np.asarray(out, dtype=np.float32)
+
+        joint_q = _joint_q(
+            g1_pick_osc_conf.l_arm["joint_names"] + g1_pick_osc_conf.r_arm["joint_names"]
+        )
+        hand_q = _joint_q(
+            g1_pick_osc_conf.gripper_l["joint_names"]
+            + g1_pick_osc_conf.gripper_r["joint_names"]
+        )
+        hand_m = _act_ctrl(
+            g1_pick_osc_conf.gripper_l["actuator_names"]
+            + g1_pick_osc_conf.gripper_r["actuator_names"]
+        )
+        arm_m = _act_ctrl(
+            g1_pick_osc_conf.l_arm["motors_names"] + g1_pick_osc_conf.r_arm["motors_names"]
+        )
+
+        ee_sites = [
+            env.site(g1_pick_osc_conf.l_arm["ee_site_name"]),
+            env.site(g1_pick_osc_conf.r_arm["ee_site_name"]),
+        ]
+        ee = env.query_site_pos_and_quat_B(
+            ee_sites, [env.body(g1_pick_osc_conf.base_body)]
+        )
+        return {
+            "/action/joint/position": joint_q,
+            "/action/joint/motor": arm_m,
+            "/action/effector/position": hand_q,
+            "/action/effector/motor": hand_m,
+            "/action/end/position": np.array(
+                [ee[s]["xpos"] for s in ee_sites], dtype=np.float32
+            ),
+            "/action/end/orientation": np.array(
+                [ee[s]["xquat"][[1, 2, 3, 0]] for s in ee_sites], dtype=np.float32
+            ),
+            "/action/drive/ctrl": np.zeros(0, dtype=np.float32),
+        }
+
+    # ── 自由度剥离：必须在 manager 之前打补丁 ─────────────────────────────────
+    # XML 由 scene_manager 的 init_env 回调触发加载，早于下面的 env.reset()，
+    # 所以补丁打在 OrcaGymLocal 类上而不是 env 实例上。
+    strip = None
+    if args.joint_strip == "on":
+        bake_qpos = {
+            f"{args.agent_name}_{jn}": float(v)
+            for jn, v in zip(g1_pick_osc_conf.l_arm["joint_names"], _L_INIT_JOINT_VALUES)
+        }
+        strip = mj_joint_strip.install(
+            None, args.agent_name,
+            kill_collision=(args.strip_col == "off"),
+            required_cameras=tuple(camera_map.keys()) or ("cam_head",),
+            bake_qpos=bake_qpos,
+            log=lambda m: (orca_logger.info(m), print(m, flush=True)),
+        )
 
     # ── DataCollectionManager ─────────────────────────────────────────────────
     orca_logger.info("Creating DataCollectionManager")
@@ -667,11 +771,29 @@ def main() -> None:
         scene_manager=scene_manager,
         # teleop_only：不挂 storage，run_episode 不采帧/不写盘
         data_storage=None if teleop_only else storage,
-        frame_skip=5,
+        frame_skip=args.frame_skip,
+        time_step=args.time_step,
         orcagym_addr=args.orcagym_addr,
     )
     env = manager.env
     manager.save_video = False
+
+    # 剥离生效后左臂/腰/下肢关节已不存在，从初值表里摘掉，否则 set_joint_qpos 报错
+    stripped = bool(strip is not None and strip.applied)
+    if stripped:
+        alive = set(env.model.get_joint_dict() or {})
+        dropped = [j for j in default_joint_values if env.joint(j) not in alive]
+        for j in dropped:
+            default_joint_values.pop(j)
+        orca_logger.info(
+            f"[STRIP] 关节初值表摘掉 {len(dropped)} 个已剥离关节，"
+            f"剩 {len(default_joint_values)} 个"
+        )
+        print(
+            f"[STRIP] 生效 nq={env.model.nq} nv={env.model.nv} nu={env.model.nu}"
+            f"  dt={args.time_step * args.frame_skip * 1000:.0f}ms",
+            flush=True,
+        )
 
     # ── 场景就绪后初始化控制器 + 相机 ─────────────────────────────────────────
     cameras: dict = {}
@@ -681,19 +803,27 @@ def main() -> None:
     try:
         env.reset()
         time.sleep(0.1)
+        if strip is not None:
+            mj_joint_strip.finish_install(
+                env, strip, args.agent_name,
+                log=lambda m: (orca_logger.info(m), print(m, flush=True)),
+            )
         if manager.update_scene():
             env.set_default_joint_values(default_joint_values)
 
             # 夹爪控制（使用 reverse 版本，与 OmniPicker 一致）
-            orca_logger.info("Adding left gripper controller")
-            controllers.add_gripper_2f85_reverse_pico_controller(
-                manager,
-                env,
-                g1_pick_osc_conf.gripper_l,
-                g1_pick_osc_conf.base_body,
-                pico_device,
-                [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
-            )
+            if stripped:
+                orca_logger.info("[STRIP] 左爪执行器已剥离，跳过左爪控制器")
+            else:
+                orca_logger.info("Adding left gripper controller")
+                controllers.add_gripper_2f85_reverse_pico_controller(
+                    manager,
+                    env,
+                    g1_pick_osc_conf.gripper_l,
+                    g1_pick_osc_conf.base_body,
+                    pico_device,
+                    [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
+                )
 
             orca_logger.info("Adding right gripper controller")
             controllers.add_gripper_2f85_reverse_pico_controller(
@@ -719,10 +849,15 @@ def main() -> None:
 
             # 合并单层 mj_step 包装：同时钉死 floating base + 腰部 + 左臂
             # 替代原本 3 层独立包装（每子步触发 3 次 mj_forward，性能下降 3-5 倍）
-            orca_logger.info(
-                "Pinning all joints (base + waist + l_arm, single wrapper)"
-            )
-            pin_all_joints(env, args.agent_name)
+            if stripped:
+                # 这些自由度在 XML 里已经不存在，body 直接焊在父刚体上，
+                # 无需也无法再用 mjData 注入钉死；顺带省掉每子步的 mj_forward。
+                orca_logger.info("[STRIP] 自由度已在编译期剥离，跳过 pin_all_joints")
+            else:
+                orca_logger.info(
+                    "Pinning all joints (base + waist + l_arm, single wrapper)"
+                )
+                pin_all_joints(env, args.agent_name)
 
             # Task + task status controller
             orca_logger.info("Setting task and task status controller")
