@@ -278,6 +278,17 @@ class _ChildNvencWorker:
 # 子进程入口
 # ---------------------------------------------------------------------------
 
+_ENC_PROC_DEBUG = os.environ.get("ENC_PROC_DEBUG", "").strip() in ("1", "true", "yes")
+
+
+def _child_dbg(msg: str) -> None:
+    if not _ENC_PROC_DEBUG:
+        return
+    try:
+        with open("/tmp/enc_child_log.txt", "a") as f:
+            f.write(f"{time.time():.3f} {msg}\n")
+    except Exception:
+        pass
 
 
 def encoder_worker_main(
@@ -300,9 +311,19 @@ def encoder_worker_main(
     ):
         os.environ.setdefault(_v, "1")
 
+    if _ENC_PROC_DEBUG:
+        try:
+            open("/tmp/enc_child_log.txt", "w").write(
+                f"{time.time():.3f} boot pid={os.getpid()}\n"
+            )
+        except Exception:
+            pass
+
     import cv2
 
+    _child_dbg("cv2 imported")
     ring = FrameRing(slots, height, width, name=shm_name, create=False)
+    _child_dbg(f"ring attached name={shm_name}")
 
     # 槽位引用计数：一帧可能同时被 NVENC + JPEG 使用
     _slot_lock = threading.Lock()
@@ -479,6 +500,7 @@ def encoder_worker_main(
                 ep_idx = int(meta["ep_idx"])
                 fps = int(meta.get("fps", fps))
                 jq = int(meta.get("jpeg_quality", jpeg_quality))
+                _child_dbg(f"START_EP ep={ep_idx} cams={len(meta.get('cameras', []))}")
                 # 若上一集未正常结束，先丢弃
                 if workers:
                     _finish_workers(discard=True)
@@ -488,9 +510,11 @@ def encoder_worker_main(
                     cid = int(cam["cam_id"])
                     cam_id_to_key[cid] = str(cam["cam_key"])
                     vpath = Path(cam["mp4_path"])
+                    _child_dbg(f"create worker cam={cam_id_to_key[cid]} path={vpath}")
                     workers[cid] = _ChildNvencWorker(
                         vpath, fps, width, height, on_done=_release
                     )
+                    _child_dbg(f"worker ready cam={cam_id_to_key[cid]}")
                 jpeg_quality = jq
                 continue
 
@@ -528,6 +552,7 @@ def encoder_worker_main(
                 continue
 
             if op == OP_END_EP:
+                _child_dbg(f"END_EP begin workers={len(workers)}")
                 # 先 finish（保证 encoded==pushed），再基于快照发最终统计
                 snap = []
                 for cid, w in list(workers.items()):
@@ -556,7 +581,9 @@ def encoder_worker_main(
                     s["encode_s"] = w.encode_s
                     s["qsize"] = 0
                     nv_final.append(s)
+                _child_dbg("END_EP workers finished")
                 _wait_jpg_idle(120.0)
+                _child_dbg("END_EP jpg idle")
                 with jpg_lock:
                     jpeg = {
                         "pushed": jpg_pushed,
@@ -581,6 +608,7 @@ def encoder_worker_main(
                 except Exception:
                     pass
                 ep_idx = None
+                _child_dbg("END_EP done")
                 continue
 
             if op == OP_DISCARD_EP:

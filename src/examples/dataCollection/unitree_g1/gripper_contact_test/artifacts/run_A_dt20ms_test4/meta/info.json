@@ -1,0 +1,155 @@
+{
+    "codebase_version": "v2.1",
+    "robot_type": "g1_pick_with_gripper_q_delta",
+    "total_episodes": 2,
+    "total_frames": 1345,
+    "total_tasks": 1,
+    "total_videos": 4,
+    "total_chunks": 1,
+    "chunks_size": 1000,
+    "fps": 20,
+    "splits": {
+        "train": "0:2"
+    },
+    "data_path": "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet",
+    "video_path": "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4",
+    "features": {
+        "observation.state": {
+            "dtype": "float32",
+            "shape": [
+                18
+            ],
+            "names": [
+                [
+                    "left_shoulder_pitch_joint",
+                    "left_shoulder_roll_joint",
+                    "left_shoulder_yaw_joint",
+                    "left_elbow_joint",
+                    "left_wrist_roll_joint",
+                    "left_wrist_pitch_joint",
+                    "left_wrist_yaw_joint",
+                    "right_shoulder_pitch_joint",
+                    "right_shoulder_roll_joint",
+                    "right_shoulder_yaw_joint",
+                    "right_elbow_joint",
+                    "right_wrist_roll_joint",
+                    "right_wrist_pitch_joint",
+                    "right_wrist_yaw_joint",
+                    "idx31_gripper_l_inner_joint1",
+                    "idx41_gripper_l_outer_joint1",
+                    "idx71_gripper_r_inner_joint1",
+                    "idx81_gripper_r_outer_joint1"
+                ]
+            ]
+        },
+        "action": {
+            "dtype": "float32",
+            "shape": [
+                18
+            ],
+            "names": [
+                [
+                    "delta_left_shoulder_pitch_joint",
+                    "delta_left_shoulder_roll_joint",
+                    "delta_left_shoulder_yaw_joint",
+                    "delta_left_elbow_joint",
+                    "delta_left_wrist_roll_joint",
+                    "delta_left_wrist_pitch_joint",
+                    "delta_left_wrist_yaw_joint",
+                    "delta_right_shoulder_pitch_joint",
+                    "delta_right_shoulder_roll_joint",
+                    "delta_right_shoulder_yaw_joint",
+                    "delta_right_elbow_joint",
+                    "delta_right_wrist_roll_joint",
+                    "delta_right_wrist_pitch_joint",
+                    "delta_right_wrist_yaw_joint",
+                    "delta_idx31_gripper_l_inner_joint1",
+                    "delta_idx41_gripper_l_outer_joint1",
+                    "delta_idx71_gripper_r_inner_joint1",
+                    "delta_idx81_gripper_r_outer_joint1"
+                ]
+            ]
+        },
+        "observation.images.cam_head": {
+            "dtype": "video",
+            "shape": [
+                3,
+                480,
+                640
+            ],
+            "names": [
+                "channels",
+                "height",
+                "width"
+            ],
+            "info": {
+                "video.height": 480,
+                "video.width": 640,
+                "video.codec": "av1",
+                "video.pix_fmt": "yuv420p",
+                "video.is_depth_map": false,
+                "video.fps": 20,
+                "video.channels": 3,
+                "has_audio": false
+            }
+        },
+        "observation.images.cam_wrist_r": {
+            "dtype": "video",
+            "shape": [
+                3,
+                480,
+                640
+            ],
+            "names": [
+                "channels",
+                "height",
+                "width"
+            ],
+            "info": {
+                "video.height": 480,
+                "video.width": 640,
+                "video.codec": "av1",
+                "video.pix_fmt": "yuv420p",
+                "video.is_depth_map": false,
+                "video.fps": 20,
+                "video.channels": 3,
+                "has_audio": false
+            }
+        },
+        "timestamp": {
+            "dtype": "float32",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "frame_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "episode_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "task_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        }
+    }
+}

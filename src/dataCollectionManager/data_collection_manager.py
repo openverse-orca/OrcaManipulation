@@ -43,8 +43,11 @@ class DataCollectionManager:
         scene_manager: SceneManager = None,
         data_storage: AbstractDataStorage = None,
         aug_count: int = 1,
+        env_kwargs: dict | None = None,
         **kwargs,
     ):
+        # env_kwargs：透传给 gym.make（如 g1_pick 的 skip_grpc_load/local_xml_path）；默认空不影响原路径
+        self._env_kwargs = env_kwargs or {}
         self.device = device
         self.time_step = time_step
         self.frame_skip = frame_skip
@@ -127,6 +130,7 @@ class DataCollectionManager:
             "time_step": time_step,
             "default_joint_values": default_joint_values,
             "obs_callback": obs_callback,
+            **self._env_kwargs,  # 可选透传；默认 {} 不影响原路径
         }
         orca_logger.info(f"Creating env {env_name} with kwargs {kwargs}")
 
@@ -167,13 +171,49 @@ class DataCollectionManager:
     def add_controller(self, controller: AbstractController):
         self.controllers.append(controller)
 
+    # 可选调试钩子：仅当 set_debug_log_fh 被调用后才会写日志；默认不影响原采集路径
+    _dbg_ctrl_counter = 0
+    _dbg_log_fh = None
+
+    @classmethod
+    def set_debug_log_fh(cls, fh) -> None:
+        cls._dbg_log_fh = fh
+
+    @classmethod
+    def _dbg_log(cls, msg: str) -> None:
+        line = f"[{time.strftime('%H:%M:%S')}] {msg}"
+        print(line, flush=True)
+        if cls._dbg_log_fh is not None:
+            cls._dbg_log_fh.write(line + "\n")
+            cls._dbg_log_fh.flush()
+
     def run_controllers(self) -> list[float]:
         if self.device is not None:
             self.device.update()
+        # 未设置 debug fh 时走原逻辑，不增加打印/计数开销语义
+        if self._dbg_log_fh is None:
+            for controller in self.controllers:
+                ctrl = controller.run_controller()
+                for index, value in ctrl.items():
+                    self.ctrl[index] = value
+            return self.ctrl
+
+        DataCollectionManager._dbg_ctrl_counter += 1
+        _dbg_nz = 0
         for controller in self.controllers:
             ctrl = controller.run_controller()
             for index, value in ctrl.items():
                 self.ctrl[index] = value
+                if abs(value) > 1e-6:
+                    _dbg_nz += 1
+        if (
+            DataCollectionManager._dbg_ctrl_counter <= 5
+            or DataCollectionManager._dbg_ctrl_counter % 60 == 0
+        ):
+            DataCollectionManager._dbg_log(
+                f"CTRL#{DataCollectionManager._dbg_ctrl_counter} "
+                f"controllers={len(self.controllers)} non_zero_actuators={_dbg_nz}"
+            )
         return self.ctrl
 
     def set_init_ctrl(self):
@@ -185,8 +225,10 @@ class DataCollectionManager:
         return self.ctrl
 
     def _sigint_handler(self, signum, frame):
+        # 硬退出：立即抛 KeyboardInterrupt，不再软挂起等当前集跑完
         self._shutdown_requested = True
-        orca_logger.info("Shutdown requested, finishing current operation...")
+        signal.signal(signal.SIGINT, self._original_sigint)
+        raise KeyboardInterrupt
 
     def run(self):
         self._shutdown_requested = False
@@ -317,8 +359,12 @@ class DataCollectionManager:
                     orca_logger.info(
                         f"Task description: {self.task.get_task_description()}"
                     )
+                    # showtime=0：常驻。勿用短 showtime，否则会盖掉启动时的操作提示并在数秒后消失。
                     self.scene_manager.show_ui_message(
-                        1, "按 GripButton 开始采集", "0xffff00", showtime=10
+                        1,
+                        "按左侧握(Grip/squeeze)开始采集",
+                        "0xffff00",
+                        showtime=0,
                     )
 
             elif self.mode == self.DataCollectionMode.INFERENCE:

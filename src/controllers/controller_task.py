@@ -34,7 +34,7 @@ class TaskStatusController(AbstractController):
     def run_controller(self)-> TaskStatus:
         return self.current_status
 
-    def update_task_status(self, next_status: bool):
+    def update_task_status(self, next_status: bool, reason: str = "toggle"):
         # pico控制器需要控制一下频率，否则任务状态会很快变化
         if self.is_controller:
             current_time = time.time()
@@ -42,6 +42,7 @@ class TaskStatusController(AbstractController):
                 return
             self.current_time = current_time
         if next_status:
+            prev = self.current_status
             if self.current_status == TaskStatus.NOT_STARTED:
                 self.current_status = TaskStatus.RUNNING
                 orca_logger.info("Task status: RUNNING")
@@ -51,6 +52,18 @@ class TaskStatusController(AbstractController):
             elif self.current_status == TaskStatus.END:
                 self.current_status = TaskStatus.NOT_STARTED
                 orca_logger.info("Task status: NOT_STARTED")
-        
+            if prev is not self.current_status:
+                print(
+                    f"[EP] transition {prev.name}→{self.current_status.name} "
+                    f"reason={reason}",
+                    flush=True,
+                )
+
     def reset(self):
+        prev = self.current_status
         self.current_status = TaskStatus.NOT_STARTED
+        if prev is not TaskStatus.NOT_STARTED:
+            print(
+                f"[EP] transition {prev.name}→NOT_STARTED reason=episode_reset",
+                flush=True,
+            )

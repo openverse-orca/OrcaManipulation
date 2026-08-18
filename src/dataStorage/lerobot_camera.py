@@ -1,6 +1,6 @@
 """LeRobot 采集用相机帧工具。
 
-OrcaStudio 通过 WebSocket 在 7080/7090 端口推流（需在 OrcaStudio 中正确配置后，
+OrcaStudio 通过 WebSocket 在 7070/7080/7090 端口推流（需在 OrcaStudio 中正确配置后，
 调用 env.begin_save_video() 触发）。CameraWrapper 订阅流并在内存中保持最新帧，
 collection_data() 在每个采集步用 capture_frame_with_idx() 取帧后立即送入 AsyncImageWriter
 队列落盘为 PNG；episode 结束后 LeRobot 用 ffmpeg 编码 PNG → MP4。
@@ -26,31 +26,13 @@ import numpy as np
 
 _logger = logging.getLogger(__name__)
 
-# 默认相机映射：头部 + 右腕。
+# 默认三路相机映射：头部 + 双腕。
 DEFAULT_CAMERA_MAP = {
     "camera_head_color": ("cam_head", 7090),
+    "camera_wrist_l_color": ("cam_wrist_l", 7070),
     "camera_wrist_r_color": ("cam_wrist_r", 7080),
 }
-# 左腕（旧三路采集 / 旧策略需要时再启用）。
-WRIST_L_CAMERA = {
-    "camera_wrist_l_color": ("cam_wrist_l", 7070),
-}
 DEFAULT_HW = (480, 640)
-
-
-def omnipicker_camera_map(*, enable_wrist_l: bool = False) -> dict:
-    """返回 OmniPicker 相机映射。
-
-    默认两路（头 7090 + 右腕 7080）。``enable_wrist_l=True`` 时按旧顺序
-    插入左腕 7070：head → wrist_l → wrist_r。
-    """
-    if not enable_wrist_l:
-        return dict(DEFAULT_CAMERA_MAP)
-    return {
-        "camera_head_color": DEFAULT_CAMERA_MAP["camera_head_color"],
-        **WRIST_L_CAMERA,
-        "camera_wrist_r_color": DEFAULT_CAMERA_MAP["camera_wrist_r_color"],
-    }
 
 
 def camera_keys(camera_map: dict) -> list[str]:

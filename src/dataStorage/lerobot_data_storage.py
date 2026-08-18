@@ -130,6 +130,17 @@ class _CameraEncodeWorker:
         self._width = width
         self._height = height
         self._q: queue.Queue = queue.Queue(maxsize=256)
+        # 诊断计数器：pushed/encoded 之差 = 仍滞留在队列里的帧；
+        # blocked_s 累计主线程在 push() 上被背压阻塞的时间，是采集帧率掉到 fps 以下的直接证据。
+        # 队列由 64 扩大到 256，降低 OrcaStudio GPU 争用时队列打满的概率。
+        self._pushed = 0
+        self._encoded = 0
+        self._blocked_s = 0.0
+        self._block_events = 0
+        self._dropped = 0      # 队列仍满时丢帧计数（探针可见）
+        self._max_qsize = 0
+        self._encode_s = 0.0
+        # 会话就绪信号：av.open/add_stream 完成后置位（成功与失败都置位）
         self._ready = threading.Event()
         self._open_error: str | None = None
         self._thread = threading.Thread(
@@ -155,11 +166,33 @@ class _CameraEncodeWorker:
             raise RuntimeError(f"NVENC 会话打开失败 {self._path}: {self._open_error}")
 
     def push(self, np_rgb: np.ndarray) -> None:
-        """推入一帧 RGB uint8 HWC numpy 数组。队列满时丢帧，不阻塞控制线程。"""
+        """推入一帧 RGB uint8 HWC numpy 数组。
+        队列仍满则丢帧（记入 _dropped）而非阻塞主控制线程，避免控制循环卡顿。
+        """
+        qs = self._q.qsize()
+        if qs > self._max_qsize:
+            self._max_qsize = qs
         try:
             self._q.put_nowait(np_rgb)
         except queue.Full:
-            pass
+            self._dropped += 1
+            return
+        self._pushed += 1
+
+    def stats(self) -> dict:
+        """供探针读取的瞬时状态（跨线程读取整数/浮点，GIL 下足够安全）。"""
+        return {
+            "name": self._path.stem,
+            "pushed": self._pushed,
+            "encoded": self._encoded,
+            "dropped": self._dropped,
+            "qsize": self._q.qsize(),
+            "max_qsize": self._max_qsize,
+            "blocked_s": self._blocked_s,
+            "block_events": self._block_events,
+            "encode_s": self._encode_s,
+            "wh": (self._width, self._height),
+        }
 
     def finish(self) -> None:
         """刷新编码器并关闭 mp4，同步等待线程退出。"""
@@ -205,12 +238,15 @@ class _CameraEncodeWorker:
                 if item is self._DISCARD:
                     discard = True
                     break
+                _t0 = time.perf_counter()
                 av_frame = av.VideoFrame.from_ndarray(item, format="rgb24")
                 av_frame.pts = frame_idx
                 frame_idx += 1
                 pkt = st.encode(av_frame)
                 if pkt:
                     container.mux(pkt)
+                self._encode_s += time.perf_counter() - _t0
+                self._encoded = frame_idx
         finally:
             if not discard:
                 try:
@@ -300,6 +336,24 @@ class StreamingNvencEncoder:
             f"耗时 {dt * 1000:.0f}ms（已移出采集区间）"
         )
         return dt
+
+    @property
+    def local_session_count(self) -> int:
+        """本进程当前持有的 NVENC 编码会话数（每相机 1 路 av1_nvenc）。
+
+        与 nvidia-smi 报告的全 GPU 会话数相减，即可得出其它进程（如 OrcaStudio 的
+        相机 websocket 推流）占用的会话数，避免把别人的会话误算到采集脚本头上。
+        """
+        return len(self._workers)
+
+    def worker_stats(self) -> list[dict]:
+        """每相机编码 worker 的瞬时统计，供探针输出。"""
+        out = []
+        for cam_key, w in list(self._workers.items()):
+            s = w.stats()
+            s["cam"] = cam_key
+            out.append(s)
+        return out
 
     def prewarm(self, cam_keys: list[str], height: int, width: int) -> float:
         """用假帧跑通一次性 av1_nvenc 会话，建立进程级 CUDA / NVENC 上下文。
@@ -405,6 +459,13 @@ class _StatsImageWriter:
                  jpeg_quality: int = 95) -> None:
         self._q: queue.Queue = queue.Queue(maxsize=maxsize)
         self._jpeg_quality = jpeg_quality
+        self._pushed = 0
+        self._written = 0
+        self._blocked_s = 0.0
+        self._block_events = 0
+        self._max_qsize = 0
+        self._bytes_written = 0  # 累计落盘 JPEG 字节数（O(1) 供探针读取）
+        self._lock = threading.Lock()
         self._threads: list[threading.Thread] = []
         self._stopped = False
         for i in range(num_threads):
@@ -416,25 +477,41 @@ class _StatsImageWriter:
             self._threads.append(t)
 
     def push(self, image: np.ndarray, fpath) -> None:
-        """把 HWC RGB uint8 图像异步写为 JPEG，满时丢帧不阻塞主线程。"""
+        """把 HWC RGB uint8 图像异步写为 JPEG。统计用，满时丢帧而非阻塞主线程。"""
+        qs = self._q.qsize()
+        if qs > self._max_qsize:
+            self._max_qsize = qs
         try:
             self._q.put_nowait((image, fpath))
+            self._pushed += 1
         except queue.Full:
-            pass
+            self._block_events += 1
 
     def wait_until_done(self) -> None:
         """阻塞直到队列中所有条目都被处理完（用于 flush 前保证文件已落盘）。"""
         self._q.join()
 
     def drop_pending(self) -> None:
-        """丢弃队列中尚未取走的所有条目；等在途写操作完成后返回。"""
+        """丢弃队列中尚未取走的所有条目；等在途写操作完成后返回。
+        discard 路径调用，之后可安全 rmtree 临时目录。
+        """
         while True:
             try:
                 self._q.get_nowait()
                 self._q.task_done()
             except queue.Empty:
                 break
+        # 等在途写操作完成（worker 会自行 task_done），之后队列计数归零
         self._q.join()
+
+    def reset_byte_counter(self) -> None:
+        """新 episode / discard 后清零累计 JPEG 字节数。"""
+        with self._lock:
+            self._bytes_written = 0
+
+    def bytes_written_mb(self) -> float:
+        with self._lock:
+            return self._bytes_written / 1048576.0
 
     def stop(self) -> None:
         """停止所有 worker 线程（发哨兵 + join）。幂等。"""
@@ -445,6 +522,17 @@ class _StatsImageWriter:
         for t in self._threads:
             t.join()
         self._stopped = True
+
+    def stats(self) -> dict:
+        return {
+            "pushed": self._pushed,
+            "written": self._written,
+            "qsize": self._q.qsize(),
+            "max_qsize": self._max_qsize,
+            "blocked_s": self._blocked_s,
+            "block_events": self._block_events,
+            "bytes_written": self._bytes_written,
+        }
 
     def _worker(self) -> None:
         quality_flag = [cv2.IMWRITE_JPEG_QUALITY, self._jpeg_quality]
@@ -473,8 +561,15 @@ class _StatsImageWriter:
                 else:
                     bgr = image
                 ok = cv2.imwrite(str(fpath), bgr, quality_flag)
-                if not ok:
-                    _log.warning(f"[StatsWriter] 写盘失败: {fpath}")
+                self._written += 1
+                if ok:
+                    try:
+                        sz = fpath.stat().st_size
+                    except Exception:
+                        sz = 0
+                    if sz > 0:
+                        with self._lock:
+                            self._bytes_written += sz
             except Exception as e:
                 _log.warning(f"[StatsWriter] 写盘失败 {fpath}: {e}")
             finally:
@@ -513,9 +608,15 @@ class LeRobotDatasetWriter:
         self._nvenc_enc = nvenc_enc
         self._stats_writer = stats_writer
         self._encode_backend = str(encode_backend)
+        # subproc：JPEG 由编码子进程写；add_frame 前由 stream_frame 下发路径
         self._jpeg_in_child = self._encode_backend == "subproc"
         self._saved_episodes: int = 0
-        self._frame_idx: int = 0
+        # O(1) episode_buffer 计数（避免探针遍历上万 list 元素持 GIL）
+        self._buf_frames = 0
+        self._buf_ndarray = 0
+        self._buf_str = 0
+        self._buf_img_keys = 0
+        self._buf_other_bytes = 0
 
     @classmethod
     def create(
@@ -716,10 +817,22 @@ class LeRobotDatasetWriter:
             _log.warning(f"[NVENC] 预建会话失败，退回首帧惰性创建: {e}")
             return 0.0
 
+    def _reset_buf_counters(self) -> None:
+        self._buf_frames = 0
+        self._buf_ndarray = 0
+        self._buf_str = 0
+        self._buf_img_keys = 0
+        self._buf_other_bytes = 0
+
     def stream_frame(self, frame: dict, task: str) -> None:
-        """流式写入一帧：图像推 NVENC（inproc 队列 / subproc shm），state/action 进 buffer。"""
+        """流式写入一帧：图像推 NVENC（inproc 队列 / subproc shm），state/action 进 buffer。
+
+        inproc：add_frame → _save_image → _StatsImageWriter 异步 JPEG。
+        subproc：JPEG 路径在 add_frame 前算好并随帧下发；_save_image 为 no-op。
+        """
         import time as _time
         _t0 = _time.perf_counter()
+        n_img = 0
         for k, v in frame.items():
             if k.startswith("observation.images."):
                 cam_key = k[len("observation.images."):]
@@ -728,21 +841,109 @@ class LeRobotDatasetWriter:
                     jpg = self._dataset._get_image_file_path(
                         episode_index=self._dataset.episode_buffer["episode_index"],
                         image_key=k,
-                        frame_index=self._frame_idx,
+                        frame_index=self._buf_frames,
                     )
                 self._nvenc_enc.push(cam_key, v, jpeg_path=jpg)
+                n_img += 1
         _t1 = _time.perf_counter()
         self._dataset.add_frame(frame, task)
         _t2 = _time.perf_counter()
-        self._frame_idx += 1
+
+        # O(1) 维护 buffer 计数（探针不再遍历 episode_buffer）
+        self._buf_frames += 1
+        # state / action 各 1 个 ndarray；图像键只存路径字符串；task 也是 str
+        self._buf_ndarray += 2
+        self._buf_str += n_img + 1  # image paths + task
+        if self._buf_frames == 1:
+            self._buf_img_keys = n_img
+        try:
+            st = frame.get("observation.state")
+            act = frame.get("action")
+            other = 0
+            if isinstance(st, np.ndarray):
+                other += int(st.nbytes)
+            if isinstance(act, np.ndarray):
+                other += int(act.nbytes)
+            self._buf_other_bytes += other
+        except Exception:
+            pass
 
         _nvenc_ms = (_t1 - _t0) * 1000.0
         _add_ms   = (_t2 - _t1) * 1000.0
+        # 只在出现可感知阻塞时打印
         if _nvenc_ms > 30.0 or _add_ms > 30.0:
             _log.warning(
-                f"[STREAM_FRAME] nvenc_push={_nvenc_ms:.1f}ms "
+                f"[STREAM_FRAME] 耗时分解: nvenc_push={_nvenc_ms:.1f}ms "
                 f"add_frame={_add_ms:.1f}ms  total={(_nvenc_ms + _add_ms):.1f}ms"
             )
+
+    def buffer_stats(self) -> dict:
+        """O(1) 读取 episode_buffer 统计（由 stream_frame 增量维护）。
+
+        正常状态：图像键只记路径字符串，ndarray_entries 仅为 state/action。
+        """
+        st = {
+            "frames": int(self._buf_frames),
+            "img_bytes": 0,  # 图像不在 buffer 里存 ndarray
+            "other_bytes": int(self._buf_other_bytes),
+            "ndarray_entries": int(self._buf_ndarray),
+            "str_entries": int(self._buf_str),
+            "img_keys": int(self._buf_img_keys),
+        }
+        # 轻量护栏：抽样检查首个图像键最后一项是否仍是 ndarray（不遍历全 buffer）
+        try:
+            buf = getattr(self._dataset, "episode_buffer", None)
+            if buf and self._buf_img_keys > 0:
+                for k, v in buf.items():
+                    if isinstance(k, str) and k.startswith("observation.images.") and isinstance(v, list) and v:
+                        if isinstance(v[-1], np.ndarray):
+                            st["img_bytes"] = int(v[-1].nbytes) * len(v)
+                            st["ndarray_entries"] += len(v)
+                            _log.warning(
+                                f"[回归护栏] episode_buffer 图像键出现 ndarray！"
+                                f"key={k} n={len(v)} — 请检查 stream_frame()。"
+                            )
+                        break
+        except Exception:
+            pass
+        return st
+
+    @property
+    def nvenc_local_sessions(self) -> int:
+        return self._nvenc_enc.local_session_count
+
+    def nvenc_worker_stats(self) -> list[dict]:
+        return self._nvenc_enc.worker_stats()
+
+    def stats_writer_stats(self) -> dict:
+        """供探针读取的写盘器统计（pushed/written/qsize 等）。"""
+        if self._stats_writer is not None:
+            return self._stats_writer.stats()
+        # subproc：读子进程缓存的 JPEG 统计（O(1)，无额外 IPC 等待）
+        jpeg_stats = getattr(self._nvenc_enc, "jpeg_stats", None)
+        if callable(jpeg_stats):
+            return jpeg_stats()
+        return {
+            "pushed": 0,
+            "written": 0,
+            "qsize": 0,
+            "max_qsize": 0,
+            "blocked_s": 0.0,
+            "block_events": 0,
+            "bytes_written": 0,
+        }
+
+    def tmp_dirs_size_mb(self) -> float:
+        """统计用临时 JPEG 磁盘占用（MB）。O(1)。"""
+        try:
+            if self._stats_writer is not None:
+                return float(self._stats_writer.bytes_written_mb())
+            bw = getattr(self._nvenc_enc, "bytes_written_mb", None)
+            if callable(bw):
+                return float(bw())
+        except Exception:
+            pass
+        return 0.0
 
     def flush_episode(self) -> int:
         """GPU 编码完成 + parquet+meta 落盘。全程同步，通常 <2s。"""
@@ -751,6 +952,23 @@ class LeRobotDatasetWriter:
             raise RuntimeError(
                 "[LeRobot] 编码子进程已死亡，拒绝 flush_episode。"
                 "请 discard 本集并重跑。"
+            )
+
+        _bs = self.buffer_stats()
+        _sw = self.stats_writer_stats()
+        _log.info(
+            f"[诊断][flush 前] episode_buffer 持有 {_bs['frames']} 帧 / "
+            f"numpy条目={_bs['ndarray_entries']} 路径条目={_bs['str_entries']} | "
+            f"StatsWriter pushed={_sw['pushed']} written={_sw['written']} "
+            f"队列={_sw['qsize']}(峰值{_sw['max_qsize']}) | "
+            f"backend={self._encode_backend}"
+        )
+        for _w in self._nvenc_enc.worker_stats():
+            _log.info(
+                f"[诊断][NVENC {_w['cam']}] 推入 {_w['pushed']} / 已编码 {_w['encoded']} / "
+                f"队列 {_w['qsize']}(峰值{_w['max_qsize']}) / "
+                f"背压阻塞 {_w['blocked_s']:.2f}s({_w['block_events']}次) / "
+                f"GPU编码耗时 {_w['encode_s']:.1f}s / dropped={_w.get('dropped', 0)}"
             )
 
         _log.info("[LeRobot] 结束本集 GPU 编码，等待 mp4 落盘…")
@@ -790,17 +1008,47 @@ class LeRobotDatasetWriter:
         # mp4 已存在故跳过编码；ep0 需调用以写 info.json（update_video_info）
         self._dataset.encode_episode_videos(ep_idx)
         self._saved_episodes += 1
-        self._frame_idx = 0
+        _bs2 = self.buffer_stats()
+        _log.info(
+            f"[诊断][flush 后] episode_buffer 剩余 {_bs2['frames']} 帧 / "
+            f"numpy条目={_bs2['ndarray_entries']} / RSS={_read_self_rss_mb():.0f} MB"
+        )
+        self._reset_buf_counters()
+        if self._stats_writer is not None:
+            try:
+                self._stats_writer.reset_byte_counter()
+            except Exception:
+                pass
+        else:
+            reset = getattr(self._nvenc_enc, "reset_byte_counter", None)
+            if callable(reset):
+                try:
+                    reset()
+                except Exception:
+                    pass
         return ep_idx
 
     def discard_episode(self) -> None:
         """丢弃本集缓存（帧数不足时调用）。"""
+        # 先丢队列，再清目录——避免写盘线程在 rmtree 之后把文件写回去
         if self._stats_writer is not None:
             self._stats_writer.drop_pending()
         self._nvenc_enc.discard_episode()
         self._dataset.clear_episode_buffer()
         self._dataset.episode_buffer = self._dataset.create_episode_buffer()
-        self._frame_idx = 0
+        self._reset_buf_counters()
+        if self._stats_writer is not None:
+            try:
+                self._stats_writer.reset_byte_counter()
+            except Exception:
+                pass
+        else:
+            reset = getattr(self._nvenc_enc, "reset_byte_counter", None)
+            if callable(reset):
+                try:
+                    reset()
+                except Exception:
+                    pass
 
     @property
     def num_episodes(self) -> int:
@@ -809,6 +1057,203 @@ class LeRobotDatasetWriter:
     @property
     def num_frames(self) -> int:
         return self._dataset.num_frames
+
+
+# ---------------------------------------------------------------------------
+# 内存 / NVENC 诊断探针
+# ---------------------------------------------------------------------------
+
+def _read_self_rss_mb() -> float:
+    """从 /proc/self/status 读 VmRSS（MB）。失败返回 0。"""
+    try:
+        with open("/proc/self/status", "r") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) / 1024.0
+    except Exception:
+        pass
+    return 0.0
+
+
+_pynvml_ok: bool | None = None
+_pynvml_handle = None
+_nvsmi_call_count = 0
+
+
+def _query_gpu_nvenc_sessions_pynvml() -> int:
+    """进程内 pynvml 查询 NVENC 会话数。失败返回 -1。"""
+    global _pynvml_ok, _pynvml_handle
+    if _pynvml_ok is False:
+        return -1
+    try:
+        import pynvml  # type: ignore
+        if _pynvml_ok is None:
+            pynvml.nvmlInit()
+            _pynvml_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            _pynvml_ok = True
+        # encoder.stats.sessionCount 对应 NVML_FI_DEV_ENCODER_SESSIONS
+        # 不同版本 API 字段名可能不同，逐一尝试
+        try:
+            return int(pynvml.nvmlDeviceGetEncoderSessions(_pynvml_handle).__len__())
+        except Exception:
+            pass
+        try:
+            util = pynvml.nvmlDeviceGetEncoderStats(_pynvml_handle)
+            # (sessionCount, averageFps, averageLatency) on some drivers
+            if isinstance(util, tuple) and len(util) >= 1:
+                return int(util[0])
+            if hasattr(util, "sessionCount"):
+                return int(util.sessionCount)
+        except Exception:
+            pass
+        _pynvml_ok = False
+        return -1
+    except Exception:
+        _pynvml_ok = False
+        return -1
+
+
+def _query_gpu_nvenc_sessions_nvsmi() -> int:
+    """nvidia-smi 子进程查询（慢；仅作 fallback）。取不到返回 -1。"""
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=encoder.stats.sessionCount",
+             "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=3,
+        )
+        return int(out.stdout.strip().splitlines()[0].strip())
+    except Exception:
+        return -1
+
+
+def _query_gpu_nvenc_sessions(allow_nvsmi: bool = False, nvsmi_every: int = 6) -> int:
+    """优先 pynvml；不可用时按 nvsmi_every 降频调用 nvidia-smi（默认每 6 次探针一次）。"""
+    global _nvsmi_call_count
+    n = _query_gpu_nvenc_sessions_pynvml()
+    if n >= 0:
+        return n
+    if not allow_nvsmi:
+        return -1
+    _nvsmi_call_count += 1
+    if _nvsmi_call_count == 1 or (_nvsmi_call_count % max(1, int(nvsmi_every)) == 0):
+        return _query_gpu_nvenc_sessions_nvsmi()
+    return -1
+
+
+class CollectionProbe:
+    """周期性诊断探针：定位内存增长来源 + NVENC 会话归属 + 编码链路余量。
+
+    输出三类信息，每类都能独立支撑一个结论：
+
+    1) 内存归因
+       `buf_img` 是 episode_buffer 中图像 numpy 数组的合计字节数，`rss` 是进程实际
+       物理内存。若两者同步线性增长，则内存增长的主体就是帧缓冲，而不是别处泄漏。
+       同时打印 numpy 条目数与路径字符串条目数：前者非零即证明走的是本封装的
+       「原图留在内存」路径，而非原版 lerobot 的「只留 PNG 路径」路径。
+
+    2) NVENC 会话归属
+       `nvenc_local` 是本进程为写 mp4 而开的会话数（每相机 1 路），`nvenc_gpu` 是
+       GPU 报告的全 GPU 总数。默认不查 GPU（`--probe_gpu` 开启时优先 pynvml）。
+
+    3) 编码链路余量
+       每相机打印 推入/已编码/队列深度/背压阻塞时长。队列常态接近上限、
+       blocked_s 持续增长，说明 GPU 编码跟不上取帧，主线程被 push() 拖住，
+       这正是实际采集帧率低于目标 fps 的机制。
+    """
+
+    def __init__(self, writer: "LeRobotDatasetWriter", interval_s: float = 30.0,
+                 fps_target: float = 0.0, probe_gpu: bool = False) -> None:
+        self._writer = writer
+        self._interval = float(interval_s)
+        self._fps_target = float(fps_target)
+        self._probe_gpu = bool(probe_gpu)
+        self._stop = threading.Event()
+        self._t0 = time.perf_counter()
+        self._rss0 = _read_self_rss_mb()
+        self._prev_rss = self._rss0
+        self._prev_t = self._t0
+        self._prev_pushed: dict[str, int] = {}
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        _log.info(
+            f"[诊断] 探针启动：每 {self._interval:.0f}s 一次，起始 RSS={self._rss0:.0f} MB"
+        )
+        self._thread = threading.Thread(
+            target=self._loop, daemon=True, name="collection_probe"
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
+        self.log_once(final=True)
+
+    def _loop(self) -> None:
+        # 首次立即打一行基线，之后按周期
+        while not self._stop.wait(self._interval):
+            try:
+                self.log_once()
+            except Exception as e:
+                _log.warning(f"[诊断] 探针异常（不影响采集）: {e}")
+
+    def log_once(self, final: bool = False) -> None:
+        now = time.perf_counter()
+        elapsed = now - self._t0
+        rss = _read_self_rss_mb()
+        dt = max(now - self._prev_t, 1e-6)
+        rss_rate = (rss - self._prev_rss) / dt * 60.0     # MB/分钟
+        self._prev_rss, self._prev_t = rss, now
+
+        bs = self._writer.buffer_stats()
+        buf_mb = bs["img_bytes"] / 1048576.0
+        local = self._writer.nvenc_local_sessions
+        if self._probe_gpu:
+            gpu_total = _query_gpu_nvenc_sessions(allow_nvsmi=True, nvsmi_every=6)
+        else:
+            gpu_total = -1
+        if gpu_total < 0:
+            nvenc_txt = f"NVENC 本进程={local} 全GPU=n/a 其它进程=n/a"
+        else:
+            nvenc_txt = (
+                f"NVENC 本进程={local} 全GPU={gpu_total} "
+                f"其它进程={max(gpu_total - local, 0)}"
+            )
+
+        sw = self._writer.stats_writer_stats()
+        tmp_mb = self._writer.tmp_dirs_size_mb()
+
+        share = min(100.0 * buf_mb / rss, 100.0) if rss > 0 else 0.0
+        tag = "结束汇总" if final else f"t+{elapsed:6.0f}s"
+        _log.info(
+            f"[诊断][{tag}] RSS={rss:7.0f}MB (增速{rss_rate:+7.1f}MB/分) | "
+            f"帧缓冲={bs['frames']:6d}帧 numpy条目={bs['ndarray_entries']} "
+            f"路径条目={bs['str_entries']} | "
+            f"StatsWriter pushed={sw['pushed']} written={sw['written']} "
+            f"q={sw['qsize']}(峰{sw['max_qsize']}) tmpJPEG={tmp_mb:.0f}MB | "
+            f"{nvenc_txt}"
+        )
+
+        for w in self._writer.nvenc_worker_stats():
+            cam = w["cam"]
+            d_push = w["pushed"] - self._prev_pushed.get(cam, 0)
+            self._prev_pushed[cam] = w["pushed"]
+            inflight = w["pushed"] - w["encoded"]
+            eff_fps = d_push / dt if not final else (w["pushed"] / elapsed if elapsed > 0 else 0)
+            warn = ""
+            if self._fps_target > 0 and eff_fps > 0 and eff_fps < self._fps_target * 0.9:
+                warn = f"  ← 低于目标 {self._fps_target:.0f}fps"
+            _log.info(
+                f"[诊断]   [{cam} {w['wh'][0]}x{w['wh'][1]}] 实际取帧 {eff_fps:5.1f}fps | "
+                f"推入={w['pushed']} 已编码={w['encoded']} 在途={inflight} | "
+                f"队列={w['qsize']}(峰值{w['max_qsize']}/64) | "
+                f"背压阻塞={w['blocked_s']:.2f}s({w['block_events']}次) | "
+                f"GPU编码累计={w['encode_s']:.1f}s{warn}"
+            )
 
 
 # ---------------------------------------------------------------------------
