@@ -4,21 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 from pathlib import Path
 from typing import Any, Sequence
 
 logger = logging.getLogger(__name__)
-
-_MODULES_DIR = Path(__file__).resolve().parent  # softbody/modules（场景模块所在目录）
-if str(_MODULES_DIR) not in sys.path:
-    sys.path.insert(0, str(_MODULES_DIR))
-
-from scene_cloth_config import (  # noqa: E402
-    level_assets_dir,
-    studio_project_dir,
-)
-
 
 def normalize_vtk_asset_name(vtk_name: str, *, level: str | None = None) -> str:
     """
@@ -46,17 +35,6 @@ def normalize_vtk_asset_name(vtk_name: str, *, level: str | None = None) -> str:
     return basename
 
 
-def default_vtk_search_roots(level: str | None = None) -> list[Path]:
-    """
-    默认 VTK 搜索目录。
-
-    P4 起仅搜索 ``Assets/<level>/``；未提供 ``level`` 时返回空列表（不查 ``XPBD/data``）。
-    """
-    if level and str(level).strip():
-        return [level_assets_dir(level)]
-    return []
-
-
 def resolve_vtk_asset_path(
     vtk_name: str,
     search_roots: Sequence[Path] | None = None,
@@ -66,8 +44,8 @@ def resolve_vtk_asset_path(
     """
     在场景权威目录中定位 ``.vtk`` 文件。
 
-    ``vtk_name`` 可为绝对路径，或相对文件名（在 ``search_roots`` / ``level`` 对应目录中查找）。
-    未提供 ``search_roots`` 时，仅使用 ``default_vtk_search_roots(level)``。
+    ``vtk_name`` 可为绝对路径，或相对文件名（在 ``search_roots`` 对应目录中查找）。
+    未提供 ``search_roots`` 时，仅使用绝对路径候选（由编排器传入 ``asset_dir`` 兜底）。
     """
     raw = str(vtk_name).strip()
     if not raw:
@@ -79,7 +57,7 @@ def resolve_vtk_asset_path(
         if name and name not in candidates:
             candidates.append(name)
 
-    roots = list(search_roots) if search_roots is not None else default_vtk_search_roots(level)
+    roots = list(search_roots) if search_roots is not None else []
     for name in candidates:
         candidate = Path(name).expanduser()
         if candidate.is_file():
@@ -132,23 +110,28 @@ def enrich_cloth_entry_with_masked_assets(
     *,
     search_roots: Sequence[Path] | None = None,
     level: str | None = None,
+    asset_dir: Path | None = None,
 ) -> dict[str, Any]:
     """
     根据 ``vtk_asset_path`` / ``mesh`` 补全掩码资产与紧凑索引字段，写入 session ``cloth`` 块。
 
     同时写入 ``asset_dir``、``level``，供 XPBD ``MjcPbdConfig`` 与预制检查使用。
+    ``asset_dir`` 由编排器传入（避免本模块反向依赖场景路径解析）。
     """
     out = dict(entry)
     resolved_level = str(level or out.get("level") or "").strip()
     if resolved_level:
         out["level"] = resolved_level
-        out["asset_dir"] = str(level_assets_dir(resolved_level))
+        if asset_dir is not None:
+            out["asset_dir"] = str(asset_dir)
 
     vtk_name = str(out.get("vtk_asset_path") or out.get("mesh") or "").strip()
     if not vtk_name or vtk_name.startswith("procedural:"):
         return out
 
     vtk_name = normalize_vtk_asset_name(vtk_name, level=resolved_level or None)
+    if search_roots is None and asset_dir is not None:
+        search_roots = [asset_dir]
     vtk_path = resolve_vtk_asset_path(vtk_name, search_roots, level=resolved_level or None)
     if vtk_path is None:
         logger.warning("enrich_cloth_entry: 未在场景资产目录找到 VTK %s (level=%s)", vtk_name, resolved_level)
@@ -209,9 +192,12 @@ def enrich_discovered_cloths_with_masked_assets(
     search_roots: Sequence[Path] | None = None,
     *,
     level: str | None = None,
+    asset_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
     """对 ``identify_xpbd_cloth`` 返回的每条布片记录补全掩码 / idxmap / asset_dir 字段。"""
     return [
-        enrich_cloth_entry_with_masked_assets(row, search_roots=search_roots, level=level)
+        enrich_cloth_entry_with_masked_assets(
+            row, search_roots=search_roots, level=level, asset_dir=asset_dir
+        )
         for row in discovered
     ]

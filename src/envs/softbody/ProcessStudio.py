@@ -18,7 +18,7 @@ from typing import Any
 
 import mujoco
 
-from .common.paths import SOFTBODY_DIR
+from .common.paths import SOFTBODY_DIR, companion_paths_for_stem
 
 logger = logging.getLogger(__name__)
 
@@ -523,3 +523,102 @@ def run_masked_vtk_prefab_check_at_startup(
             return False
         logger.warning("CLOTH_MASKED_PREFAB_WARN_ONLY=1，继续启动")
     return True if (all_ok or not strict) else False
+
+
+# ---------------------------------------------------------------------------
+# Studio prefab 文本解析（从 scene_cloth_config 迁入）
+# ---------------------------------------------------------------------------
+
+
+def _extract_entity_block_at(prefab_text: str, entity_key_start: int) -> str:
+    """从 ``"Entity_[...]": {`` 起截取完整 JSON 对象（括号配对）。"""
+    brace = prefab_text.find("{", entity_key_start)
+    if brace < 0:
+        return ""
+    depth = 0
+    i = brace
+    while i < len(prefab_text):
+        ch = prefab_text[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return prefab_text[entity_key_start : i + 1]
+        i += 1
+    return prefab_text[entity_key_start:]
+
+
+def extract_cloth_entity_with_xpbd_sheet(prefab_text: str) -> tuple[str, str] | None:
+    comp_idx = prefab_text.find('"EditorMjXpbdClothSheetComponent"')
+    if comp_idx < 0:
+        return None
+    before = prefab_text[:comp_idx]
+    entity_start = -1
+    for match in re.finditer(r'"Entity_\[[^\]]+\]":\s*\{', before):
+        entity_start = match.start()
+    if entity_start < 0:
+        return None
+    chunk = _extract_entity_block_at(prefab_text, entity_start)
+    name_match = re.search(r'"Name":\s*"([^"]+)"', chunk)
+    if not name_match:
+        return None
+    return name_match.group(1), chunk
+
+
+def extract_prefab_vtk_asset_path(prefab_text: str) -> str | None:
+    found = extract_cloth_entity_with_xpbd_sheet(prefab_text)
+    chunk = found[1] if found else prefab_text
+    match = re.search(
+        r'"EditorMjXpbdClothSheetComponent"[\s\S]*?"vtkAssetPath":\s*"([^"]*)"',
+        chunk,
+    )
+    return match.group(1) if match else None
+
+
+def extract_cloth_sheet_mesh_asset_hint(
+    prefab_text: str,
+    *,
+    entity_name: str | None = None,
+) -> str | None:
+    found = extract_cloth_entity_with_xpbd_sheet(prefab_text)
+    if found:
+        chunk = found[1]
+    elif entity_name:
+        marker = f'"Name": "{entity_name}"'
+        idx = prefab_text.find(marker)
+        if idx < 0:
+            return None
+        chunk = prefab_text[idx : idx + 12000]
+    else:
+        return None
+    match = re.search(r'"assetHint":\s*"([^"]+\.fbx\.azmodel)"', chunk)
+    return match.group(1) if match else None
+
+
+def _stem_from_vtk_asset_path(vtk_asset_path: str) -> str:
+    raw = str(vtk_asset_path).strip().replace("\\", "/")
+    if not raw:
+        return ""
+    return Path(raw).stem
+
+
+def _discover_masked_stems_in_asset_dir(asset_dir: Path, cfg: dict[str, Any]) -> list[str]:
+    """在 ``Assets/<level>/`` 中查找具备掩码三件套的 stem。"""
+    if not asset_dir.is_dir():
+        return []
+    required = list(cfg.get("required_masked_suffixes") or [".vtk", ".mask", ".meta.json", ".fbx"])
+    need_mask = ".mask" in required
+    need_meta = ".meta.json" in required
+    stems: list[str] = []
+    for vtk_path in sorted(asset_dir.glob("*.vtk")):
+        stem = vtk_path.stem
+        paths = companion_paths_for_stem(asset_dir, stem)
+        if need_mask and not paths["mask"].is_file():
+            continue
+        if need_meta and not paths["meta"].is_file():
+            continue
+        if ".fbx" in required and not paths["fbx"].is_file():
+            continue
+        stems.append(stem)
+    return stems

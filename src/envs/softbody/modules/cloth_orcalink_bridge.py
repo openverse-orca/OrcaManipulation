@@ -9,15 +9,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 from modules.anchor_frame import AnchorFrame, collect_anchor_frame
-from modules.anchor_debug_export import AnchorDebugCsvWriter, open_debug_csv_writer
-from modules.vertex_pos_mjc_xpbd_export import VertexPosMjcXpbdWriter, open_vertex_pos_writer
 from modules.anchor_publish import export_frame_jsonl, frame_to_units, log_mujoco_send
 from modules.body_track_packet import body_track_position_packet_body_only
-from modules.anchor_debug_export import resolve_debug_log_dir
-from modules.macro_packet_pair_verify import record_mjc_packet_a
-from modules.macro_timing_export import MacroTimingWriter, open_macro_timing_writer
 from modules.body_map import BodyMapEntry
-from modules.orcalink_connect_debug import log_connect_failure
 from modules.orcalink_settings import require_orcalink_port
 
 logger = logging.getLogger(__name__)
@@ -38,9 +32,6 @@ class ClothOrcaLinkBridge:
         self._connected = False
         dbg = config.get("debug", {})
         self._export_path = dbg.get("anchor_export_path")
-        self._csv_writer: AnchorDebugCsvWriter | None = None
-        self._vertex_writer: VertexPosMjcXpbdWriter | None = None
-        self._macro_timing_writer: MacroTimingWriter | None = None
         if not cloth_root:
             raise ValueError("ClothOrcaLinkBridge 需要 cloth_root（布料数据目录未指定）")
         self._cloth_root = Path(cloth_root).expanduser().resolve()
@@ -69,9 +60,8 @@ class ClothOrcaLinkBridge:
             from orcalink_client import OrcaLinkClient
             from orcalink_client.config_loader import _build_orcalink_config_from_dict
             from orcalink_client.orcalink_client import setup_logging
-            from modules.mjc_pbd_debug_profile import orcalink_client_verbose
 
-            setup_logging(verbose=orcalink_client_verbose(self._config))
+            setup_logging()
         except ImportError as e:
             logger.error("orcalink_client not installed: %s", e)
             return False
@@ -115,37 +105,15 @@ class ClothOrcaLinkBridge:
         }
         config = _build_orcalink_config_from_dict(cfg_dict)
 
-        client_name = str(client_cfg.get("client_name", "cloth_mujoco"))
-        expected = int(session_cfg.get("expected_clients", 2))
-
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         self._client = OrcaLinkClient(config)
         ok = self._loop.run_until_complete(self._client.initialize())
         self._connected = bool(ok)
         if not self._connected:
-            log_connect_failure(
-                role="mujoco_publisher",
-                host=host,
-                port=port,
-                stage="initialize",
-                detail="OrcaLinkClient.initialize() returned False",
-                config=self._config,
-                expected_clients=expected,
-                my_client_name=client_name,
-                cloth_root=self._cloth_root,
-            )
+            logger.error("OrcaLinkClient.initialize() 返回 False")
             return False
         if self._connected:
-            self._csv_writer = open_debug_csv_writer(self._config, self._cloth_root)
-            self._vertex_writer = open_vertex_pos_writer(self._config, self._cloth_root)
-            self._macro_timing_writer = open_macro_timing_writer(self._config, self._cloth_root)
-            if self._csv_writer:
-                logger.info("锚点 CSV 调试输出: %s", self._csv_writer.debug_dir)
-            if self._vertex_writer:
-                logger.info("顶点对比 CSV: %s/VertexPos_Mjc_XPBD.csv", self._vertex_writer.debug_dir)
-            if self._macro_timing_writer:
-                logger.info("宏步时序 CSV: %s/MacroTiming.mjc_partial.csv", self._macro_timing_writer.debug_dir)
             logger.info(
                 "ClothOrcaLinkBridge connected session_id=%s bodies=%d",
                 client_cfg.get("session_id"),
@@ -210,27 +178,14 @@ class ClothOrcaLinkBridge:
             export_frame_jsonl(frame, Path(self._export_path))
         # 采集点 ②：与 OrcaLink PublishFrame 一致的 DataUnit
         units = frame_to_units(frame, body_only=body_only)
-        dbg = self._config.get("debug", {})
-        if dbg.get("debug_mode") and dbg.get("export_macro_packet_pair_verify", False):
-            log_dir = resolve_debug_log_dir(self._config, self._cloth_root)
-            if log_dir is not None:
-                record_mjc_packet_a(log_dir, macro_frame, frame.sim_time, units)
-        if self._csv_writer:
-            self._csv_writer.write_macro_frame(frame, units)
-        if self._vertex_writer:
-            self._vertex_writer.write_mjc_macro_frame_from_anchor_frame(
-                frame, self._body_entries
-            )
         ok = self._loop.run_until_complete(
             self._client.publish_anchor_frame(units, macro_frame, frame.sim_time)
         )
         if not ok:
             return False
 
-        t1_utc = time.time()
-        t4_utc = t1_utc
         if self._sync_mode_active():
-            force_seq, t4_utc = self._loop.run_until_complete(
+            force_seq, _ = self._loop.run_until_complete(
                 self._wait_force_for_macro(macro_frame)
             )
             if force_seq != macro_frame:
@@ -241,26 +196,9 @@ class ClothOrcaLinkBridge:
                 )
                 return False
 
-        if self._macro_timing_writer:
-            self._macro_timing_writer.append_mjc_cycle(
-                macro_frame,
-                frame.sim_time,
-                t1_utc,
-                t4_utc,
-                time.time(),
-            )
         return True
 
     def close(self) -> None:
-        if self._macro_timing_writer:
-            self._macro_timing_writer.close()
-            self._macro_timing_writer = None
-        if self._vertex_writer:
-            self._vertex_writer.close()
-            self._vertex_writer = None
-        if self._csv_writer:
-            self._csv_writer.close()
-            self._csv_writer = None
         if self._client and self._loop:
             try:
                 self._loop.run_until_complete(self._client.shutdown())

@@ -206,7 +206,7 @@
     "export_recv_yup_csv": false,
     "export_anchor_substep_csv": false,
     "export_sync_seq_monitor": true,
-    "debug_log_dir": "../../../XPBD/MjcPBD_orcalink/debug_log",
+    "debug_log_dir": "../../../../XPBD/MjcPBD_orcalink/debug_log",
     "anchor_export_path": "../../../XPBD/MjcPBD_orcalink/checkpoints/run_latest/anchor_frames.jsonl",
     "pose_csv_path": "../../../XPBD/MjcPBD_orcalink/checkpoints/run_latest/mjc_xpbd_pose.csv"
   }

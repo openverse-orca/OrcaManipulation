@@ -82,7 +82,11 @@ def adapt_config_for_orcagym(
                     enrich_discovered_cloths_with_masked_assets,
                 )
 
-                cloths = enrich_discovered_cloths_with_masked_assets(cloths, level=level or None)
+                cloths = enrich_discovered_cloths_with_masked_assets(
+                    cloths,
+                    level=level or None,
+                    asset_dir=Path(scene_assets.asset_dir) if scene_assets.asset_dir else None,
+                )
             cfg = merge_cloth_discovery(cfg, cloths)
             if level and cfg.get("cloth"):
                 cloth_blk = cfg["cloth"]

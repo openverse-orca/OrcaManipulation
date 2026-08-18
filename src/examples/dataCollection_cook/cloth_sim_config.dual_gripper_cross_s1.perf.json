@@ -248,7 +248,7 @@
     "export_macro_timing_pair": false,
     "export_macro_packet_pair_verify": false,
     "export_vertex_pos_compare": false,
-    "debug_log_dir": "../../../XPBD/MjcPBD_orcalink/debug_log",
+    "debug_log_dir": "../../../../XPBD/MjcPBD_orcalink/debug_log",
     "comment": "perf 档：debug_mode=false，仿真路径与 debug 一致，无 CSV/跟踪日志"
   }
 }

@@ -240,7 +240,7 @@
     "export_macro_timing_pair": true,
     "export_macro_packet_pair_verify": false,
     "export_vertex_pos_compare": false,
-    "debug_log_dir": "../../../XPBD/MjcPBD_orcalink/debug_log",
+    "debug_log_dir": "../../../../XPBD/MjcPBD_orcalink/debug_log",
     "comment": "Yixuan H-0.3x 对折 36s；联调 --profile debug|rtf"
   }
 }

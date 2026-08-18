@@ -18,6 +18,28 @@ SOFTBODY_SCRIPTS_DIR: Path = SOFTBODY_DIR / "scripts"
 CLOTH_CONFIG_BASENAME = "cloth_sim_config.json"
 
 
+def level_lower_for_hint(level: str) -> str:
+    """关卡名小写（资产目录 hint 用）。"""
+    return level.lower()
+
+
+def qualified_vtk_asset_path(level: str, stem: str) -> str:
+    """``{level}/{stem}.vtk`` 限定路径。"""
+    return f"{level}/{stem}.vtk"
+
+
+def companion_paths_for_stem(asset_dir: Path, stem: str) -> dict[str, Path]:
+    """掩码布三件套等伴随路径。"""
+    return {
+        "vtk": asset_dir / f"{stem}.vtk",
+        "mask": asset_dir / f"{stem}.mask",
+        "meta": asset_dir / f"{stem}.meta.json",
+        "fbx": asset_dir / f"{stem}.fbx",
+        "idxmap": asset_dir / f"{stem}.idxmap.json",
+        "obj": asset_dir / f"{stem}.obj",
+    }
+
+
 def resolve_cloth_data_dir(cloth_data_dir: Path | None) -> Path:
     """布料数据目录（必传）。"""
     if not cloth_data_dir:

@@ -272,7 +272,7 @@
     "comment_macro_timing": "MacroTiming_pair：t1=MJC PublishFrame POSITION 完成，t2=XPBD PublishFrame FORCE 完成",
     "export_macro_packet_pair_verify": true,
     "comment_csv": "macro_packet_pair_verify.csv；A=mjc_macro_packet_A_units B=xpbd_macro_packet_B_units",
-    "debug_log_dir": "../../../XPBD/MjcPBD_orcalink/debug_log",
+    "debug_log_dir": "../../../../XPBD/MjcPBD_orcalink/debug_log",
     "anchor_export_path": "../../../XPBD/MjcPBD_orcalink/checkpoints/run_latest/anchor_frames.jsonl",
     "pose_csv_path": "../../../XPBD/MjcPBD_orcalink/checkpoints/run_latest/mjc_xpbd_pose.csv"
   }

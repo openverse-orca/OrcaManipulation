@@ -249,7 +249,7 @@
     "export_macro_timing_pair": false,
     "export_macro_packet_pair_verify": false,
     "export_vertex_pos_compare": false,
-    "debug_log_dir": "../../../XPBD/MjcPBD_orcalink/debug_log",
+    "debug_log_dir": "../../../../XPBD/MjcPBD_orcalink/debug_log",
     "comment": "默认 light debug；全量 CSV 用 --profile full；perf 用 dual_gripper_cross_s1.perf.json"
   }
 }
