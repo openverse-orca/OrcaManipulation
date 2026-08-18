@@ -321,6 +321,128 @@ def pin_left_arm_joints(env, agent_name: str) -> bool:
     return True
 
 
+def pin_all_joints(env, agent_name: str) -> bool:
+    """合并单层 mj_step 包装：同时钉死 floating base + 腰部 + 左臂。
+
+    替代分别调用 pin_floating_base / pin_waist_joints / pin_left_arm_joints：
+    原本 3 层包装会导致每子步触发 3 次 mujoco.mj_forward，仿真性能下降 3-5 倍。
+    合并为单层包装后，每周期仅 1 次 mj_forward，性能大幅提升。
+    """
+    import mujoco
+
+    gym = getattr(env, "gym", None) or getattr(
+        getattr(env, "unwrapped", env), "gym", None
+    )
+    if gym is None or not hasattr(gym, "_mjModel") or not hasattr(gym, "_mjData"):
+        orca_logger.warning("[PIN-ALL] env.gym._mjModel/_mjData unavailable")
+        return False
+
+    mj, md = gym._mjModel, gym._mjData
+
+    def _joint_qadr_dadr(short_name: str) -> tuple[int, int]:
+        full = f"{agent_name}_{short_name}"
+        jid = mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_JOINT, full)
+        if jid < 0:
+            raise ValueError(f"joint not found: {full}")
+        return int(mj.jnt_qposadr[jid]), int(mj.jnt_dofadr[jid])
+
+    def _actuator_id(short_name: str) -> int:
+        full = f"{agent_name}_{short_name}"
+        aid = mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_ACTUATOR, full)
+        if aid < 0:
+            raise ValueError(f"actuator not found: {full}")
+        return aid
+
+    # ── 收集三类目标 ──────────────────────────────────────────────────────
+    # 1) floating base（freejoint, qpos 7 维, qvel 6 维）
+    base_qadr, base_dadr = _joint_qadr_dadr("floating_base_joint")
+    base_q0 = np.array(md.qpos[base_qadr : base_qadr + 7], dtype=np.float64, copy=True)
+
+    # 2) 腰部（3 关节，目标=当前 qpos）
+    waist_names = g1_pick_osc_conf.locked_waist_joints
+    waist_qadrs: list[int] = []
+    waist_dadrs: list[int] = []
+    waist_q0s: list[float] = []
+    for short in waist_names:
+        qa, da = _joint_qadr_dadr(short)
+        waist_qadrs.append(qa)
+        waist_dadrs.append(da)
+        waist_q0s.append(float(md.qpos[qa]))
+
+    # 3) 左臂（7 motor 关节，目标=neutral_joint_values，ctrl=0）
+    l_arm_joint_names = g1_pick_osc_conf.l_arm["joint_names"]
+    l_arm_motor_names = g1_pick_osc_conf.l_arm["motors_names"]
+    l_arm_target = list(g1_pick_osc_conf.l_arm["neutral_joint_values"])
+    larm_qadrs: list[int] = []
+    larm_dadrs: list[int] = []
+    for short in l_arm_joint_names:
+        qa, da = _joint_qadr_dadr(short)
+        larm_qadrs.append(qa)
+        larm_dadrs.append(da)
+    larm_act_ids: list[int] = [_actuator_id(short) for short in l_arm_motor_names]
+
+    # ── 初始化：把 qpos/qvel/ctrl 设为目标并 forward ─────────────────────
+    md.qpos[base_qadr : base_qadr + 7] = base_q0
+    md.qvel[base_dadr : base_dadr + 6] = 0.0
+    for qa, q0 in zip(waist_qadrs, waist_q0s):
+        md.qpos[qa] = q0
+    for da in waist_dadrs:
+        md.qvel[da] = 0.0
+    for qa, q0 in zip(larm_qadrs, l_arm_target):
+        md.qpos[qa] = float(q0)
+    for da in larm_dadrs:
+        md.qvel[da] = 0.0
+    for aid in larm_act_ids:
+        md.ctrl[aid] = 0.0
+    mujoco.mj_forward(mj, md)
+
+    # ── 单层 mj_step 包装 ───────────────────────────────────────────────
+    _orig_mj_step = gym.mj_step
+
+    def _mj_step_all_pinned(nstep=1):
+        n = int(nstep) if nstep is not None else 1
+        for _ in range(max(n, 1)):
+            # 前置写回
+            md.qpos[base_qadr : base_qadr + 7] = base_q0
+            md.qvel[base_dadr : base_dadr + 6] = 0.0
+            for qa, q0 in zip(waist_qadrs, waist_q0s):
+                md.qpos[qa] = q0
+            for da in waist_dadrs:
+                md.qvel[da] = 0.0
+            for qa, q0 in zip(larm_qadrs, l_arm_target):
+                md.qpos[qa] = float(q0)
+            for da in larm_dadrs:
+                md.qvel[da] = 0.0
+            for aid in larm_act_ids:
+                md.ctrl[aid] = 0.0
+
+            _orig_mj_step(1)
+
+            # 后置写回
+            md.qpos[base_qadr : base_qadr + 7] = base_q0
+            md.qvel[base_dadr : base_dadr + 6] = 0.0
+            for qa, q0 in zip(waist_qadrs, waist_q0s):
+                md.qpos[qa] = q0
+            for da in waist_dadrs:
+                md.qvel[da] = 0.0
+            for qa, q0 in zip(larm_qadrs, l_arm_target):
+                md.qpos[qa] = float(q0)
+            for da in larm_dadrs:
+                md.qvel[da] = 0.0
+            for aid in larm_act_ids:
+                md.ctrl[aid] = 0.0
+
+        # 整个周期仅 1 次 mj_forward
+        mujoco.mj_forward(mj, md)
+
+    gym.mj_step = _mj_step_all_pinned
+    orca_logger.info(
+        f"[PIN-ALL] 合并单层 mj_step 包装: base + waist{waist_names} + l_arm(7) "
+        f"→ 每周期仅 1 次 mj_forward"
+    )
+    return True
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="G1 Pick OSC VR 遥操作采集 → LeRobot v2.1 格式"
@@ -542,10 +664,6 @@ def main() -> None:
 
             # 臂 OSC：与 ~/OrcaManipulation 一致，Pico Unity→MuJoCo 后直接 update_goal，
             # 不再叠加 OmniPicker 风格的 Rx(±π/2) / 轴重映射（否则无法手指朝下）。
-            # 左臂：横展定死（不绑 Pico），方便右臂靠近桌面拿放
-            orca_logger.info("Pinning left arm joints (horizontal, no OSC)")
-            pin_left_arm_joints(env, args.agent_name)
-
             orca_logger.info("Adding right arm OSC controller")
             controllers.add_arm_osc_pico_controller(
                 manager,
@@ -556,17 +674,12 @@ def main() -> None:
                 PicoJoystickKey.R_TRANSFORM,
             )
 
-            # 腰部关节锁定（waist_yaw/roll/pitch）
-            # 软锁：把 position 执行器 ctrl 设为初值（避免 PD 反向施力）
-            orca_logger.info("Locking waist joints (soft: ctrl := init qpos)")
-            lock_waist_joints(manager, env)
-            # 硬锁：包装 mj_step 每步强制写回 qpos/qvel（避免手臂反作用力导致晃动）
-            orca_logger.info("Pinning waist joints (hard: qpos/qvel write-back)")
-            pin_waist_joints(env, args.agent_name)
-
-            # 钉住浮动基座（不改 XML，不改 nq）
-            orca_logger.info("Pinning floating base")
-            pin_floating_base(env, args.agent_name)
+            # 合并单层 mj_step 包装：同时钉死 floating base + 腰部 + 左臂
+            # 替代原本 3 层独立包装（每子步触发 3 次 mj_forward，性能下降 3-5 倍）
+            orca_logger.info(
+                "Pinning all joints (base + waist + l_arm, single wrapper)"
+            )
+            pin_all_joints(env, args.agent_name)
 
             # Task + task status controller
             orca_logger.info("Setting task and task status controller")
