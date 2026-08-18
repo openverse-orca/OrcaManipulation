@@ -38,11 +38,35 @@ def _ensure_logical_equals_mjc(rows: list[dict[str, Any]]) -> list[dict[str, Any
     return out
 
 
+def resolve_mjcf_body_name(model: mujoco.MjModel, name: str) -> str | None:
+    """
+    在 MJCF 中解析 body 名：先精确匹配，再匹配 ``_{name}`` 后缀。
+
+    例如配置 ``g1_omnipicker_usda_robot_holder1`` 可匹配
+    ``Group_g1_omnipicker_usda_robot_holder1``。
+    """
+    if not name:
+        return None
+    if mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name) >= 0:
+        return name
+    candidates: list[str] = []
+    for bid in range(model.nbody):
+        bname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid) or ""
+        if not bname or bname == "world":
+            continue
+        if bname == name or bname.endswith(f"_{name}"):
+            candidates.append(bname)
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+    return min(candidates, key=len)
+
+
 def adapt_config_for_orcagym(
     model: mujoco.MjModel,
     config: dict[str, Any],
     *,
-    scene_assets: Any,
     data: mujoco.MjData | None = None,
 ) -> dict[str, Any]:
     """
@@ -50,12 +74,10 @@ def adapt_config_for_orcagym(
 
     - ``xpbd_auto_discover.bodies=true``：默认 ``body_track_scan_only=true``，扫描 ``_XPBD_TRACK_GEOM``；
       ``body_track_scan_only=false`` 时用 ``body_include_substrings`` 兜底；
-    - ``xpbd_auto_discover.cloth=true``：``identify_xpbd_cloth`` 合并进 ``config["cloth"]``；
     - 扫描模式下强制 ``pose_remap.enabled=false``；
     - body_track body-only：不要求 anchor SITE。
 
-    ``scene_assets`` 为编排器预先解析好的场景/资产结果（``asset_dir`` / ``masked_cloth_block``），
-    本函数不再自行查 ``studio_cloth_assets_dir`` / ``apply_masked_cloth_from_level``。
+    布片识别/资产解析已由编排器 ``_resolve_cloth_from_model`` 完成，本函数只做刚体映射。
     """
     cfg = copy.deepcopy(config)
     disc = cfg.setdefault("anchor_discovery", {})
@@ -63,49 +85,6 @@ def adapt_config_for_orcagym(
 
     auto = cfg.get("xpbd_auto_discover") or {}
     use_bodies = bool(auto.get("bodies", False))
-    use_cloth = bool(auto.get("cloth", False))
-
-    if use_cloth:
-        try:
-            from modules.identify_xpbd_cloth import (  # noqa: WPS433
-                enrich_cloth_discovery_pose,
-                identify_xpbd_cloth,
-                merge_cloth_discovery,
-            )
-
-            cloths = identify_xpbd_cloth(model)
-            if data is not None and cloths:
-                cloths = enrich_cloth_discovery_pose(model, data, cloths)
-            level = str((cfg.get("orcagym") or {}).get("level") or "").strip()
-            if cloths:
-                from modules.masked_vtk_assets import (  # noqa: WPS433
-                    enrich_discovered_cloths_with_masked_assets,
-                )
-
-                cloths = enrich_discovered_cloths_with_masked_assets(
-                    cloths,
-                    level=level or None,
-                    asset_dir=Path(scene_assets.asset_dir) if scene_assets.asset_dir else None,
-                )
-            cfg = merge_cloth_discovery(cfg, cloths)
-            if level and cfg.get("cloth"):
-                cloth_blk = cfg["cloth"]
-                cloth_blk.setdefault("level", level)
-                cloth_blk.setdefault("asset_dir", scene_assets.asset_dir)
-            if level and not (cfg.get("cloth") or {}).get("discovered"):
-                if scene_assets.masked_cloth_block is not None:
-                    cloth = cfg.setdefault("cloth", {})
-                    cloth.update(scene_assets.masked_cloth_block)
-                    cloth.setdefault("level", level)
-                    cloth.setdefault("asset_dir", scene_assets.asset_dir)
-        except ImportError as exc:
-            logger.warning("cloth auto discover skipped: %s", exc)
-            level = str((cfg.get("orcagym") or {}).get("level") or "").strip()
-            if level and scene_assets.masked_cloth_block is not None:
-                cloth = cfg.setdefault("cloth", {})
-                cloth.update(scene_assets.masked_cloth_block)
-                cloth.setdefault("level", level)
-                cloth.setdefault("asset_dir", scene_assets.asset_dir)
 
     map_key = str(cfg.get("orcagym", {}).get("rigid_body_map_key", "rigid_body_map"))
     rows_in: list[dict[str, Any]] = []
@@ -214,11 +193,7 @@ def adapt_config_for_orcagym(
         name = str(row.get("mjc_body_name", ""))
         if not name:
             continue
-        try:
-            from modules.mjcf_body_resolve import resolve_mjcf_body_name  # noqa: WPS433
-        except ImportError:
-            resolve_mjcf_body_name = None  # type: ignore[assignment,misc]
-        resolved = resolve_mjcf_body_name(model, name) if resolve_mjcf_body_name else name
+        resolved = resolve_mjcf_body_name(model, name)
         if resolved is None:
             logger.warning("Studio MJCF 无 body %s，跳过 OrcaLink 发布", name)
             continue

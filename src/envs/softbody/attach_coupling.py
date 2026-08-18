@@ -5,12 +5,13 @@ import copy
 import json
 import logging
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Sequence
 
 from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
 
@@ -36,6 +37,12 @@ from .common.paths import (
     level_lower_for_hint,
     qualified_vtk_asset_path,
     resolve_cloth_data_dir,
+)
+from .common.masked_vtk import (
+    companion_paths_for_vtk,
+    load_idxmap_file,
+    normalize_vtk_asset_name,
+    resolve_vtk_asset_path,
 )
 
 logger = logging.getLogger(__name__)
@@ -211,6 +218,16 @@ def load_cloth_config(config_path: str | Path, cloth_data_dir: Path | None = Non
     base_path = (data_dir / str(extends)).resolve()
     base = load_cloth_config(base_path, cloth_data_dir=cloth_data_dir)
     return _deep_merge(base, raw)
+
+
+def require_orcalink_port(orcalink_cfg: dict[str, Any]) -> int:
+    """读取并校验 ``orcalink.port``（缺失抛 KeyError、越界抛 ValueError）。"""
+    if "port" not in orcalink_cfg:
+        raise KeyError('配置缺少 orcalink.port（请在 cloth_sim_config.*.json 中设置）')
+    port = int(orcalink_cfg["port"])
+    if not (1 <= port <= 65535):
+        raise ValueError(f"orcalink.port 无效: {port}")
+    return port
 
 
 def build_xpbd_session_config(base_cfg: dict[str, Any], adapted_cfg: dict[str, Any], cloth_data_dir: Path | None = None) -> dict[str, Any]:
@@ -399,60 +416,100 @@ def level_primary_masked_stem(level: str, cloth_data_dir: Path | None = None) ->
     return str(stems[0]).strip() or None
 
 
-def apply_masked_cloth_from_level(config: dict[str, Any], level: str, cloth_data_dir: Path | None = None) -> dict[str, Any]:
-    """
-    MJCF 未扫描到布片时，用关卡 ``scene_levels.json`` 写入掩码 ``cloth`` 块。
-
-    已 ``discovered`` 的布片不覆盖；程序化关卡（无 masked stem）不改动。
-    """
-    out = copy.deepcopy(config)
-    cloth = out.setdefault("cloth", {})
-    if cloth.get("discovered"):
-        return out
-
-    stem = level_primary_masked_stem(level, cloth_data_dir=cloth_data_dir)
-    if not stem:
-        return out
-
-    current_mesh = str(cloth.get("mesh") or "").strip()
-    legacy_meshes = ("shirt_v4.vtk", "shirt_new.vtk", "")
-    if current_mesh and current_mesh not in legacy_meshes and stem in current_mesh:
-        mesh_name = current_mesh
-    else:
-        mesh_name = f"{stem}.vtk"
-
-    import sys
-
-    if str(SOFTBODY_DIR) not in sys.path:
-        sys.path.insert(0, str(SOFTBODY_DIR))
-    from modules.masked_vtk_assets import enrich_cloth_entry_with_masked_assets  # noqa: WPS433
-
-    asset_dir = studio_cloth_assets_dir(level, cloth_data_dir=cloth_data_dir)
-    enriched = enrich_cloth_entry_with_masked_assets(
-        {"mesh": mesh_name, "vtk_asset_path": mesh_name},
-        level=level,
-        asset_dir=asset_dir,
-    )
-    cloth.update(enriched)
-    cloth.setdefault("level", level)
-    cloth.setdefault("asset_dir", str(asset_dir))
-    return out
-
-
 @dataclass
 class ResolvedSceneAssets:
     """编排器对某关卡「查一次」得到的布料场景/资产结果，传给各 Process* 模块。"""
 
     asset_dir: str
-    primary_masked_stem: str | None
     masked_cloth_block: dict[str, Any] | None
+
+
+def enrich_cloth_entry_with_masked_assets(
+    entry: dict[str, Any],
+    *,
+    search_roots: Sequence[Path] | None = None,
+    level: str | None = None,
+    asset_dir: Path | None = None,
+) -> dict[str, Any]:
+    """
+    根据 ``vtk_asset_path`` / ``mesh`` 补全掩码资产与紧凑索引字段，写入 session ``cloth`` 块。
+
+    同时写入 ``asset_dir``、``level``，供 XPBD ``MjcPbdConfig`` 与预制检查使用。
+    """
+    out = dict(entry)
+    resolved_level = str(level or out.get("level") or "").strip()
+    if resolved_level:
+        out["level"] = resolved_level
+        if asset_dir is not None:
+            out["asset_dir"] = str(asset_dir)
+
+    vtk_name = str(out.get("vtk_asset_path") or out.get("mesh") or "").strip()
+    if not vtk_name or vtk_name.startswith("procedural:"):
+        return out
+
+    vtk_name = normalize_vtk_asset_name(vtk_name, level=resolved_level or None)
+    if search_roots is None and asset_dir is not None:
+        search_roots = [asset_dir]
+    vtk_path = resolve_vtk_asset_path(vtk_name, search_roots, level=resolved_level or None)
+    if vtk_path is None:
+        logger.warning("enrich_cloth_entry: 未在场景资产目录找到 VTK %s (level=%s)", vtk_name, resolved_level)
+        return out
+
+    out["mesh"] = vtk_path.name
+    out["vtk_asset_path"] = vtk_path.name
+    out["vtk_path_resolved"] = str(vtk_path)
+    out["asset_dir"] = str(vtk_path.parent.resolve())
+
+    companions = companion_paths_for_vtk(vtk_path)
+    for key, path in companions.items():
+        if path.is_file():
+            out[key] = str(path.resolve())
+
+    meta_path = companions["meta_json_path"]
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(meta, dict):
+                out["topo_type"] = meta.get("topo_type", "masked_sheet")
+                if "nx" in meta:
+                    out["cloth_nx"] = int(meta["nx"])
+                if "ny" in meta:
+                    out["cloth_ny"] = int(meta["ny"])
+                if "spacing" in meta:
+                    out["cloth_spacing_m"] = float(meta["spacing"])
+                if "active_count" in meta:
+                    out["compact_count"] = int(meta["active_count"])
+                if "coordinate" in meta:
+                    out["coordinate"] = str(meta["coordinate"])
+                out["cook_y_flip"] = bool(
+                    meta.get("cook_y_flip")
+                    if "cook_y_flip" in meta
+                    else "o3de_cook" in str(meta.get("coordinate") or "").lower()
+                )
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("读取 meta.json 失败 %s: %s", meta_path, exc)
+
+    idxmap_path = companions["idxmap_path"]
+    idxmap = load_idxmap_file(idxmap_path)
+    if idxmap:
+        out["align_mode"] = str(idxmap.get("align_mode") or "idxmap")
+        compact_to_fbx = idxmap.get("compact_to_fbx")
+        if isinstance(compact_to_fbx, list):
+            out["compact_to_fbx"] = [int(x) for x in compact_to_fbx]
+            out["compact_count"] = int(idxmap.get("compact_count") or len(compact_to_fbx))
+        if idxmap.get("index_rule"):
+            out["index_rule"] = str(idxmap["index_rule"])
+    elif companions["mask_path"].is_file():
+        out.setdefault("align_mode", "identity")
+
+    return out
 
 
 def _resolve_scene_assets(config: dict[str, Any], cloth_data_dir: Path | None = None) -> ResolvedSceneAssets:
     """解析某关卡的 asset_dir、掩码布 stem 与掩码布块（原 paths.apply_masked_cloth_from_level 的「查」部分）。"""
     level = str((config.get("orcagym") or {}).get("level") or "").strip()
     if not level:
-        return ResolvedSceneAssets(asset_dir="", primary_masked_stem=None, masked_cloth_block=None)
+        return ResolvedSceneAssets(asset_dir="", masked_cloth_block=None)
 
     asset_dir = str(studio_cloth_assets_dir(level, cloth_data_dir=cloth_data_dir))
     stem = level_primary_masked_stem(level, cloth_data_dir=cloth_data_dir)
@@ -466,18 +523,245 @@ def _resolve_scene_assets(config: dict[str, Any], cloth_data_dir: Path | None = 
             if (current_mesh and current_mesh not in legacy_meshes and stem in current_mesh)
             else f"{stem}.vtk"
         )
-        if str(SOFTBODY_DIR) not in sys.path:
-            sys.path.insert(0, str(SOFTBODY_DIR))
-        from modules.masked_vtk_assets import enrich_cloth_entry_with_masked_assets  # noqa: WPS433
-
         masked = enrich_cloth_entry_with_masked_assets(
             {"mesh": mesh_name, "vtk_asset_path": mesh_name},
             level=level,
             asset_dir=Path(asset_dir),
         )
     return ResolvedSceneAssets(
-        asset_dir=asset_dir, primary_masked_stem=stem, masked_cloth_block=masked
+        asset_dir=asset_dir, masked_cloth_block=masked
     )
+
+
+def enrich_cloth_discovery_pose(model: Any, data: Any, discovered: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    用 ``mj_forward`` 后的 body 世界位姿填充每条布片发现的 ``center_*`` / ``quat_wxyz_*``。
+
+    坐标：MuJoCo Z-up（``center_mjc``）与 XPBD Y-up（``center_yup``，经 ``mjc_coords`` 转换）。
+    """
+    import math
+    import mujoco
+    import numpy as np
+
+    from modules.mjc_coords import orca_quat_to_yup, orca_vec_to_yup  # noqa: WPS433
+
+    out: list[dict[str, Any]] = []
+    for entry in discovered:
+        row = dict(entry)
+        body_name = str(row.get("body_name", ""))
+        bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+        if bid < 0:
+            logger.warning("enrich_cloth_discovery_pose: missing body %s", body_name)
+            out.append(row)
+            continue
+        xpos = data.xpos[bid].astype(np.float64)
+        xquat = data.xquat[bid].astype(np.float64)
+        row["center_mjc"] = [float(xpos[0]), float(xpos[1]), float(xpos[2])]
+        row["quat_wxyz_mjc"] = [
+            float(xquat[0]), float(xquat[1]), float(xquat[2]), float(xquat[3]),
+        ]
+        cy = orca_vec_to_yup(float(xpos[0]), float(xpos[1]), float(xpos[2]))
+        cq = orca_quat_to_yup(
+            float(xquat[0]), float(xquat[1]), float(xquat[2]), float(xquat[3]),
+        )
+        row["center_yup"] = [float(cy[0]), float(cy[1]), float(cy[2])]
+        row["quat_wxyz_yup"] = [float(cq[0]), float(cq[1]), float(cq[2]), float(cq[3])]
+        w = max(-1.0, min(1.0, float(cq[0])))
+        angle_deg = math.degrees(2.0 * math.acos(abs(w)))
+        logger.info(
+            "enrich_cloth_discovery_pose: body=%s center_yup=%s quat_wxyz_yup=%s angle_deg=%.2f",
+            body_name, row["center_yup"], row["quat_wxyz_yup"], angle_deg,
+        )
+        out.append(row)
+    return out
+
+
+def merge_cloth_discovery(config: dict[str, Any], discovered: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    将扫描结果合并进运行时 config["cloth"]；JSON 字段为 override（scan-first）。
+
+    若未发现布片则保持原 config 不变。
+    """
+    if not discovered:
+        return config
+    out = dict(config)
+    cloth_cfg = dict(out.get("cloth") or {})
+    primary = discovered[0]
+    cloth_cfg.setdefault("mesh", "shirt_v4.vtk")
+    if primary.get("vtk_asset_path"):
+        cloth_cfg["mesh"] = primary["vtk_asset_path"]
+    for key in ("mass_kg", "thickness_m", "stretch_compliance", "shear_compliance", "bend_compliance", "lock_radius_m"):
+        if key in primary and key not in cloth_cfg:
+            cloth_cfg[key] = primary[key]
+    cloth_cfg["body_name"] = primary.get("body_name")
+    cloth_cfg["discovered"] = True
+    cloth_cfg["discovered_cloths"] = discovered
+    for key in ("center_mjc", "quat_wxyz_mjc", "center_yup", "quat_wxyz_yup"):
+        if key in primary:
+            cloth_cfg[key] = primary[key]
+    out["cloth"] = cloth_cfg
+    return out
+
+
+_VTK_GEOM_RE = re.compile(r"^(?P<body>.+)_XPBD_CLOTHSHEET_VTK__(?P<token>.+)$")
+_VTK_SITE_RE = re.compile(r"^(?P<body>.+)_XPBD_CLOTHSHEET_BOUNDS__VTK__(?P<token>.+)$")
+_CLOTH_BODY_MARKERS = ("Cloth_Sheet",)
+
+
+def _unsanitize_vtk_token(token: str) -> str:
+    """Restore vtk filename from sanitized geom suffix (dots → underscores)."""
+    if token.endswith("_vtk"):
+        return token[:-4] + ".vtk"
+    return token.replace("_", "/")
+
+
+def _parse_site_user(model: Any, site_id: int) -> dict[str, float]:
+    """Read site user[] floats: mass, thickness, stretch, shear, bend, lockRadius."""
+    keys = ("mass_kg", "thickness_m", "stretch_compliance", "shear_compliance", "bend_compliance", "lock_radius_m")
+    out: dict[str, float] = {}
+    nuser = int(model.nsiteuser)
+    if nuser <= 0:
+        return out
+    base = int(model.site_useradr[site_id])
+    for i, key in enumerate(keys):
+        idx = base + i
+        if idx < nuser:
+            out[key] = float(model.site_user[idx])
+    return out
+
+
+def _vtk_path_from_site_name(site_name: str, body_name: str) -> str | None:
+    m = _VTK_SITE_RE.match(site_name)
+    if m and m.group("body") == body_name:
+        return _unsanitize_vtk_token(m.group("token"))
+    return None
+
+
+def _vtk_path_for_body(model: Any, body_id: int, body_name: str) -> str | None:
+    import mujoco
+
+    for sid in range(model.nsite):
+        if int(model.site_bodyid[sid]) != body_id:
+            continue
+        sname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_SITE, sid) or ""
+        vtk = _vtk_path_from_site_name(sname, body_name)
+        if vtk:
+            return vtk
+    for gid in range(model.ngeom):
+        if int(model.geom_bodyid[gid]) != body_id:
+            continue
+        gname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, gid) or ""
+        m = _VTK_GEOM_RE.match(gname)
+        if m and m.group("body") == body_name:
+            return _unsanitize_vtk_token(m.group("token"))
+    return None
+
+
+def identify_cloth_bodies_by_name(model: Any) -> list[dict[str, Any]]:
+    """
+    无 ``_XPBD_CLOTHSHEET_*`` site 时，按 body 名含 ``Cloth_Sheet`` 兜底发现布片。
+
+    OrcaLab datalink 关卡可能仅有 PBDRender 实体、未写 XPBD site 标记。
+    """
+    import mujoco
+
+    cloths: list[dict[str, Any]] = []
+    for bid in range(model.nbody):
+        bname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid) or ""
+        if not bname or bname == "world":
+            continue
+        if not any(marker in bname for marker in _CLOTH_BODY_MARKERS):
+            continue
+        cloths.append(
+            {
+                "body_name": bname,
+                "discovered": True,
+                "fallback_by_name": True,
+            }
+        )
+        logger.info("identify_cloth_bodies_by_name: body=%s", bname)
+    return cloths
+
+
+def identify_xpbd_cloth(model: Any) -> list[dict[str, Any]]:
+    """
+    扫描 MJCF 中所有 ``{body}_XPBD_CLOTHSHEET_BOUNDS`` site，返回布片发现列表。
+
+    每项包含：body_name、bounds 半轴/位置（body 局部系）、user 物理参数、可选 vtk_asset_path。
+    """
+    import mujoco
+    import numpy as np
+
+    cloths: list[dict[str, Any]] = []
+    for sid in range(model.nsite):
+        sname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_SITE, sid) or ""
+        if "_XPBD_CLOTHSHEET_BOUNDS" not in sname:
+            continue
+        body_id = int(model.site_bodyid[sid])
+        body_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body_id) or ""
+        if not body_name:
+            logger.warning("clothsheet site %s has no body", sname)
+            continue
+        half = model.site_size[sid, :3].astype(np.float64)
+        pos = model.site_pos[sid, :3].astype(np.float64)
+        entry: dict[str, Any] = {
+            "body_name": body_name,
+            "site_name": sname,
+            "bounds_half_extents": tuple(float(x) for x in half),
+            "bounds_pos_local": tuple(float(x) for x in pos),
+            "discovered": True,
+        }
+        entry.update(_parse_site_user(model, sid))
+        vtk = _vtk_path_for_body(model, body_id, body_name)
+        if vtk:
+            entry["vtk_asset_path"] = vtk
+        cloths.append(entry)
+        logger.info("identify_xpbd_cloth: body=%s vtk=%s", body_name, vtk)
+    if not cloths:
+        cloths = identify_cloth_bodies_by_name(model)
+    return cloths
+
+
+def _resolve_cloth_from_model(
+    model: Any,
+    data: Any,
+    config: dict[str, Any],
+    *,
+    cloth_data_dir: Path | None = None,
+) -> tuple[dict[str, Any], ResolvedSceneAssets]:
+    """
+    场景/资产解析完整流程：识别布片 + 补位姿 + 补掩码资产 + 合并 cloth + 解析资产 + 未 discovered 兜底。
+
+    统一收在编排器（原分散在 build_p2_session_from_mjcf 与 ProcessOrcaGym.adapt_config_for_orcagym 两处，
+    且 identify/enrich/merge 重复执行）。返回 (合并 cloth 后的 config, scene_assets)。
+    """
+    cfg = copy.deepcopy(config)
+    level = str((cfg.get("orcagym") or {}).get("level") or "").strip()
+
+    # 1) 识别布片 + 补位姿
+    cloths = enrich_cloth_discovery_pose(model, data, identify_xpbd_cloth(model))
+    # 2) 补掩码资产（需 asset_dir，先解析一次）
+    if cloths and level:
+        asset_dir = str(studio_cloth_assets_dir(level, cloth_data_dir=cloth_data_dir))
+        cloths = [
+            enrich_cloth_entry_with_masked_assets(row, level=level, asset_dir=Path(asset_dir))
+            for row in cloths
+        ]
+    # 3) 合并 cloth
+    cfg = merge_cloth_discovery(cfg, cloths)
+    # 4) 解析资产（asset_dir + stem + masked_block，按 merged discovered 算）
+    scene_assets = _resolve_scene_assets(cfg, cloth_data_dir=cloth_data_dir)
+    # 5) set level/asset_dir + 未 discovered 兜底
+    if level and cfg.get("cloth"):
+        cfg["cloth"].setdefault("level", level)
+        cfg["cloth"].setdefault("asset_dir", scene_assets.asset_dir)
+    if level and not (cfg.get("cloth") or {}).get("discovered"):
+        if scene_assets.masked_cloth_block is not None:
+            cloth = cfg.setdefault("cloth", {})
+            cloth.update(scene_assets.masked_cloth_block)
+            cloth.setdefault("level", level)
+            cloth.setdefault("asset_dir", scene_assets.asset_dir)
+    return cfg, scene_assets
 
 
 def apply_runtime_cloth_overrides(
@@ -558,17 +842,10 @@ def build_p2_session_from_mjcf(
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
     from modules.identify_xpbd_bodies import merge_body_discovery  # noqa: WPS433
-    from modules.identify_xpbd_cloth import (  # noqa: WPS433
-        enrich_cloth_discovery_pose,
-        identify_xpbd_cloth,
-        merge_cloth_discovery,
-    )
 
-    cloths = enrich_cloth_discovery_pose(model, data, identify_xpbd_cloth(model))
-    base_cfg = merge_cloth_discovery(base_cfg, cloths)
+    base_cfg, scene_assets = _resolve_cloth_from_model(model, data, base_cfg, cloth_data_dir=cloth_data_dir)
     base_cfg = merge_body_discovery(base_cfg, model, data)
-    scene_assets = _resolve_scene_assets(base_cfg, cloth_data_dir=cloth_data_dir)
-    adapted = adapt_config_for_orcagym(model, base_cfg, scene_assets=scene_assets, data=data)
+    adapted = adapt_config_for_orcagym(model, base_cfg, data=data)
     xpbd_session = build_xpbd_session_config(base_cfg, adapted, cloth_data_dir=cloth_data_dir)
     xpbd_session.setdefault("mujoco", {})["model_path"] = str(mjcf_path.resolve())
     try:
@@ -599,6 +876,7 @@ def _connect_cloth_bridge(
     *,
     adapted: dict[str, Any] | None = None,
     cloth_data_dir: Path | None = None,
+    orcalink_port: int,
 ) -> bool:
     _ensure_cloth_modules_import_path()
     from modules.body_map import load_body_map_ordered  # noqa: WPS433
@@ -606,8 +884,8 @@ def _connect_cloth_bridge(
 
     model, data = get_mujoco_model_data(env)
     if adapted is None:
-        scene_assets = _resolve_scene_assets(config, cloth_data_dir=cloth_data_dir)
-        adapted = adapt_config_for_orcagym(model, config, scene_assets=scene_assets, data=data)
+        config, _ = _resolve_cloth_from_model(model, data, config, cloth_data_dir=cloth_data_dir)
+        adapted = adapt_config_for_orcagym(model, config, data=data)
     publish_entries = load_body_map_ordered(model, adapted)
     errs = validate_orcagym_body_map(model, publish_entries)
     if errs:
@@ -635,7 +913,7 @@ def _connect_cloth_bridge(
         len(publish_entries),
         [e.logical_name for e in publish_entries],
     )
-    bridge = ClothOrcaLinkBridge(adapted, model, data, pose_remapper=remapper, cloth_root=cloth_data_dir)
+    bridge = ClothOrcaLinkBridge(adapted, model, data, pose_remapper=remapper, cloth_root=cloth_data_dir, orcalink_port=orcalink_port)
     if not adapted.get("orcalink", {}).get("enabled", True):
         logger.warning("orcalink.enabled=false，跳过连接")
         ctx.bridge = bridge
@@ -667,12 +945,13 @@ def start_cloth_coupling(
     3. ClothOrcaLinkBridge 连接并等待 session_ready
     """
     _ensure_cloth_modules_import_path()
+
     cfg = copy.deepcopy(config)
+    orcalink_port = require_orcalink_port(cfg.get("orcalink", {}))
     path = Path(config_path or default_cloth_config_path(cloth_data_dir=cloth_data_dir)).resolve()
     base_cfg = load_cloth_config(path, cloth_data_dir=cloth_data_dir)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path = Path(log_dir).resolve() if log_dir else None
 
     if auto_start_orcalink is not None:
         cfg.setdefault("orcalink", {})["auto_start"] = bool(auto_start_orcalink)
@@ -682,7 +961,6 @@ def start_cloth_coupling(
     og = cfg.setdefault("orcagym", {})
     resolved_level = resolve_cloth_level(str(og.get("level") or "").strip() or None, cloth_data_dir=cloth_data_dir)
     og["level"] = resolved_level
-    cfg = apply_masked_cloth_from_level(cfg, resolved_level, cloth_data_dir=cloth_data_dir)
 
     ctx = ClothCouplingContext(config=cfg, config_path=path, env=env, session_timestamp=ts)
 
@@ -692,15 +970,15 @@ def start_cloth_coupling(
 
     from .ProcessStudio import run_masked_vtk_prefab_check_at_startup
 
-    scene_assets = _resolve_scene_assets(cfg, cloth_data_dir=cloth_data_dir)
-    if not run_masked_vtk_prefab_check_at_startup(model, cfg, scene_assets=scene_assets):
+    cfg, scene_assets = _resolve_cloth_from_model(model, data, cfg, cloth_data_dir=cloth_data_dir)
+    if not run_masked_vtk_prefab_check_at_startup(cfg, scene_assets=scene_assets):
         import logging
         logging.getLogger(__name__).warning(
             "掩码 VTK 预制检查未通过（将继续运行，仅 VTK 加载不受影响）。"
             "跳过: CLOTH_SKIP_MASKED_PREFAB_CHECK=1"
         )
 
-    adapted = adapt_config_for_orcagym(model, cfg, scene_assets=scene_assets, data=data)
+    adapted = adapt_config_for_orcagym(model, cfg, data=data)
     xpbd_session_cfg = build_xpbd_session_config(base_cfg, adapted, cloth_data_dir=cloth_data_dir)
     mjcf_path = get_mujoco_xml_path(env)
     xpbd_session_cfg.setdefault("mujoco", {})["model_path"] = str(mjcf_path)
@@ -713,6 +991,7 @@ def start_cloth_coupling(
     )
     ctx.config = adapted
     ctx.config_path = session_path
+    run_log_dir = session_path.parent
 
     discover_only = bool((xpbd_session_cfg.get("xpbd") or {}).get("cloth_discover_only", True))
     if not discover_only:
@@ -741,26 +1020,27 @@ def start_cloth_coupling(
     start_orcalink_if_configured(
         cfg,
         process_manager=ctx.process_manager,
-        log_dir=log_path,
+        log_dir=run_log_dir,
         session_timestamp=ts,
         force_restart=True,
+        orcalink_port=orcalink_port,
     )
     xpbd_dg_traj = str((adapted.get("xpbd") or {}).get("dg_traj", "")).strip()
-    if xpbd_dg_traj == "pico" and log_path is not None:
-        trigger_path = Path(log_path) / "grip_triggers.txt"
+    if xpbd_dg_traj == "pico":
+        trigger_path = run_log_dir / "grip_triggers.txt"
         os.environ["MJC_PBD_GRIP_TRIGGER_PATH"] = str(trigger_path)
         logger.info("PICO grip triggers → %s (MJC_PBD_DG_TRAJ=pico)", trigger_path)
     start_xpbd_if_configured(
         adapted,
         config_path=session_path,
         process_manager=ctx.process_manager,
-        log_dir=log_path,
+        log_dir=run_log_dir,
         session_timestamp=ts,
         cpu_affinity=cpu_affinity,
         cloth_data_dir=cloth_data_dir,
     )
 
-    if not _connect_cloth_bridge(env, cfg, ctx, adapted=adapted, cloth_data_dir=cloth_data_dir):
+    if not _connect_cloth_bridge(env, cfg, ctx, adapted=adapted, cloth_data_dir=cloth_data_dir, orcalink_port=orcalink_port):
         ctx.process_manager.cleanup_all()
         raise RuntimeError("布料 OrcaLink 桥接初始化失败")
 
@@ -1081,7 +1361,7 @@ def _mount_cloth(
         cloth_data_dir=cloth_data_dir,
     )
     data_collection_manager.set_cloth_coupling(cloth_handle)
-    trigger_path = params.log_dir / "grip_triggers.txt"
+    trigger_path = cloth_handle.ctx.config_path.parent / "grip_triggers.txt"
 
     def _read_pico_triggers() -> tuple[float, float]:
         ks = pico_joystick.get_key_state()

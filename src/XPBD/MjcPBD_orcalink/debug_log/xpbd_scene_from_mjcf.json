@@ -2,9 +2,9 @@
   "schema_version": 1,
   "coord_system_sim": "yup",
   "coord_system_mjcf": "zup",
-  "exported_utc": "2026-08-18T08:01:18Z",
-  "source_config": "/opt/PriWaic/Development/OrcaManipulation/src/examples/dataCollection_cook/logs/2026-08-18-08-01-17/cloth_sim_session_20260818_080117.json",
-  "source_mjcf": "/root/.orcagym/tmp/7AECEAAE_BF6B_49D2_99ED_F432F2A31A4A.xml",
+  "exported_utc": "2026-08-18T10:00:10Z",
+  "source_config": "/opt/PriWaic/Development/OrcaManipulation/src/examples/dataCollection_cook/logs/2026-08-18-10-00-09/cloth_sim_session_20260818_100009.json",
+  "source_mjcf": "/root/.orcagym/tmp/64A31FCD_998C_4C19_91A1_01975D12ACF7.xml",
   "body_count": 19,
   "bodies": [
     {

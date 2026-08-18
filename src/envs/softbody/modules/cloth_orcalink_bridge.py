@@ -12,17 +12,17 @@ from modules.anchor_frame import AnchorFrame, collect_anchor_frame
 from modules.anchor_publish import export_frame_jsonl, frame_to_units, log_mujoco_send
 from modules.body_track_packet import body_track_position_packet_body_only
 from modules.body_map import BodyMapEntry
-from modules.orcalink_settings import require_orcalink_port
 
 logger = logging.getLogger(__name__)
 
 
 class ClothOrcaLinkBridge:
-    def __init__(self, config: dict[str, Any], model, data, pose_remapper=None, *, cloth_root: Path | None = None) -> None:
+    def __init__(self, config: dict[str, Any], model, data, pose_remapper=None, *, cloth_root: Path | None = None, orcalink_port: int) -> None:
         self._config = config
         self._model = model
         self._data = data
         self._ol = config["orcalink"]
+        self._orcalink_port = orcalink_port
         from modules.body_map import load_body_map_ordered
 
         self._body_entries = load_body_map_ordered(model, config)
@@ -67,7 +67,7 @@ class ClothOrcaLinkBridge:
             return False
 
         host = self._ol.get("host", "localhost")
-        port = require_orcalink_port(self._ol)
+        port = self._orcalink_port
         client_cfg = self._ol.get("client", {})
         session_cfg = dict(client_cfg.get("session", {}))
         if self._config.get("debug", {}).get("publish_only", False):

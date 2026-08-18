@@ -185,13 +185,14 @@ def start_orcalink_if_configured(
     log_dir: Optional[Path] = None,
     session_timestamp: str = "cloth",
     force_restart: bool = False,
+    orcalink_port: int,
 ) -> bool:
     """若 orcalink.enabled 且 auto_start，启动 orcalink --port。"""
     ol_cfg = config.get("orcalink", {})
     if not (ol_cfg.get("enabled", True) and ol_cfg.get("auto_start", False)):
         return False
 
-    port = int(ol_cfg.get("port", 50361))
+    port = orcalink_port
     if force_restart:
         stop_orcalink_on_port(port)
     else:

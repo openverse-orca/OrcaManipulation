@@ -18,7 +18,8 @@ from typing import Any
 
 import mujoco
 
-from .common.paths import SOFTBODY_DIR, companion_paths_for_stem
+from .common.paths import companion_paths_for_stem
+from .common.masked_vtk import normalize_vtk_asset_name
 
 logger = logging.getLogger(__name__)
 
@@ -316,17 +317,6 @@ def _read_mask_active_count(mask_path: Path) -> int:
     return int(sum(flags))
 
 
-def normalize_vtk_asset_name(vtk_name: str, *, level: str | None = None) -> str:
-    """见 ``modules.masked_vtk_assets.normalize_vtk_asset_name``。"""
-    import sys
-
-    if str(SOFTBODY_DIR) not in sys.path:
-        sys.path.insert(0, str(SOFTBODY_DIR))
-    from modules.masked_vtk_assets import normalize_vtk_asset_name as _normalize  # noqa: WPS433
-
-    return _normalize(vtk_name, level=level)
-
-
 def check_masked_vtk_prefab(
     vtk_name: str,
     *,
@@ -436,39 +426,21 @@ def print_masked_vtk_prefab_report(result: MaskedVtkPrefabCheckResult) -> None:
     print(f"  compact  : {result.compact_count} / embed {result.embed_count}")
 
 
-def _cloth_mesh_names_from_model(
-    model: mujoco.MjModel, config: dict[str, Any], *, primary_masked_stem: str | None
-) -> list[tuple[str, str | None]]:
-    """从 MJCF 扫描得到待检查的 cloth mesh；无标记时用传入的 stem 或 config.cloth.mesh。"""
-    import sys
-
-    if str(SOFTBODY_DIR) not in sys.path:
-        sys.path.insert(0, str(SOFTBODY_DIR))
-
+def _cloth_mesh_names_from_model(config: dict[str, Any]) -> list[tuple[str, str | None]]:
+    """从编排器已合并的 ``config.cloth.discovered_cloths`` 取待检查的 cloth mesh。"""
     names: list[tuple[str, str | None]] = []
     cloth_cfg = config.get("cloth") or {}
     cfg_mesh = str(cloth_cfg.get("mesh") or "").strip()
-    try:
-        from modules.identify_xpbd_cloth import identify_xpbd_cloth  # noqa: WPS433
 
-        for cloth in identify_xpbd_cloth(model):
-            mesh = cloth.get("vtk_asset_path") or cloth.get("mesh") or cfg_mesh
-            if mesh:
-                names.append((str(mesh), cloth.get("body_name")))
-    except Exception as exc:
-        logger.warning("identify_xpbd_cloth 失败，回退关卡/config mesh: %s", exc)
-
-    if not names:
-        if primary_masked_stem:
-            names.append((f"{primary_masked_stem}.vtk", cloth_cfg.get("body_name")))
-        elif cfg_mesh:
-            names.append((cfg_mesh, cloth_cfg.get("body_name")))
+    for cloth in cloth_cfg.get("discovered_cloths") or []:
+        mesh = cloth.get("vtk_asset_path") or cloth.get("mesh") or cfg_mesh
+        if mesh:
+            names.append((str(mesh), cloth.get("body_name")))
 
     return names
 
 
 def run_masked_vtk_prefab_check_at_startup(
-    model: mujoco.MjModel,
     config: dict[str, Any],
     *,
     scene_assets: Any,
@@ -492,7 +464,7 @@ def run_masked_vtk_prefab_check_at_startup(
         )
 
     level = resolve_prefab_check_level(config)
-    meshes = _cloth_mesh_names_from_model(model, config, primary_masked_stem=scene_assets.primary_masked_stem)
+    meshes = _cloth_mesh_names_from_model(config)
     if not meshes:
         print("[Cloth] 掩码 VTK 预制检查: 未发现 cloth mesh，跳过")
         return True
