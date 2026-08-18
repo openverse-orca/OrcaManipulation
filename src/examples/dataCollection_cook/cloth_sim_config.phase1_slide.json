@@ -1,0 +1,218 @@
+{
+  "description": "MjcPBD phase1_slide — no cloth, single gripper push cube",
+  "scene_id": "phase1_slide",
+  "simulation": {
+    "realtime_step": 0.02,
+    "max_sim_time": 8.0
+  },
+  "orcalink": {
+    "enabled": true,
+    "host": "localhost",
+    "port": 50361,
+    "auto_start": false,
+    "startup_delay": 3,
+    "client": {
+      "session_id": 101,
+      "client_name": "cloth_mujoco",
+      "update_rate_hz": 50,
+      "session": {
+        "control_mode": "sync",
+        "expected_clients": 2,
+        "ready_timeout_sec": 30.0,
+        "sync_params": {
+          "sync_window_size": 2
+        }
+      },
+      "channels": {
+        "position": {
+          "channel_id": 20,
+          "publish": true,
+          "subscribe": false
+        }
+      }
+    }
+  },
+  "mujoco": {
+    "env_id": "phase1_slide",
+    "model_path": "assets/phase1_slide/scene.xml",
+    "timestep": 0.001,
+    "frame_skip": 20,
+    "macro_dt": 0.02,
+    "comment_macro_frame": "每 frame_skip 次 mj_step，macro_frame += 1（见 modules/sim_frames.py）"
+  },
+  "anchor_follow": {
+    "receive_enabled": true,
+    "status": "body_track_primary",
+    "comment_suspended": "F′ v2 锚点/球铰/slerp 已关；仍收 OrcaLink 帧以解码 body_p/q/v/w（SITE 不进积分）。",
+    "K_p": 10.0,
+    "delta_v_clamp_mps": 0.3,
+    "ball_joint_compliance": 1.0e-6,
+    "body_mass_fraction": 1.0,
+    "anchor_mass_fraction_each": 0.0,
+    "inertia_use_full_mjcf_mass": true,
+    "use_body_pose": false,
+    "acceptance_pos_err_max_m": 0.01,
+    "acceptance_quat_err_max_deg": 10.0,
+    "comment": "（receive_enabled=true 时）v_anchor = v_site + clamp(K_p*e_p, ±delta_v_clamp_mps)；球铰见 phase1_slide_mjc",
+    "comment_mass": "body_fraction+4*anchor_fraction_each=1；锚点 inv_mass=0；平移=四锚质心或 body_p",
+    "comment_pose": "body_q/body_omega 世界系；子步 alpha_k=(k+0.5)/substeps"
+  },
+  "body_track": {
+    "enabled": true,
+    "status": "active",
+    "comment": "子步 v/ω 积分；见 body_track_scheme.md。SITE/球铰/F′ slerp 不进 XPBD 刚体。",
+    "control_mode": "velocity_pd_j2c",
+    "K_p_pos": 10.0,
+    "delta_v_clamp_mps": 0.3,
+    "K_d_vel": 0.0,
+    "q_correction_gain": 0.08,
+    "use_anchor_sites": false,
+    "acceptance_pos_err_max_m": 0.05,
+    "acceptance_quat_err_max_deg": 2.0,
+    "acceptance_vel_err_max_mps": 0.1
+  },
+  "xpbd": {
+    "enabled": true,
+    "auto_start": false,
+    "executable": "../../../../XPBD/build/phase1_slide_mjc",
+    "config_path": "cloth_sim_config.phase1_slide.json",
+    "substep_dt": 0.0005,
+    "substeps": 40,
+    "macro_dt": 0.02,
+    "orcalink": {
+      "client_name": "xpbd_pbd",
+      "coupling_mode": "force_position",
+      "flow_control_window_size": 10,
+      "speed_ratio_threshold": 2.0
+    },
+    "args": ["--config", "{config_path}"],
+    "comment": "substep_dt*substeps=macro_dt；每 40 次 phys_world_step，macro_frame += 1"
+  },
+  "frame_count": {
+    "mujoco_substeps_per_macro_frame": 20,
+    "xpbd_substeps_per_macro_frame": 40,
+    "macro_dt_sec": 0.02,
+    "note": "两侧 macro_frame 对齐同一 0.02s 墙钟/仿真宏步；子步密度不同"
+  },
+  "weak_dynamics": {
+    "palm_kinematic": true,
+    "finger_pose_compliance": 1.0e-5,
+    "cube_pose_compliance": 1.0e-5
+  },
+  "xpbd_grip_lock": {
+    "enabled": false
+  },
+  "finger_collision": {
+    "unlock_on_aperture_above": 0.5,
+    "lock_on_aperture_below": 0.2,
+    "comment": "P2 布料阶段生效；phase1 无布可忽略"
+  },
+  "particle_render": {
+    "enabled": false
+  },
+  "rigid_body_map": [
+    {
+      "logical_name": "base",
+      "mjc_body_name": "base",
+      "follow_mode": "kinematic",
+      "box_half_extents": [0.5, 0.5, 0.1],
+      "anchor_circumradius_m": 0.714143,
+      "anchor_sites": ["base_anchor_0", "base_anchor_1", "base_anchor_2", "base_anchor_3"]
+    },
+    {
+      "logical_name": "cube",
+      "mjc_body_name": "cube",
+      "follow_mode": "compliance",
+      "box_half_extents": [0.025, 0.025, 0.025],
+      "anchor_circumradius_m": 0.043301,
+      "anchor_sites": ["cube_anchor_0", "cube_anchor_1", "cube_anchor_2", "cube_anchor_3"]
+    },
+    {
+      "logical_name": "gripper_palm",
+      "mjc_body_name": "gripper_palm",
+      "follow_mode": "kinematic",
+      "box_half_extents": [0.045, 0.035, 0.025],
+      "anchor_circumradius_m": 0.062249,
+      "anchor_sites": [
+        "gripper_palm_anchor_0",
+        "gripper_palm_anchor_1",
+        "gripper_palm_anchor_2",
+        "gripper_palm_anchor_3"
+      ]
+    },
+    {
+      "logical_name": "gripper_finger1",
+      "mjc_body_name": "gripper_finger1",
+      "follow_mode": "compliance",
+      "box_half_extents": [0.012, 0.022, 0.045],
+      "anchor_circumradius_m": 0.051507,
+      "anchor_sites": [
+        "gripper_finger1_anchor_0",
+        "gripper_finger1_anchor_1",
+        "gripper_finger1_anchor_2",
+        "gripper_finger1_anchor_3"
+      ]
+    },
+    {
+      "logical_name": "gripper_finger2",
+      "mjc_body_name": "gripper_finger2",
+      "follow_mode": "compliance",
+      "box_half_extents": [0.012, 0.022, 0.045],
+      "anchor_circumradius_m": 0.051507,
+      "anchor_sites": [
+        "gripper_finger2_anchor_0",
+        "gripper_finger2_anchor_1",
+        "gripper_finger2_anchor_2",
+        "gripper_finger2_anchor_3"
+      ]
+    },
+    {
+      "logical_name": "steering",
+      "mjc_body_name": "steering",
+      "follow_mode": "compliance",
+      "box_half_extents": [0.05, 0.03, 0.025],
+      "anchor_circumradius_m": 0.063482,
+      "anchor_sites": [
+        "steering_anchor_0",
+        "steering_anchor_1",
+        "steering_anchor_2",
+        "steering_anchor_3"
+      ]
+    }
+  ],
+  "mujoco_trajectory": {
+    "type": "phase1_slide_module",
+    "module": "modules.phase1_trajectory",
+    "function": "compute_ctrl",
+    "duration_sec": 5.0,
+    "actuator_names": [
+      "gripper_move_x",
+      "gripper_move_y",
+      "gripper_move_z",
+      "gripper_grasp_ctrl",
+      "steering_spin"
+    ],
+    "phases": [
+      { "name": "approach", "t0": 0.0, "t1": 1.0 },
+      { "name": "close", "t0": 1.0, "t1": 2.0 },
+      { "name": "push", "t0": 2.0, "t1": 5.0 }
+    ]
+  },
+  "anchor_discovery": {
+    "auto_from_model": true,
+    "site_substring": "_anchor_",
+    "comment": "合并 rigid_body_map 与 MJCF 中带锚点 SITE 的 body；增删刚体时更新 MJCF 即可"
+  },
+  "debug": {
+    "debug_mode": true,
+    "comment_debug_mode": "true=写 CSV/收端 trace；false=仅 OrcaLink 解码+仿真，子步不落盘",
+    "publish_only": false,
+    "export_csv": true,
+    "export_recv_yup_csv": false,
+    "export_anchor_substep_csv": false,
+    "export_sync_seq_monitor": true,
+    "debug_log_dir": "../../../XPBD/MjcPBD_orcalink/debug_log",
+    "anchor_export_path": "../../../XPBD/MjcPBD_orcalink/checkpoints/run_latest/anchor_frames.jsonl",
+    "pose_csv_path": "../../../XPBD/MjcPBD_orcalink/checkpoints/run_latest/mjc_xpbd_pose.csv"
+  }
+}

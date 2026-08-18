@@ -1,0 +1,8 @@
+{
+  "description": "默认联调配置（openloong scan-first）；暂不向 Studio PBDRender 传顶点",
+  "extends": "cloth_sim_config.openloong.json",
+  "particle_render": {
+    "enabled": false,
+    "comment": "XPBD→Studio 布料 gRPC 默认关闭；临时开启可设 PBD_GRPC=1"
+  }
+}

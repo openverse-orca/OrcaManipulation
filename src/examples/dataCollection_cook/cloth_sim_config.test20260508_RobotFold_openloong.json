@@ -1,0 +1,7 @@
+{
+  "description": "test20260508_RobotFold：机器人折叠布料（继承 openloong scan-first；可仅用 LEVEL 环境变量）",
+  "extends": "cloth_sim_config.openloong.json",
+  "orcagym": {
+    "level": "test20260508_RobotFold"
+  }
+}

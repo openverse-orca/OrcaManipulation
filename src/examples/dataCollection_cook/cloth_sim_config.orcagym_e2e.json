@@ -1,0 +1,16 @@
+{
+  "description": "OrcaGym data_collection_cloth_tele 端到端：自动起 OrcaLink+XPBD，body_track body-only",
+  "extends": "cloth_sim_config.dual_gripper_cross_full.json",
+  "orcagym": {
+    "rigid_body_map_key": "rigid_body_map",
+    "comment": "Studio 关卡须含 gripper_l_palm 等刚体名；无 anchor SITE 时走 body-only 发包"
+  },
+  "orcalink": {
+    "auto_start": true,
+    "startup_delay": 3
+  },
+  "xpbd": {
+    "auto_start": true,
+    "startup_delay": 5
+  }
+}

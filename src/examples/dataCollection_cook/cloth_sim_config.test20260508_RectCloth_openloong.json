@@ -1,0 +1,23 @@
+{
+  "description": "test20260508_RectCloth + openloong；程序化 sheet 外廓约 0.6×1.2 m，spacing=0.0618 m → 20×11 顶点",
+  "extends": "cloth_sim_config.openloong.json",
+  "orcagym": {
+    "level": "test20260508_RectCloth"
+  },
+  "cloth": {
+    "mesh": "procedural:yixuan_h03",
+    "cloth_nx": 20,
+    "cloth_ny": 11,
+    "cloth_spacing_m": 0.0618,
+    "mass_kg": 0.4,
+    "thickness_m": 0.0309,
+    "stretch_compliance": 0.05,
+    "shear_compliance": 0.005,
+    "bend_compliance": 1000.0,
+    "lock_radius_m": 0.1
+  },
+  "cloth_robot": {
+    "gripper_keyframes_json": "cloth_robot_gripper_keyframes.test20260508_RectCloth.json",
+    "comment": "RectCloth 0.618×1.174 m；短边 ±Z 外夹并向布心折叠；改轨迹后 REGEN_REPLAY=1"
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "description": "openloong 遥操 + scan-first XPBD（关卡名由 LEVEL / --level 运行时注入，非写死）",
+  "extends": "cloth_sim_config.orcagym_e2e.json",
+  "xpbd_auto_discover": {
+    "bodies": true,
+    "cloth": true,
+    "default_follow_mode": "kinematic",
+    "body_track_scan_only": true,
+    "comment_body_track": "仅 _XPBD_TRACK_GEOM；G1/openloong 通用，勿写死子串白名单"
+  },
+  "particle_render": {
+    "grpc_address": "localhost:50261"
+  },
+  "xpbd": {
+    "cloth_discover_only": false,
+    "disable_base_phys": true,
+    "force_gs_solver": true,
+    "auto_build": true,
+    "dg_traj": "cloth_robot",
+    "show_ui": true,
+    "overlay_mjc": true,
+    "comment_force_gs": "R-PHYS-4：联调暂用 GS，避免 Jacobi 粒子–刚体盒接触失效"
+  },
+  "xpbd_rigid_parity": {
+    "match_v4": false,
+    "comment": "ClothRobot：场景刚体为布-刚代理盒；刚-刚碰撞在 MuJoCo，XPBD 用 Layer_1_No1 禁刚-刚"
+  },
+  "orcagym": {
+    "rigid_body_map_key": "orcagym_rigid_body_map",
+    "mjc_agent_prefix": "openloong_gripper_2f85_fix_base_usda",
+    "sync_mocap_from_gripper": {
+      "enabled": true,
+      "pairs": [
+        {
+          "mocap_body": "openloong_gripper_2f85_fix_base_usda_leftHandMocap",
+          "palm_body": "openloong_gripper_2f85_fix_base_usda_zbll_base_link"
+        },
+        {
+          "mocap_body": "openloong_gripper_2f85_fix_base_usda_rightHandMocap",
+          "palm_body": "openloong_gripper_2f85_fix_base_usda_zbr_base_link"
+        }
+      ]
+    }
+  },
+  "orcagym_rigid_body_map": [
+    {
+      "mjc_body_name": "openloong_gripper_2f85_fix_base_usda_base_link",
+      "follow_mode": "kinematic",
+      "orcalink_publish": false
+    }
+  ],
+  "cloth_robot": {
+    "gripper_keyframes_json": "cloth_robot_gripper_keyframes.json",
+    "comment": "手工编辑双掌关键帧；也可用环境变量 CLOTH_ROBOT_KEYFRAMES_JSON 覆盖"
+  },
+  "grip_bind": {
+    "left": {
+      "palm_legacy": "gripper_l_palm",
+      "palm_suffix": "zbll_base_link",
+      "finger1_legacy": "gripper_l_finger1",
+      "finger1_suffix": "l_left_follower",
+      "finger2_legacy": "gripper_l_finger2",
+      "finger2_suffix": "l_right_follower"
+    },
+    "right": {
+      "palm_legacy": "gripper_r_palm",
+      "palm_suffix": "zbr_base_link",
+      "finger1_legacy": "gripper_r_finger1",
+      "finger1_suffix": "r_left_follower",
+      "finger2_legacy": "gripper_r_finger2",
+      "finger2_suffix": "r_right_follower"
+    }
+  }
+}

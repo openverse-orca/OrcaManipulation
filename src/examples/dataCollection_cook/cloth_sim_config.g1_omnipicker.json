@@ -1,0 +1,56 @@
+{
+  "description": "G1 + Omnipicker 临时专用联调配置（后期合并为通用 scan-first）；extends openloong 联调骨架，覆盖机型相关字段",
+  "extends": "cloth_sim_config.openloong.json",
+  "xpbd_auto_discover": {
+    "bodies": true,
+    "cloth": true,
+    "default_follow_mode": "kinematic",
+    "body_track_scan_only": false,
+    "body_include_geom_suffixes": [],
+    "body_include_substrings": [
+      "arm_l_end_link",
+      "arm_r_end_link",
+      "gripper_l_inner_link4",
+      "gripper_l_outer_link4",
+      "gripper_r_inner_link4",
+      "gripper_r_outer_link4",
+      "Cube"
+    ],
+    "comment": "body_track_scan_only=false：优先 _XPBD_TRACK_GEOM 扫描，Studio 未打标时用子串兜底（临时）；勿用 openloong zbll/zbr/_geom_*"
+  },
+  "orcagym": {
+    "mjc_agent_prefix": "g1_omnipicker_usda",
+    "sync_mocap_from_gripper": {
+      "enabled": false,
+      "comment": "G1 MJCF 无 leftHandMocap；手臂 OSC 走 ee site，不启 palm→mocap 同步"
+    }
+  },
+  "orcagym_rigid_body_map": [
+    {
+      "mjc_body_name": "g1_omnipicker_usda_robot_holder1",
+      "follow_mode": "kinematic",
+      "orcalink_publish": false
+    }
+  ],
+  "cloth_robot": {
+    "comment": "G1 关键帧/replay 待 cloth_robot_scene_layout 支持掌名后单独 json；可用 CLOTH_ROBOT_KEYFRAMES_JSON 覆盖"
+  },
+  "grip_bind": {
+    "left": {
+      "palm_legacy": "gripper_l_palm",
+      "palm_suffix": "arm_l_end_link",
+      "finger1_legacy": "gripper_l_finger1",
+      "finger1_suffix": "gripper_l_inner_link4",
+      "finger2_legacy": "gripper_l_finger2",
+      "finger2_suffix": "gripper_l_outer_link4"
+    },
+    "right": {
+      "palm_legacy": "gripper_r_palm",
+      "palm_suffix": "arm_r_end_link",
+      "finger1_legacy": "gripper_r_finger1",
+      "finger1_suffix": "gripper_r_inner_link4",
+      "finger2_legacy": "gripper_r_finger2",
+      "finger2_suffix": "gripper_r_outer_link4"
+    }
+  }
+}

@@ -1,0 +1,236 @@
+{
+  "description": "MjcPBD dual_gripper_cross 阶段1：双爪 8s 内收，v4 衬衫布，GS 联调",
+  "scene_id": "dual_gripper_cross_s1",
+  "simulation": {
+    "realtime_step": 0.02,
+    "max_sim_time": 8.0
+  },
+  "orcalink": {
+    "enabled": true,
+    "host": "localhost",
+    "port": 50361,
+    "auto_start": false,
+    "startup_delay": 3,
+    "client": {
+      "session_id": 102,
+      "client_name": "cloth_mujoco",
+      "update_rate_hz": 50,
+      "session": {
+        "control_mode": "sync",
+        "expected_clients": 2,
+        "ready_timeout_sec": 30.0,
+        "sync_params": {
+          "sync_window_size": 2
+        }
+      },
+      "channels": {
+        "position": {
+          "channel_id": 20,
+          "publish": true,
+          "subscribe": false
+        }
+      }
+    }
+  },
+  "mujoco": {
+    "env_id": "dual_gripper_cross",
+    "model_path": "assets/dual_gripper_cross/scene.xml",
+    "timestep": 0.001,
+    "frame_skip": 20,
+    "macro_dt": 0.02
+  },
+  "anchor_follow": {
+    "receive_enabled": true,
+    "status": "body_track_primary",
+    "K_p": 10.0,
+    "delta_v_clamp_mps": 0.3,
+    "ball_joint_compliance": 1.0e-6,
+    "body_mass_fraction": 1.0,
+    "anchor_mass_fraction_each": 0.0,
+    "inertia_use_full_mjcf_mass": true,
+    "use_body_pose": false,
+    "acceptance_pos_err_max_m": 0.05,
+    "acceptance_quat_err_max_deg": 5.0
+  },
+  "body_track": {
+    "enabled": true,
+    "status": "active",
+    "control_mode": "velocity_pd_j2c",
+    "K_p_pos": 10.0,
+    "delta_v_clamp_mps": 0.3,
+    "K_d_vel": 0.0,
+    "q_correction_gain": 0.08,
+    "use_anchor_sites": false,
+    "comment_packet": "false 时 POSITION 仅 body_p/q/v/w，7 体=28 units",
+    "acceptance_pos_err_max_m": 0.05,
+    "acceptance_quat_err_max_deg": 5.0,
+    "acceptance_vel_err_max_mps": 0.15
+  },
+  "cloth": {
+    "v4_parity": true,
+    "mesh": "shirt_v4.vtk",
+    "mass_kg": 0.2,
+    "thickness_m": 0.008,
+    "stretch_compliance": 0.05,
+    "shear_compliance": 0.005,
+    "bend_compliance": 1000.0,
+    "grip_side": "both",
+    "lock_radius_m": 0.06,
+    "comment_future": "翻转、第二段十字、Opening、全 67s 轨迹留待后续任务"
+  },
+  "xpbd_rigid_parity": {
+    "comment_solver": "MjcPBD 联调/阶段1 暂用 GS（PBDX_FORCE_GS_ONLY）；Jacobi 粒子–台面接触见 implement_log R-PHYS-4",
+    "match_v4": true,
+    "finger_mass_kg": 0.05,
+    "palm_restitution": 0.1,
+    "palm_dynamic_friction": 0.8,
+    "palm_static_friction": 1.0,
+    "finger_dynamic_friction": 2.5,
+    "finger_static_friction": 3.0,
+    "base_dynamic_friction": 1.5,
+    "base_static_friction": 2.0,
+    "gripper_collider_layer_group": 1,
+    "cloth_collision_exclude_logical": "",
+    "comment": "双爪均参与布碰撞；见 implement_log R-P4-GRIP"
+  },
+  "xpbd": {
+    "enabled": true,
+    "auto_start": false,
+    "executable": "../../../../XPBD/build/dual_gripper_cross_mjc",
+    "config_path": "cloth_sim_config.dual_gripper_cross_s1.json",
+    "substep_dt": 0.000625,
+    "substeps": 32,
+    "macro_dt": 0.02,
+    "orcalink": {
+      "client_name": "xpbd_pbd",
+      "coupling_mode": "force_position",
+      "flow_control_window_size": 10,
+      "speed_ratio_threshold": 2.0
+    },
+    "args": ["--config", "{config_path}"]
+  },
+  "frame_count": {
+    "mujoco_substeps_per_macro_frame": 20,
+    "xpbd_substeps_per_macro_frame": 32,
+    "macro_dt_sec": 0.02
+  },
+  "rigid_body_map": [
+    {
+      "logical_name": "base",
+      "mjc_body_name": "base",
+      "follow_mode": "kinematic",
+      "box_half_extents": [1.2, 0.6, 0.15],
+      "anchor_circumradius_m": 0.779423,
+      "anchor_sites": ["base_anchor_0", "base_anchor_1", "base_anchor_2", "base_anchor_3"]
+    },
+    {
+      "logical_name": "gripper_l_palm",
+      "mjc_body_name": "gripper_l_palm",
+      "follow_mode": "kinematic",
+      "box_half_extents": [0.03, 0.02, 0.02],
+      "anchor_circumradius_m": 0.041231,
+      "anchor_sites": [
+        "gripper_l_palm_anchor_0",
+        "gripper_l_palm_anchor_1",
+        "gripper_l_palm_anchor_2",
+        "gripper_l_palm_anchor_3"
+      ]
+    },
+    {
+      "logical_name": "gripper_l_finger1",
+      "mjc_body_name": "gripper_l_finger1",
+      "follow_mode": "kinematic",
+      "box_half_extents": [0.008, 0.004, 0.02],
+      "anchor_circumradius_m": 0.021909,
+      "anchor_sites": [
+        "gripper_l_finger1_anchor_0",
+        "gripper_l_finger1_anchor_1",
+        "gripper_l_finger1_anchor_2",
+        "gripper_l_finger1_anchor_3"
+      ]
+    },
+    {
+      "logical_name": "gripper_l_finger2",
+      "mjc_body_name": "gripper_l_finger2",
+      "follow_mode": "kinematic",
+      "box_half_extents": [0.008, 0.004, 0.02],
+      "anchor_circumradius_m": 0.021909,
+      "anchor_sites": [
+        "gripper_l_finger2_anchor_0",
+        "gripper_l_finger2_anchor_1",
+        "gripper_l_finger2_anchor_2",
+        "gripper_l_finger2_anchor_3"
+      ]
+    },
+    {
+      "logical_name": "gripper_r_palm",
+      "mjc_body_name": "gripper_r_palm",
+      "follow_mode": "kinematic",
+      "box_half_extents": [0.03, 0.02, 0.02],
+      "anchor_circumradius_m": 0.041231,
+      "anchor_sites": [
+        "gripper_r_palm_anchor_0",
+        "gripper_r_palm_anchor_1",
+        "gripper_r_palm_anchor_2",
+        "gripper_r_palm_anchor_3"
+      ]
+    },
+    {
+      "logical_name": "gripper_r_finger1",
+      "mjc_body_name": "gripper_r_finger1",
+      "follow_mode": "kinematic",
+      "box_half_extents": [0.008, 0.004, 0.02],
+      "anchor_circumradius_m": 0.021909,
+      "anchor_sites": [
+        "gripper_r_finger1_anchor_0",
+        "gripper_r_finger1_anchor_1",
+        "gripper_r_finger1_anchor_2",
+        "gripper_r_finger1_anchor_3"
+      ]
+    },
+    {
+      "logical_name": "gripper_r_finger2",
+      "mjc_body_name": "gripper_r_finger2",
+      "follow_mode": "kinematic",
+      "box_half_extents": [0.008, 0.004, 0.02],
+      "anchor_circumradius_m": 0.021909,
+      "anchor_sites": [
+        "gripper_r_finger2_anchor_0",
+        "gripper_r_finger2_anchor_1",
+        "gripper_r_finger2_anchor_2",
+        "gripper_r_finger2_anchor_3"
+      ]
+    }
+  ],
+  "mujoco_trajectory": {
+    "type": "dual_gripper_cross_s1_module",
+    "module": "modules.dual_gripper_cross_trajectory_s1",
+    "function": "compute_ctrl",
+    "apply_frame_function": "apply_frame",
+    "duration_sec": 8.0,
+    "actuator_names": [
+      "gripper_l_finger1_ctrl",
+      "gripper_l_finger2_ctrl",
+      "gripper_r_finger1_ctrl",
+      "gripper_r_finger2_ctrl"
+    ]
+  },
+  "anchor_discovery": {
+    "auto_from_model": true,
+    "site_substring": "_anchor_"
+  },
+  "debug": {
+    "debug_mode": true,
+    "publish_only": false,
+    "export_csv": false,
+    "export_recv_yup_csv": false,
+    "export_anchor_substep_csv": false,
+    "export_body_track_monitor_csv": false,
+    "export_sync_seq_monitor": true,
+    "export_macro_timing_pair": false,
+    "export_macro_packet_pair_verify": false,
+    "export_vertex_pos_compare": false,
+    "debug_log_dir": "../../../XPBD/MjcPBD_orcalink/debug_log",
+    "comment": "默认 light debug；全量 CSV 用 --profile full；perf 用 dual_gripper_cross_s1.perf.json"
+  }
+}

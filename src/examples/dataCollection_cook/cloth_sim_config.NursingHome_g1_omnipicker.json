@@ -1,0 +1,31 @@
+{
+  "description": "NursingHome + G1 Omnipicker + RectCloth 程序化布（临时关卡覆盖；后期由通用 config 生成器替代）",
+  "extends": "cloth_sim_config.g1_omnipicker.json",
+  "orcagym": {
+    "level": "NursingHome"
+  },
+  "cloth": {
+    "mesh": "procedural:yixuan_h03",
+    "cloth_nx": 31,
+    "cloth_ny": 16,
+    "cloth_spacing_m": 0.04,
+    "mass_kg": 0.8,
+    "thickness_m": 0.015,
+    "stretch_compliance": 0.15,
+    "shear_compliance": 0.005,
+    "bend_compliance": 200000.0,
+    "lock_radius_m": 0.05,
+    "particle_friction": 0.2,
+    "finger_close_ratio": 0.5,
+    "comment_physics": "与 dg_cloth_init / phys_world_add_sheet 默认一致：stretch 0.05 shear 0.005 mass 0.4 thickness=spacing×0.5 lock 0.06；bend 3000 增强弯折（compliance 越大越易弯）；particle_friction 经 xpbd_process→PARTICLE_FRICTION（C 端默认 0.2）",
+    "comment_grip": "G1 Omnipicker：finger_close_ratio 0.75（pinch 阈值约 50.5mm）；lock_radius_m 0.05m（指尖中点球内锁粒）。经 xpbd_process → DG_FINGER_CLOSE_RATIO / lock_radius"
+  },
+  "cloth_robot": {
+    "gripper_keyframes_json": "cloth_robot_gripper_keyframes.test20260508_RectCloth.json",
+    "comment": "RectCloth 0.618×1.174 m；replay 生成仍依赖 openloong 掌名时需 REGEN 或改 scene_layout"
+  },
+  "particle_render": {
+    "sbt_rotation": "z90",
+    "comment_sbt": "RectCloth 位移映射：z90 使 Studio 长轴弯折与 XPBD 一致；xy_swap 会长/短轴对调 90°"
+  }
+}

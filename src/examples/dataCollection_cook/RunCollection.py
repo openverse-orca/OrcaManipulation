@@ -73,6 +73,7 @@ def main() -> int:
             repo_root=REPO_ROOT,
             base_dir=TELE_DIR,
             log_dir=TELE_DIR / "logs",
+            cloth_data_dir=TELE_DIR,
             level=_env_or("LEVEL", _env_or("ORCA_LEVEL_NAME", "")) or None,
             agent=_env_or("AGENT", "openloong"),
             mjc_prefix=_env_or("MJC_PREFIX", "openloong_gripper_2f85_fix_base_usda"),

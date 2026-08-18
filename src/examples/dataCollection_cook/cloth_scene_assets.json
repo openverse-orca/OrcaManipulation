@@ -1,0 +1,23 @@
+{
+  "schema_version": 2,
+  "description": "布料场景通用配置：仅路径模式与生成规则；各关卡条目由扫描写入 ~/.orcagym/cloth/scene_levels.json。",
+  "path_resolution": {
+    "orca_repo_root_env": "ORCA_REPO_ROOT",
+    "studio_project_env": "ORCA_STUDIO_PROJECT",
+    "studio_project_default": "OrcaStudio_2409",
+    "level_assets_dir_pattern": "{studio_project}/Assets/{level}",
+    "asset_catalog_hint_pattern": "assets/{level_lower}/{filename}"
+  },
+  "required_masked_suffixes": [".vtk", ".mask", ".meta.json", ".fbx"],
+  "optional_masked_suffixes": [".idxmap.json", ".obj"],
+  "generation": {
+    "orcagym_config_dir": "~/.orcagym/cloth",
+    "levels_basename": "scene_levels.json",
+    "levels_config_env": "CLOTH_SCENE_LEVELS_CONFIG",
+    "orcagym_config_dir_env": "ORCA_CLOTH_CONFIG_DIR",
+    "auto_sync_env": "CLOTH_NO_AUTO_SCENE_SYNC",
+    "auto_sync_default": true,
+    "prefab_rel_pattern": "{studio_project_rel}/Levels/{level}/{level}.prefab",
+    "scan_levels_glob": "{studio_project_rel}/Levels/*"
+  }
+}

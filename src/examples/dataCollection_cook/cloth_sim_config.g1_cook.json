@@ -1,0 +1,57 @@
+{
+    "description": "G1 Cook 布料联调（继承 NursingHome + g1_omnipicker，仅覆盖手部 body 匹配）",
+    "extends": "cloth_sim_config.NursingHome_g1_omnipicker.json",
+    "xpbd_auto_discover": {
+        "bodies": true,
+        "cloth": true,
+        "body_track_scan_only": false,
+        "body_include_substrings": [
+            "hand_thumb",
+            "hand_index",
+            "hand_middle",
+            "wrist_yaw",
+            "wrist_roll",
+            "Cube"
+        ],
+        "body_exclude_substrings": [
+            "gripper_l_inner_link4",
+            "gripper_l_outer_link4",
+            "gripper_r_inner_link4",
+            "gripper_r_outer_link4",
+            "arm_l_end_link",
+            "arm_r_end_link"
+        ],
+        "comment": "G1 Cook 手指 body 名匹配；排除 OpenLoong 2F85 夹爪名兜底"
+    },
+    "cloth": {
+        "mesh": "bunny.vtk"
+    },
+    "xpbd": {
+        "try_connect_sec": 30,
+        "executable": "dual_gripper_g1_cook2"
+    },
+    "particle_render": {
+        "sbt_rotation": "zup_yflip"
+    },
+    "orcagym": {
+        "mjc_agent_prefix": "g1_cook2_usda",
+        "sync_mocap_from_gripper": {
+            "enabled": false
+        }
+    },
+    "rigid_body_map": [
+        {"mjc_body_name": "InteractiveObjects", "follow_mode": "kinematic"}
+    ],
+    "grip_bind": {
+        "left": {
+            "palm_suffix": "wrist_yaw_link",
+            "finger1_suffix": "hand_index_0_link",
+            "finger2_suffix": "hand_middle_0_link"
+        },
+        "right": {
+            "palm_suffix": "wrist_yaw_link",
+            "finger1_suffix": "hand_index_0_link",
+            "finger2_suffix": "hand_middle_0_link"
+        }
+    }
+}

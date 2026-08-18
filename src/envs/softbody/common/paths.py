@@ -6,25 +6,37 @@ from pathlib import Path
 # src/envs/softbody/common/paths.py -> parent=common, parent.parent=softbody, parent.parent.parent=envs, parent.parent.parent.parent=src
 PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent.parent
 
-# OrcaApr24 仓库根（src → OrcaManipulation → OrcaApr24）
+# 仓库根（src → OrcaManipulation → 上级仓库）
 ORCA_REPO_ROOT: Path = PROJECT_ROOT.parent.parent
-CLOTH_3D_DIR: Path = ORCA_REPO_ROOT / "OrcaPlayground" / "examples" / "cloth_3d"
 XPBD_ROOT: Path = ORCA_REPO_ROOT / "XPBD"
+
+# 迁入 softbody 的布料模块/脚本本地副本
+SOFTBODY_DIR: Path = Path(__file__).resolve().parent.parent  # src/envs/softbody
+SOFTBODY_MODULES_DIR: Path = SOFTBODY_DIR / "modules"
+SOFTBODY_SCRIPTS_DIR: Path = SOFTBODY_DIR / "scripts"
 
 CLOTH_CONFIG_BASENAME = "cloth_sim_config.json"
 
 
-def default_cloth_config_path() -> Path:
-    return CLOTH_3D_DIR / CLOTH_CONFIG_BASENAME
+def resolve_cloth_data_dir(cloth_data_dir: Path | None) -> Path:
+    """布料数据目录（必传）。"""
+    if not cloth_data_dir:
+        raise ValueError("cloth_data_dir 必传：布料数据目录未指定")
+    return Path(cloth_data_dir).expanduser().resolve()
 
 
-def _pick_config_candidate(base_name: str, *, debug: bool) -> Path | None:
-    """在 cloth_3d 下查找 ``base_name``；debug 时优先 ``.debug.json``。"""
+def default_cloth_config_path(cloth_data_dir: Path | None = None) -> Path:
+    return resolve_cloth_data_dir(cloth_data_dir) / CLOTH_CONFIG_BASENAME
+
+
+def _pick_config_candidate(base_name: str, *, debug: bool, cloth_data_dir: Path | None = None) -> Path | None:
+    """在数据目录下查找 ``base_name``；debug 时优先 ``.debug.json``。"""
+    data_dir = resolve_cloth_data_dir(cloth_data_dir)
     if debug:
-        dbg = CLOTH_3D_DIR / base_name.replace(".json", ".debug.json")
+        dbg = data_dir / base_name.replace(".json", ".debug.json")
         if dbg.is_file():
             return dbg
-    path = CLOTH_3D_DIR / base_name
+    path = data_dir / base_name
     return path if path.is_file() else None
 
 
@@ -34,6 +46,7 @@ def resolve_cloth_config_path(
     *,
     debug: bool = False,
     explicit: str | None = None,
+    cloth_data_dir: Path | None = None,
 ) -> Path:
     """
     解析 ``cloth_sim_config`` 路径。
@@ -70,11 +83,11 @@ def resolve_cloth_config_path(
         if base_name in seen:
             continue
         seen.add(base_name)
-        hit = _pick_config_candidate(base_name, debug=debug)
+        hit = _pick_config_candidate(base_name, debug=debug, cloth_data_dir=cloth_data_dir)
         if hit is not None:
             return hit
 
     raise FileNotFoundError(
-        f"cloth config not found under {CLOTH_3D_DIR} "
+        f"cloth config not found under {resolve_cloth_data_dir(cloth_data_dir)} "
         f"(level={level_name!r}, agent={agent_name!r})"
     )

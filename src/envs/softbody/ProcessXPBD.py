@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional
 
 from ..cpu_affinity import wrap_cmd_with_taskset
 from .common.process_utils import ProcessManager, _subprocess_preexec
-from .common.paths import CLOTH_3D_DIR, XPBD_ROOT
+from .common.paths import XPBD_ROOT, resolve_cloth_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +199,7 @@ def _resolve_xpbd_executable_from_pip(target: str) -> Optional[Path]:
     return path
 
 
-def _resolve_mjc_pbd_config(config: Dict[str, Any], config_path: Path) -> Path:
+def _resolve_mjc_pbd_config(config: Dict[str, Any], config_path: Path, cloth_data_dir: Path | None = None) -> Path:
     """
     MJC_PBD_CONFIG 路径。
 
@@ -224,7 +224,8 @@ def _resolve_mjc_pbd_config(config: Dict[str, Any], config_path: Path) -> Path:
         p = Path(str(rel))
         if p.is_file():
             return p.resolve()
-        candidate = (CLOTH_3D_DIR / p).resolve()
+        data_dir = resolve_cloth_data_dir(cloth_data_dir)
+        candidate = (data_dir / p).resolve()
         if candidate.is_file():
             return candidate
     if config_path.is_file():
@@ -240,6 +241,7 @@ def start_xpbd_if_configured(
     log_dir: Optional[Path] = None,
     session_timestamp: str = "cloth",
     cpu_affinity: Optional[str] = None,
+    cloth_data_dir: Path | None = None,
 ) -> bool:
     """
     若 xpbd.enabled 且 auto_start，启动 dual_gripper_cross_mjc。
@@ -260,7 +262,7 @@ def start_xpbd_if_configured(
         )
 
     exe = pip_exe
-    mjc_pbd_config = _resolve_mjc_pbd_config(config, config_path)
+    mjc_pbd_config = _resolve_mjc_pbd_config(config, config_path, cloth_data_dir=cloth_data_dir)
 
     env = os.environ.copy()
     # 全链联调须 JoinSession；勿继承 shell 冒烟遗留的 MJC_PBD_NO_ORCALINK=1

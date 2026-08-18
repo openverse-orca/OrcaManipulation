@@ -1,0 +1,7 @@
+{
+  "description": "NursingHome_Cloth + G1 Omnipicker + RectCloth 程序化布（Cloth_Sheet 挂于 InteractiveObjects；MJCF body=InteractiveObjects_Cloth_Sheet）",
+  "extends": "cloth_sim_config.NursingHome_g1_omnipicker.json",
+  "orcagym": {
+    "level": "NursingHome_Cloth"
+  }
+}

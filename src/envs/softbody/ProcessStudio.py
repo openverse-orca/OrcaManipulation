@@ -18,7 +18,7 @@ from typing import Any
 
 import mujoco
 
-from .common.paths import CLOTH_3D_DIR
+from .common.paths import SOFTBODY_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -320,8 +320,8 @@ def normalize_vtk_asset_name(vtk_name: str, *, level: str | None = None) -> str:
     """见 ``modules.masked_vtk_assets.normalize_vtk_asset_name``。"""
     import sys
 
-    if str(CLOTH_3D_DIR) not in sys.path:
-        sys.path.insert(0, str(CLOTH_3D_DIR))
+    if str(SOFTBODY_DIR) not in sys.path:
+        sys.path.insert(0, str(SOFTBODY_DIR))
     from modules.masked_vtk_assets import normalize_vtk_asset_name as _normalize  # noqa: WPS433
 
     return _normalize(vtk_name, level=level)
@@ -442,8 +442,8 @@ def _cloth_mesh_names_from_model(
     """从 MJCF 扫描得到待检查的 cloth mesh；无标记时用传入的 stem 或 config.cloth.mesh。"""
     import sys
 
-    if str(CLOTH_3D_DIR) not in sys.path:
-        sys.path.insert(0, str(CLOTH_3D_DIR))
+    if str(SOFTBODY_DIR) not in sys.path:
+        sys.path.insert(0, str(SOFTBODY_DIR))
 
     names: list[tuple[str, str | None]] = []
     cloth_cfg = config.get("cloth") or {}

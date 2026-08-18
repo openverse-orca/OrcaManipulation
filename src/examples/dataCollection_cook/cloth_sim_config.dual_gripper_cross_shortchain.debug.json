@@ -1,0 +1,49 @@
+{
+  "description": "dual_gripper v4 关键帧短链：本地 MuJoCo 18 关键帧 + OrcaLink + XPBD + Studio 布料渲染",
+  "extends": "cloth_sim_config.dual_gripper_cross_full.json",
+  "simulation": {
+    "max_sim_time": 12.0,
+    "comment": "600 宏步 × 0.02s；覆盖 v4 轨迹前 12s（阶段 1 内收）"
+  },
+  "orcalink": {
+    "auto_start": true
+  },
+  "xpbd": {
+    "auto_start": true,
+    "startup_delay": 8.0
+  },
+  "particle_render": {
+    "enabled": true,
+    "grpc_address": "localhost:50261",
+    "mesh_id": 2,
+    "comment": "test20260508 Entity3(shirt_new)→mesh_id=2；勿绑 mesh_id=0(Entity1/cloth3d)。未设时 XPBD 优先 vtk 路径含 shirt"
+  },
+  "orcagym": {
+    "debug_session": {
+      "subdir_prefix": "cloth_debug",
+      "comment": "CSV 写入 dataCollection_cloth/logs/cloth_debug_{timestamp}/"
+    }
+  },
+  "mujoco_trajectory": {
+    "type": "dual_gripper_cross_v4_module",
+    "module": "modules.dual_gripper_cross_trajectory_v4",
+    "function": "compute_ctrl",
+    "apply_frame_function": "apply_frame",
+    "duration_sec": 67.0,
+    "comment": "18 个 _KEYS 关键帧；宏步边界按 sim_time 插值"
+  },
+  "debug": {
+    "debug_mode": true,
+    "publish_only": false,
+    "export_csv": true,
+    "export_recv_yup_csv": true,
+    "export_anchor_substep_csv": true,
+    "export_body_track_monitor_csv": true,
+    "export_sync_seq_monitor": true,
+    "export_macro_timing_pair": true,
+    "export_macro_packet_pair_verify": true,
+    "export_vertex_pos_compare": true,
+    "export_cloth_vertex_capture": true,
+    "cloth_vertex_capture_max": 64
+  }
+}

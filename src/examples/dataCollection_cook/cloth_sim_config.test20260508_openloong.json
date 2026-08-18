@@ -1,0 +1,80 @@
+{
+  "description": "test20260508 + openloong：scan-first XPBD 刚体/布发现（实位姿，无 pose_remap）",
+  "extends": "cloth_sim_config.orcagym_e2e.json",
+  "xpbd_auto_discover": {
+    "bodies": true,
+    "cloth": true,
+    "default_follow_mode": "kinematic",
+    "body_include_geom_suffixes": [
+      "_geom_27",
+      "_geom_35",
+      "_geom_38",
+      "_geom_45",
+      "_geom_47",
+      "_geom_65",
+      "_geom_73",
+      "_geom_76",
+      "_geom_83",
+      "_geom_85"
+    ],
+    "body_include_substrings": [
+      "zbll_base_link",
+      "zbr_base_link",
+      "r_left_spring_link",
+      "r_right_spring_link",
+      "l_left_spring_link",
+      "l_right_spring_link",
+      "r_left_follower",
+      "r_right_follower",
+      "l_left_follower",
+      "l_right_follower",
+      "Cube"
+    ]
+  },
+  "particle_render": {
+    "grpc_address": "localhost:50261"
+  },
+  "xpbd": {
+    "cloth_discover_only": false,
+    "disable_base_phys": true,
+    "force_gs_solver": true,
+    "auto_build": true,
+    "dg_traj": "cloth_robot",
+    "show_ui": true,
+    "overlay_mjc": true,
+    "comment_force_gs": "R-PHYS-4：联调暂用 GS，避免 Jacobi 粒子–刚体盒接触失效"
+  },
+  "xpbd_rigid_parity": {
+    "match_v4": false,
+    "comment": "ClothRobot：场景刚体为布-刚代理盒；刚-刚碰撞在 MuJoCo，XPBD 用 Layer_1_No1 禁刚-刚"
+  },
+  "orcagym": {
+    "rigid_body_map_key": "orcagym_rigid_body_map",
+    "level": "test20260508",
+    "mjc_agent_prefix": "openloong_gripper_2f85_fix_base_usda",
+    "sync_mocap_from_gripper": {
+      "enabled": true,
+      "pairs": [
+        {
+          "mocap_body": "openloong_gripper_2f85_fix_base_usda_leftHandMocap",
+          "palm_body": "openloong_gripper_2f85_fix_base_usda_zbll_base_link"
+        },
+        {
+          "mocap_body": "openloong_gripper_2f85_fix_base_usda_rightHandMocap",
+          "palm_body": "openloong_gripper_2f85_fix_base_usda_zbr_base_link"
+        }
+      ]
+    }
+  },
+    "orcagym_rigid_body_map": [
+    {
+      "mjc_body_name": "openloong_gripper_2f85_fix_base_usda_base_link",
+      "follow_mode": "kinematic",
+      "orcalink_publish": false
+    }
+  ],
+  "cloth_robot": {
+    "gripper_keyframes_json": "cloth_robot_gripper_keyframes.json",
+    "comment": "手工编辑双掌关键帧；也可用环境变量 CLOTH_ROBOT_KEYFRAMES_JSON 覆盖"
+  }
+}

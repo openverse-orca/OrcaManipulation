@@ -1,0 +1,28 @@
+{
+  "description": "openloong 全链路 debug（关卡名由 LEVEL 运行时注入）",
+  "extends": "cloth_sim_config.openloong.json",
+  "orcagym": {
+    "debug_session": {
+      "subdir_prefix": "cloth_debug",
+      "comment": "CSV 写入 dataCollection_cloth/logs/cloth_debug_{timestamp}/"
+    }
+  },
+  "debug": {
+    "debug_mode": true,
+    "publish_only": false,
+    "export_csv": true,
+    "export_recv_yup_csv": true,
+    "export_anchor_substep_csv": true,
+    "export_body_track_monitor_csv": true,
+    "export_sync_seq_monitor": true,
+    "export_macro_timing_pair": true,
+    "export_macro_packet_pair_verify": true,
+    "export_vertex_pos_compare": true,
+    "export_cloth_vertex_capture": true,
+    "cloth_vertex_capture_max": 64,
+    "export_phys_trace": false,
+    "export_cloth_orientation_compare": true,
+    "cloth_orientation_compare_tolerance_deg": 5.0,
+    "comment": "与 modules.mjc_pbd_debug_profile.DEBUG_PROFILE 一致；目录由 debug_session 在运行时写入"
+  }
+}
