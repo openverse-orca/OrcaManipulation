@@ -1,33 +1,18 @@
-"""G1 OmniPicker 工具整理脚本化自动采集 → LeRobot v2.1 格式。
+"""G1 OmniPicker 工具整理脚本化采集（可选槽位 + 放箱轨迹扰动）→ LeRobot v2.1。
 
-右臂从左到右依次抓取 5 个工具放入工具箱，全程单条 episode，
-自动插入安全过渡（抬升 → 高位水平移动 → 垂直下降）避免碰到相邻工具。
-左臂全程锁死。
-
-输入：5 个路点 YAML（默认 my_waypoint_tool1.yaml … my_waypoint_tool5.yaml），
-      每个支持 4 或 6 点位：
-        4 点：接近 / 抓取闭爪 / 箱上方 / 箱上松开
-        6 点：接近 / 抓取闭爪 / 放箱经由1 / 经由2 / 箱上方 / 箱上松开
-随机化（--randomize）流水线：
-  1) RNG 均匀排列 assignment[slot]=tool（拒绝采样：手电筒禁止 slot4）
-  2) _place_tools：工具只改槽位 y，保留自身 x/z/姿态
-  3) wp0/wp1 = 原 YAML 平移 delta；若存在合法补录 slotX_toolY 则用绝对位姿覆盖
-  4) 抓取顺序 = 槽位从左到右（slot0→slot4），因此「谁先被抓」随排列变化
-  5) 放箱路点（4点:wp2/wp3；6点:wp2..wp5）始终用该工具原 YAML（不随槽位变）
-
-控制：离线预构建轨迹（build_segmented_trajectory）。
-
-入箱检测（默认开）：每件工具全部路点结束后，待 EE 的 xy 投影已不在整箱矩形内，
-再检查该工具接触白名单——仅允许「箱子内表面」或「已入箱工具」；
-与机器人/货架工具/其它物体接触，或超时无接触 → 失败并换 seed 重采。
+基于 g1_omnipicker_collection_scripted_tool_slots_lerobot.py：
+  - 保留 --slots / --randomize
+  - 新增 --perturb：仅对放箱/离箱路点做分层位置扰动（抓取段不动）
 
 用法：
-  cd src/examples/dataCollection/g1_omnipicker
-  python g1_omnipicker_collection_scripted_tool_lerobot.py \\
+  # 全槽 + 放箱扰动，2 集试跑
+  python g1_omnipicker_collection_scripted_tool_perturb_lerobot.py \\
       --task_config ../common/example.yaml \\
-      --lerobot_out /path/to/out_dataset \\
-      --repo_id local/g1_omnipicker_tool \\
-      --randomize --num_episodes 1 --fps 20
+      --lerobot_out /path/to/out \\
+      --perturb --num_episodes 2 --fps 20
+
+  # 仅 slot0/1 + 扰动
+  python g1_omnipicker_collection_scripted_tool_perturb_lerobot.py ... --slots 0,1 --perturb
 """
 import argparse
 import os
@@ -73,13 +58,13 @@ from scene.scene_manager import SceneManager
 from task.abstract_task import EmptyTask
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
-STREAM_TRIGGER_PATH = "/tmp/g1_scripted_tool_lerobot_stream"
+STREAM_TRIGGER_PATH = "/tmp/g1_scripted_tool_slots_lerobot_stream"
 
 log_dir = os.path.join(base_dir, "logs")
 
 orca_logger = get_orca_logger(
-    name="G1ToolScripted",
-    log_file="g1_omnipicker_collection_scripted_tool_lerobot.log",
+    name="G1ToolSlotsScripted",
+    log_file="g1_omnipicker_collection_scripted_tool_slots_lerobot.log",
     max_bytes=10 * 1024 * 1024,
     backup_count=5,
     console_level="INFO",
@@ -553,6 +538,7 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
         box_bottom=None,
         base_body_query: str | None = None,
         place_timeout_steps: int = 80,
+        grasp_active_by_step=None,
     ):
         super().__init__()
         n = len(l_pos)
@@ -589,6 +575,12 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
         # 活跃监视器：wait_ee_outside → wait_contact
         # （该工具全部路点结束后启动；不检测“离开动作”，只看 EE xy 是否已出整箱矩形）
         self._place_watchers: list[dict] = []
+        # 抓取段外环积分门控：逐步布尔（S2/S3/S4）；None=关闭
+        if grasp_active_by_step is None:
+            self._grasp_active = None
+        else:
+            self._grasp_active = np.asarray(grasp_active_by_step, dtype=bool)
+        self._prev_grasp_active = False
 
     def _force_task_end(self):
         """尽快结束本集录制（RUNNING→END）。已是 END 时不再推进，避免回到 NOT_STARTED。"""
@@ -757,13 +749,56 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
             cmd = np.asarray(cmd, dtype=np.float64)
             err = actual - cmd
             err_norm = float(np.linalg.norm(err))
+            bias = self.r_arm.get_integral_bias_b()
+            corrected = self.r_arm.get_last_corrected_b()
+            corr_str = (
+                f" 修正命令={np.asarray(corrected).round(4).tolist()}"
+                if corrected is not None
+                else ""
+            )
             orca_logger.info(
                 f"[跟踪诊断] {label} @step{step_idx} | "
                 f"命令={cmd.round(4).tolist()} 实际={actual.round(4).tolist()} "
-                f"误差={err.round(4).tolist()} |误差|={err_norm * 1000:.1f}mm"
+                f"误差={err.round(4).tolist()} |误差|={err_norm * 1000:.1f}mm "
+                f"dz={(err[2] * 1000):+.1f}mm "
+                f"积分偏置={bias.round(4).tolist()}{corr_str}"
             )
+            if "沉降闭爪" in label:
+                orca_logger.info(
+                    f"[抓取小结] {label} @step{step_idx} | "
+                    f"wp1_z={cmd[2]:.4f} 实测_z={actual[2]:.4f} "
+                    f"|wp1-实测|={abs(actual[2] - cmd[2]) * 1000:.1f}mm "
+                    f"积分偏置_z={bias[2] * 1000:+.1f}mm "
+                    f"修正命令_z="
+                    f"{(float(corrected[2]) if corrected is not None else float('nan')):.4f}"
+                )
         except Exception as e:
             orca_logger.warning(f"[跟踪诊断] {label} 查询失败: {e}")
+
+    def _apply_grasp_integral_gate(self):
+        """按逐步掩码门控右臂外环积分：上升沿清零，S2–S4 累加，离开后关闭。"""
+        if self._grasp_active is None:
+            self.r_arm.enable_integral(False)
+            self._prev_grasp_active = False
+            return
+        active = False
+        if 0 <= self.t < len(self._grasp_active):
+            active = bool(self._grasp_active[self.t])
+        if active and not self._prev_grasp_active:
+            self.r_arm.reset_integral()
+            orca_logger.info(
+                f"[积分] 进入抓取段 @step{self.t}，积分偏置已清零"
+            )
+        if (not active) and self._prev_grasp_active:
+            bias = self.r_arm.get_integral_bias_b()
+            orca_logger.info(
+                f"[积分] 离开抓取段 @step{self.t}，"
+                f"最终偏置={bias.round(4).tolist()} "
+                f"(z={bias[2] * 1000:+.1f}mm)，后续段不再施加"
+            )
+            self.r_arm.reset_integral()
+        self.r_arm.enable_integral(active)
+        self._prev_grasp_active = active
 
     def update(self):
         if self.t >= len(self.l_pos):
@@ -779,12 +814,13 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
         if self.place_failed:
             self.t = len(self.l_pos)
             return
-        if self.t in self.seg_bounds:
-            self._log_tracking(self.t)
+        self._apply_grasp_integral_gate()
         self.l_arm.update_action_position(self.l_pos[self.t])
         self.l_arm.update_action_axisangle(self.l_quat_xyzw[self.t])
         self.r_arm.update_action_position(self.r_pos[self.t])
         self.r_arm.update_action_axisangle(self.r_quat_xyzw[self.t])
+        if self.t in self.seg_bounds:
+            self._log_tracking(self.t)
         l_n = len(self.l_grip.ctrl_index)
         r_n = len(self.r_grip.ctrl_index)
         self.l_grip.update_ctrl(np.full(l_n, self.l_grip_motor[self.t], dtype=np.float32))
@@ -797,6 +833,21 @@ class G1ScriptedTrajectoryDevice(AbstractDevice):
 # ---------------------------------------------------------------------------
 # 路点 YAML 加载
 # ---------------------------------------------------------------------------
+
+# 抓取段外环积分门控：标签子串匹配 S2/S3/S4
+_GRASP_INTEGRAL_MARKERS = ("垂直下降", "对准抓取", "沉降闭爪")
+
+
+def _build_grasp_active_mask(segments: list[dict]) -> np.ndarray:
+    """按 all_segments 标签展开逐步布尔掩码：S2/S3/S4 为 True。"""
+    flags: list[bool] = []
+    for s in segments:
+        n = max(0, int(s.get("steps", 0)))
+        label = str(s.get("label", ""))
+        active = any(m in label for m in _GRASP_INTEGRAL_MARKERS)
+        flags.extend([active] * n)
+    return np.asarray(flags, dtype=bool)
+
 
 def _load_waypoint_yaml(path: str) -> dict:
     """加载路点 YAML，返回包含 gripper_open/close 和 waypoints 列表的 dict。
@@ -905,6 +956,24 @@ def _sample_slot_assignment(rng: np.random.Generator) -> np.ndarray:
     raise RuntimeError("无法采到合法槽位排列（手电筒禁 slot4）")
 
 
+def _parse_assignment(text: str) -> np.ndarray:
+    """解析 --assignment：逗号分隔 5 个整数，assignment[slot]=tool（0..4 排列）。"""
+    parts = [p.strip() for p in str(text).split(",") if p.strip()]
+    if len(parts) != 5:
+        raise SystemExit(
+            f"--assignment 需 5 个逗号分隔整数（slot0..4 上的 tool），收到: {text!r}"
+        )
+    try:
+        vals = [int(p) for p in parts]
+    except ValueError as e:
+        raise SystemExit(f"--assignment 含非法整数: {text!r} ({e})") from e
+    if sorted(vals) != list(range(5)):
+        raise SystemExit(
+            f"--assignment 必须是 0..4 的排列，收到: {vals}"
+        )
+    return np.asarray(vals, dtype=np.int64)
+
+
 def _place_tools(env, base_body: str, assignment: np.ndarray) -> None:
     """按槽位排列设置 5 件工具的 free joint。
 
@@ -1004,6 +1073,198 @@ def _bias_grasp_waypoints_y(tool_spec: dict, dy: float) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 放箱/离箱路点分层位置扰动（抓取 wp0/wp1 不动）
+# ---------------------------------------------------------------------------
+
+# 默认幅度（米）；可被 CLI 覆盖
+_PERTURB_DEFAULTS = {
+    "via_xy": 0.07,       # via1/via2：±7cm（原 ±5cm）
+    "via_dz_lo": -0.01,   # via z 下限（小幅下，不清空高度）
+    "via_dz_hi": 0.08,    # via z 上限（原 +6cm → +8cm）
+    "box_xy": 0.035,      # 箱上方/松开：±3.5cm（原 ±2.5cm）
+    "box_dz_hi": 0.045,   # 箱上方/松开：只上抬（原 +3cm → +4.5cm）
+    "retreat_xy": 0.06,   # 撤离点：±6cm（原 ±4cm）
+    "box_xy_margin": 0.02,  # 夹紧到箱体内边界时留的 margin
+}
+
+
+def _clip_xy_to_box(
+    xy: np.ndarray,
+    xy_min: np.ndarray | None,
+    xy_max: np.ndarray | None,
+    margin: float,
+) -> np.ndarray:
+    """将 xy 夹紧到箱体内（留 margin）；无箱体信息则原样返回。"""
+    out = np.asarray(xy, dtype=np.float64).reshape(2).copy()
+    if xy_min is None or xy_max is None:
+        return out
+    lo = np.asarray(xy_min, dtype=np.float64).reshape(2) + float(margin)
+    hi = np.asarray(xy_max, dtype=np.float64).reshape(2) - float(margin)
+    # 若 margin 过大导致区间退化，退回无 margin
+    if not (lo[0] < hi[0] and lo[1] < hi[1]):
+        lo = np.asarray(xy_min, dtype=np.float64).reshape(2)
+        hi = np.asarray(xy_max, dtype=np.float64).reshape(2)
+    out[0] = float(np.clip(out[0], lo[0], hi[0]))
+    out[1] = float(np.clip(out[1], lo[1], hi[1]))
+    return out
+
+
+def _perturb_one_pos(
+    pos,
+    rng: np.random.Generator,
+    *,
+    xy_abs: float,
+    dz_lo: float,
+    dz_hi: float,
+    xy_min=None,
+    xy_max=None,
+    box_margin: float = 0.0,
+    clip_xy_to_box: bool = False,
+) -> tuple[list[float], np.ndarray]:
+    """对单点采样偏移并夹紧；返回 (新 pos list, delta xyz)。"""
+    p0 = np.asarray(pos, dtype=np.float64).reshape(3)
+    dx = float(rng.uniform(-xy_abs, xy_abs))
+    dy = float(rng.uniform(-xy_abs, xy_abs))
+    dz = float(rng.uniform(dz_lo, dz_hi))
+    # per-axis clip 到锚点 ± bound（采样本身已在界内，再 clip 一次防浮点）
+    dx = float(np.clip(dx, -xy_abs, xy_abs))
+    dy = float(np.clip(dy, -xy_abs, xy_abs))
+    dz = float(np.clip(dz, dz_lo, dz_hi))
+    p1 = p0 + np.array([dx, dy, dz], dtype=np.float64)
+    if clip_xy_to_box:
+        p1[:2] = _clip_xy_to_box(p1[:2], xy_min, xy_max, box_margin)
+    delta = p1 - p0
+    return [float(p1[0]), float(p1[1]), float(p1[2])], delta
+
+
+def _perturb_place_waypoints(
+    wps: list,
+    rng: np.random.Generator,
+    cfg: dict,
+    *,
+    box_xy_min=None,
+    box_xy_max=None,
+) -> tuple[list, list[str]]:
+    """仅扰动放箱/离箱路点；wp0/wp1 原样。
+
+    4 点: wp2=箱上方, wp3=松开
+    6 点: wp2/wp3=via, wp4=箱上方, wp5=松开
+
+    返回 (扰动后 waypoints 副本, 日志行列表)。
+    """
+    wps = list(wps)
+    n = len(wps)
+    if n not in (4, 6):
+        raise ValueError(f"_perturb_place_waypoints: 期望 4 或 6 个路点，实际 {n}")
+
+    out = []
+    for wp in wps:
+        out.append(
+            {
+                "pos": list(wp["pos"]),
+                "quat": list(wp["quat"]),
+                "grip": wp.get("grip"),
+            }
+        )
+
+    via_xy = float(cfg["via_xy"])
+    via_dz_lo = float(cfg["via_dz_lo"])
+    via_dz_hi = float(cfg["via_dz_hi"])
+    box_xy = float(cfg["box_xy"])
+    box_dz_hi = float(cfg["box_dz_hi"])
+    margin = float(cfg["box_xy_margin"])
+
+    logs: list[str] = []
+
+    if n == 6:
+        via_indices = (2, 3)
+        box_idx, rel_idx = 4, 5
+        via_labels = ("via1(wp2)", "via2(wp3)")
+    else:
+        via_indices = ()
+        box_idx, rel_idx = 2, 3
+        via_labels = ()
+
+    for vi, wp_i in enumerate(via_indices):
+        new_pos, delta = _perturb_one_pos(
+            out[wp_i]["pos"],
+            rng,
+            xy_abs=via_xy,
+            dz_lo=via_dz_lo,
+            dz_hi=via_dz_hi,
+        )
+        out[wp_i]["pos"] = new_pos
+        logs.append(
+            f"{via_labels[vi]} Δ=[{delta[0]*1000:+.1f},{delta[1]*1000:+.1f},"
+            f"{delta[2]*1000:+.1f}]mm"
+        )
+
+    for wp_i, label in ((box_idx, f"箱上(wp{box_idx})"), (rel_idx, f"松开(wp{rel_idx})")):
+        new_pos, delta = _perturb_one_pos(
+            out[wp_i]["pos"],
+            rng,
+            xy_abs=box_xy,
+            dz_lo=0.0,
+            dz_hi=box_dz_hi,
+            xy_min=box_xy_min,
+            xy_max=box_xy_max,
+            box_margin=margin,
+            clip_xy_to_box=True,
+        )
+        out[wp_i]["pos"] = new_pos
+        logs.append(
+            f"{label} Δ=[{delta[0]*1000:+.1f},{delta[1]*1000:+.1f},"
+            f"{delta[2]*1000:+.1f}]mm"
+        )
+
+    return out, logs
+
+
+def _perturb_retreat_pos(
+    retreat_pos: list,
+    rng: np.random.Generator,
+    cfg: dict,
+) -> tuple[list[float], np.ndarray]:
+    """撤离点仅抖 xy，z 保持（safe_z）。"""
+    xy_abs = float(cfg["retreat_xy"])
+    p0 = np.asarray(retreat_pos, dtype=np.float64).reshape(3)
+    dx = float(np.clip(rng.uniform(-xy_abs, xy_abs), -xy_abs, xy_abs))
+    dy = float(np.clip(rng.uniform(-xy_abs, xy_abs), -xy_abs, xy_abs))
+    p1 = p0.copy()
+    p1[0] += dx
+    p1[1] += dy
+    delta = p1 - p0
+    return [float(p1[0]), float(p1[1]), float(p1[2])], delta
+
+
+def _apply_quat_euler_delta(
+    quat_xyzw,
+    *,
+    bias_deg: "np.ndarray | tuple | list" = (0.0, 0.0, 0.0),
+    jitter_deg: float = 0.0,
+    rng: "np.random.Generator | None" = None,
+) -> list[float]:
+    """在末端局部系右乘欧拉增量，返回新的 xyzw 四元数。
+
+    bias_deg / jitter：xyz 欧拉角（度）。jitter>0 时需提供 rng。
+    """
+    q0 = R.from_quat(np.asarray(quat_xyzw, dtype=np.float64).reshape(4))
+    bias = np.asarray(bias_deg, dtype=np.float64).reshape(3)
+    if jitter_deg > 0.0:
+        if rng is None:
+            raise ValueError("_apply_quat_euler_delta: jitter_deg>0 时需要 rng")
+        jitter = rng.uniform(-float(jitter_deg), float(jitter_deg), size=3)
+    else:
+        jitter = np.zeros(3, dtype=np.float64)
+    delta = R.from_euler("xyz", bias + jitter, degrees=True)
+    q1 = (q0 * delta).as_quat()
+    # 统一半球，避免符号跳变
+    if q1[3] < 0:
+        q1 = -q1
+    return [float(q1[0]), float(q1[1]), float(q1[2]), float(q1[3])]
+
+
+# ---------------------------------------------------------------------------
 # 单工具轨迹构建（4 点 → 9 段；6 点 → 11 段）
 # ---------------------------------------------------------------------------
 
@@ -1020,6 +1281,8 @@ def _build_tool_segments(
     steps_release: int = 40,
     steps_release_settle: int = 55,
     steps_lift_after: int = 55,
+    lift_after_delta: "np.ndarray | None" = None,
+    lift_after_quat: "list | None" = None,
 ):
     """为单个工具生成轨迹 segments。
 
@@ -1134,8 +1397,17 @@ def _build_tool_segments(
             {
                 "steps": steps_lift_after,
                 "l_hold": True,
-                "r_target_b": above(wp_rel["pos"], safe_z),
-                "r_quat_b": wp_rel["quat"],
+                "r_target_b": (
+                    list(np.asarray(above(wp_rel["pos"], safe_z), dtype=np.float64)
+                         + np.asarray(lift_after_delta, dtype=np.float64))
+                    if lift_after_delta is not None
+                    else above(wp_rel["pos"], safe_z)
+                ),
+                "r_quat_b": (
+                    list(lift_after_quat)
+                    if lift_after_quat is not None
+                    else wp_rel["quat"]
+                ),
                 "gripper_r": "open",
                 "label": f"S{seg_no + 3}-松开后抬升",
             },
@@ -1150,7 +1422,7 @@ def _build_tool_segments(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="G1 OmniPicker 工具整理脚本化自动采集 → LeRobot v2.1 格式"
+        description="G1 OmniPicker 工具整理脚本化采集（可选 --slots + --perturb）→ LeRobot v2.1"
     )
     parser.add_argument("--level", type=str, default="default")
     parser.add_argument("--task_config", type=str, default="../common/example.yaml")
@@ -1163,15 +1435,32 @@ def main() -> None:
         "--waypoint_files",
         type=str,
         default=",".join(
-            os.path.join(base_dir, f"my_waypoint_tool{i}.yaml") for i in range(1, 6)
+            os.path.join(base_dir, f"my_waypoint_tool{i}_reloc.yaml") for i in range(1, 6)
         ),
-        help="5 个路点 YAML 路径，逗号分隔，顺序即抓取顺序（默认 my_waypoint_tool1..5.yaml）",
+        help="5 个路点 YAML 路径，逗号分隔，顺序即抓取顺序"
+             "（默认 my_waypoint_tool1..5_reloc.yaml，与成功数采一致）",
     )
     parser.add_argument("--num_episodes", type=int, default=1, help="采集轮数（默认1）")
     parser.add_argument("--task", type=str, default="整理工具", help="语言指令（默认：整理工具）")
     parser.add_argument(
         "--randomize", action="store_true",
         help="每个 episode 用 RNG 随机排列槽位（手电筒禁最右侧）；抓取按槽位左→右",
+    )
+    parser.add_argument(
+        "--assignment",
+        type=str,
+        default=None,
+        help="固定槽位布局（覆盖 --randomize）：逗号分隔 5 个 tool_idx，"
+             "assignment[slot]=tool。例：手电筒在左起第1槽 → 3,0,1,2,4"
+             "（slot0=手电筒, slot1=扳手, …）。工具名："
+             "0扳手 1螺丝刀 2电工刀左 3手电筒 4电工刀右",
+    )
+    parser.add_argument(
+        "--slots",
+        type=str,
+        default=None,
+        help="要采集的槽位（0-based，逗号分隔，顺序=抓取顺序）。"
+             "例：0 或 0,2,4；不设=全部 5 槽（与原脚本一致）",
     )
     parser.add_argument(
         "--extra_slot_waypoints",
@@ -1182,6 +1471,53 @@ def main() -> None:
     parser.add_argument(
         "--seed", type=int, default=None,
         help="随机化基础种子；episode N 用 seed+N。默认不设=每次运行用时间种子（真随机）",
+    )
+    parser.add_argument(
+        "--perturb",
+        action="store_true",
+        help="对放箱/离箱路点做分层位置扰动（via/箱上/松开/撤离；抓取段不动）",
+    )
+    parser.add_argument(
+        "--perturb_seed",
+        type=int,
+        default=None,
+        help="扰动基础种子；episode N / tool T 用 seed+N*131+T*17。默认不设=时间种子",
+    )
+    parser.add_argument(
+        "--perturb_via_xy",
+        type=float,
+        default=_PERTURB_DEFAULTS["via_xy"],
+        help=f"via1/via2 xy 半幅（米，默认{_PERTURB_DEFAULTS['via_xy']}）",
+    )
+    parser.add_argument(
+        "--perturb_via_dz_lo",
+        type=float,
+        default=_PERTURB_DEFAULTS["via_dz_lo"],
+        help=f"via z 下偏下限（米，默认{_PERTURB_DEFAULTS['via_dz_lo']}）",
+    )
+    parser.add_argument(
+        "--perturb_via_dz_hi",
+        type=float,
+        default=_PERTURB_DEFAULTS["via_dz_hi"],
+        help=f"via z 上偏上限（米，默认{_PERTURB_DEFAULTS['via_dz_hi']}）",
+    )
+    parser.add_argument(
+        "--perturb_box_xy",
+        type=float,
+        default=_PERTURB_DEFAULTS["box_xy"],
+        help=f"箱上方/松开 xy 半幅（米，默认{_PERTURB_DEFAULTS['box_xy']}）",
+    )
+    parser.add_argument(
+        "--perturb_box_dz_hi",
+        type=float,
+        default=_PERTURB_DEFAULTS["box_dz_hi"],
+        help=f"箱上方/松开 z 上偏上限（米，只上抬，默认{_PERTURB_DEFAULTS['box_dz_hi']}）",
+    )
+    parser.add_argument(
+        "--perturb_retreat_xy",
+        type=float,
+        default=_PERTURB_DEFAULTS["retreat_xy"],
+        help=f"撤离点 xy 半幅（米，默认{_PERTURB_DEFAULTS['retreat_xy']}）",
     )
     parser.add_argument(
         "--safe_z", type=float, default=0.50,
@@ -1209,8 +1545,140 @@ def main() -> None:
     parser.add_argument("--steps_release_settle", type=int, default=55, help="松开位沉降+张开驻留步数（默认55）")
     parser.add_argument("--steps_lift_after", type=int, default=55, help="放置后抬升步数（默认55）")
     parser.add_argument(
+        "--steps_retreat",
+        type=int,
+        default=110,
+        help="末件工具后撤离步数（默认110；原硬编码50，增大可让撤离段真正收敛）",
+    )
+    # ── 撤离点轨迹歧义分离：确定性偏置 + 随机抖动（独立于 --perturb）────────────
+    parser.add_argument(
+        "--retreat_jitter",
+        action="store_true",
+        help="对撤离点施加确定性偏置+随机抖动，分离末段驻留点与过境走廊（默认关）",
+    )
+    parser.add_argument(
+        "--retreat_bias_x",
+        type=float,
+        default=0.12,
+        help="撤离点 +x 确定性偏置（米，默认0.12）",
+    )
+    parser.add_argument(
+        "--retreat_bias_y",
+        type=float,
+        default=-0.12,
+        help="撤离点 y 确定性偏置（米，默认-0.12；负值=进一步出箱）",
+    )
+    parser.add_argument(
+        "--retreat_bias_z",
+        type=float,
+        default=0.10,
+        help="撤离点 +z 确定性偏置（米，默认0.10）",
+    )
+    parser.add_argument(
+        "--retreat_jitter_xy",
+        type=float,
+        default=0.08,
+        help="撤离点随机抖动 xy 半幅（米，默认0.08）",
+    )
+    parser.add_argument(
+        "--retreat_jitter_z",
+        type=float,
+        default=0.05,
+        help="撤离点随机抖动 z 半幅（米，默认0.05）",
+    )
+    parser.add_argument(
+        "--retreat_jitter_seed",
+        type=int,
+        default=None,
+        help="撤离点抖动基础种子（不设=时间种子，episode N 用 seed+N）",
+    )
+    # ── 过境段 S11 终点抖动（只对非末件工具生效，独立于 --perturb）────────────
+    parser.add_argument(
+        "--transit_jitter",
+        action="store_true",
+        help="对非末件工具 S11-松开后抬升终点施加随机抖动，打散过境走廊（默认关）",
+    )
+    parser.add_argument(
+        "--transit_jitter_xy",
+        type=float,
+        default=0.08,
+        help="过境段 S11 终点 xy 抖动半幅（米，默认0.08）",
+    )
+    parser.add_argument(
+        "--transit_jitter_z",
+        type=float,
+        default=0.05,
+        help="过境段 S11 终点 z 抖动半幅（米，默认0.05）",
+    )
+    parser.add_argument(
+        "--transit_jitter_seed",
+        type=int,
+        default=None,
+        help="过境段抖动基础种子（不设=时间种子，episode N / tool T 用 seed+N*131+T*17）",
+    )
+    parser.add_argument(
+        "--transit_quat_jitter_deg",
+        type=float,
+        default=25.0,
+        help="过境段 S11 终点姿态随机抖动半幅（欧拉 xyz 度，默认25）",
+    )
+    parser.add_argument(
+        "--retreat_quat_bias_roll_deg",
+        type=float,
+        default=35.0,
+        help="撤离点姿态 roll 确定性偏置（度，默认+35）",
+    )
+    parser.add_argument(
+        "--retreat_quat_bias_pitch_deg",
+        type=float,
+        default=12.0,
+        help="撤离点姿态 pitch 确定性偏置（度，默认+12）",
+    )
+    parser.add_argument(
+        "--retreat_quat_bias_yaw_deg",
+        type=float,
+        default=30.0,
+        help="撤离点姿态 yaw 确定性偏置（度，默认+30）",
+    )
+    parser.add_argument(
+        "--retreat_quat_jitter_deg",
+        type=float,
+        default=15.0,
+        help="撤离点姿态随机抖动半幅（欧拉 xyz 度，默认15）",
+    )
+    parser.add_argument(
         "--kp", type=float, default=220.0,
         help="OSC 阻抗刚度 kp（默认220）",
+    )
+    parser.add_argument(
+        "--grasp_integral",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="开启抓取段（S2/S3/S4）外环积分，减小末端相对路点的稳态误差（默认关）",
+    )
+    parser.add_argument(
+        "--grasp_integral_ki",
+        type=float,
+        default=0.2,
+        help="抓取段外环积分增益（逐控制步，默认0.2）",
+    )
+    parser.add_argument(
+        "--grasp_integral_max",
+        type=float,
+        default=0.010,
+        help="抓取段外环积分偏置限幅（米，默认0.010）",
+    )
+    parser.add_argument(
+        "--grasp_integral_axes",
+        type=str,
+        default="z",
+        help="外环积分生效轴，如 z / xy / xyz（默认 z）",
+    )
+    parser.add_argument(
+        "--grasp_integral_log_every",
+        type=int,
+        default=10,
+        help="抓取段积分日志节流：每 N 控制步打印一次（默认10；0=关闭逐帧积分日志）",
     )
     parser.add_argument(
         "--check_box_bottom",
@@ -1237,6 +1705,46 @@ def main() -> None:
         help="采帧时钟源（wall=墙钟，sim=仿真时间）",
     )
     args = parser.parse_args()
+
+    # ── 新扰动参数校验（retreat_jitter / transit_jitter）──────────────────────
+    if args.steps_retreat < 50:
+        raise SystemExit(f"--steps_retreat 建议 >= 50，当前 {args.steps_retreat}")
+    if args.retreat_jitter:
+        if not (0.0 <= args.retreat_bias_x <= 0.20):
+            raise SystemExit(f"--retreat_bias_x 必须在 [0, 0.20]，当前 {args.retreat_bias_x}")
+        if not (-0.20 <= args.retreat_bias_y <= 0.05):
+            raise SystemExit(f"--retreat_bias_y 必须在 [-0.20, 0.05]，当前 {args.retreat_bias_y}")
+        if not (0.0 <= args.retreat_bias_z <= 0.20):
+            raise SystemExit(f"--retreat_bias_z 必须在 [0, 0.20]，当前 {args.retreat_bias_z}")
+        if not (0.0 <= args.retreat_jitter_xy <= 0.12):
+            raise SystemExit(f"--retreat_jitter_xy 必须在 [0, 0.12]，当前 {args.retreat_jitter_xy}")
+        if not (0.0 <= args.retreat_jitter_z <= 0.08):
+            raise SystemExit(f"--retreat_jitter_z 必须在 [0, 0.08]，当前 {args.retreat_jitter_z}")
+        if not (0.0 <= abs(args.retreat_quat_bias_roll_deg) <= 60.0):
+            raise SystemExit(
+                f"--retreat_quat_bias_roll_deg 绝对值必须 <= 60，当前 {args.retreat_quat_bias_roll_deg}"
+            )
+        if not (0.0 <= abs(args.retreat_quat_bias_pitch_deg) <= 60.0):
+            raise SystemExit(
+                f"--retreat_quat_bias_pitch_deg 绝对值必须 <= 60，当前 {args.retreat_quat_bias_pitch_deg}"
+            )
+        if not (0.0 <= abs(args.retreat_quat_bias_yaw_deg) <= 60.0):
+            raise SystemExit(
+                f"--retreat_quat_bias_yaw_deg 绝对值必须 <= 60，当前 {args.retreat_quat_bias_yaw_deg}"
+            )
+        if not (0.0 <= args.retreat_quat_jitter_deg <= 40.0):
+            raise SystemExit(
+                f"--retreat_quat_jitter_deg 必须在 [0, 40]，当前 {args.retreat_quat_jitter_deg}"
+            )
+    if args.transit_jitter:
+        if not (0.0 <= args.transit_jitter_xy <= 0.12):
+            raise SystemExit(f"--transit_jitter_xy 必须在 [0, 0.12]，当前 {args.transit_jitter_xy}")
+        if not (0.0 <= args.transit_jitter_z <= 0.08):
+            raise SystemExit(f"--transit_jitter_z 必须在 [0, 0.08]，当前 {args.transit_jitter_z}")
+        if not (0.0 <= args.transit_quat_jitter_deg <= 40.0):
+            raise SystemExit(
+                f"--transit_quat_jitter_deg 必须在 [0, 40]，当前 {args.transit_quat_jitter_deg}"
+            )
 
     # ── 加载 5 个路点 YAML ──────────────────────────────────────────────────
     yaml_paths = [p.strip() for p in args.waypoint_files.split(",")]
@@ -1314,11 +1822,68 @@ def main() -> None:
     for jn, v in zip(agent_conf.r_arm["joint_names"], agent_conf.r_arm["neutral_joint_values"]):
         default_joint_values[jn] = v
 
+    perturb_cfg = {
+        "via_xy": float(args.perturb_via_xy),
+        "via_dz_lo": float(args.perturb_via_dz_lo),
+        "via_dz_hi": float(args.perturb_via_dz_hi),
+        "box_xy": float(args.perturb_box_xy),
+        "box_dz_hi": float(args.perturb_box_dz_hi),
+        "retreat_xy": float(args.perturb_retreat_xy),
+        "box_xy_margin": float(_PERTURB_DEFAULTS["box_xy_margin"]),
+    }
+    if perturb_cfg["via_dz_lo"] > perturb_cfg["via_dz_hi"]:
+        raise SystemExit("--perturb_via_dz_lo 不能大于 --perturb_via_dz_hi")
+    if perturb_cfg["box_dz_hi"] < 0:
+        raise SystemExit("--perturb_box_dz_hi 必须 >= 0（低位点只上抬）")
+
     print("=" * 62, flush=True)
-    print("  G1 OmniPicker 工具整理自动化采集", flush=True)
+    print("  G1 OmniPicker 工具整理自动化采集（槽位+放箱扰动）", flush=True)
     print(f"  任务: {args.task}", flush=True)
     print(f"  工具顺序: {' → '.join(_TOOL_NAMES)}", flush=True)
+    print(f"  槽位筛选: {args.slots if args.slots else '全部 0..4'}", flush=True)
     print(f"  随机化: {'开' if args.randomize else '关'}", flush=True)
+    if args.assignment:
+        _asgn_preview = _parse_assignment(args.assignment)
+        _asgn_layout = ", ".join(
+            f"slot{s}={_TOOL_NAMES[t]}" for s, t in enumerate(_asgn_preview.tolist())
+        )
+        print(f"  固定布局(--assignment): {_asgn_layout}", flush=True)
+    print(f"  放箱扰动(--perturb): {'开' if args.perturb else '关'}", flush=True)
+    if args.perturb:
+        print(
+            f"    via_xy=±{perturb_cfg['via_xy']*1000:.0f}mm "
+            f"via_dz=[{perturb_cfg['via_dz_lo']*1000:+.0f},"
+            f"{perturb_cfg['via_dz_hi']*1000:+.0f}]mm "
+            f"box_xy=±{perturb_cfg['box_xy']*1000:.0f}mm "
+            f"box_dz=[0,+{perturb_cfg['box_dz_hi']*1000:.0f}]mm "
+            f"retreat_xy=±{perturb_cfg['retreat_xy']*1000:.0f}mm",
+            flush=True,
+        )
+    print(f"  撤离段收敛(--steps_retreat): {args.steps_retreat} 步", flush=True)
+    print(f"  撤离点歧义分离(--retreat_jitter): {'开' if args.retreat_jitter else '关'}", flush=True)
+    if args.retreat_jitter:
+        print(
+            f"    bias=[{args.retreat_bias_x*1000:+.0f}mm(x), "
+            f"{args.retreat_bias_y*1000:+.0f}mm(y), "
+            f"{args.retreat_bias_z*1000:+.0f}mm(z)] "
+            f"jitter_xy=±{args.retreat_jitter_xy*1000:.0f}mm "
+            f"jitter_z=±{args.retreat_jitter_z*1000:.0f}mm "
+            f"quat_bias=[r{args.retreat_quat_bias_roll_deg:+.0f},"
+            f"p{args.retreat_quat_bias_pitch_deg:+.0f},"
+            f"y{args.retreat_quat_bias_yaw_deg:+.0f}]deg "
+            f"quat_jitter=±{args.retreat_quat_jitter_deg:.0f}deg "
+            f"seed={args.retreat_jitter_seed}",
+            flush=True,
+        )
+    print(f"  过境走廊抖动(--transit_jitter): {'开' if args.transit_jitter else '关'}", flush=True)
+    if args.transit_jitter:
+        print(
+            f"    jitter_xy=±{args.transit_jitter_xy*1000:.0f}mm "
+            f"jitter_z=±{args.transit_jitter_z*1000:.0f}mm "
+            f"quat_jitter=±{args.transit_quat_jitter_deg:.0f}deg "
+            f"seed={args.transit_jitter_seed}",
+            flush=True,
+        )
     print(f"  安全高度: {args.safe_z} m (base系z)", flush=True)
     print(f"  轮数: {num_episodes}", flush=True)
     print(f"  输出目录: {lerobot_out}", flush=True)
@@ -1402,6 +1967,27 @@ def main() -> None:
         _arm.controller.kd = 2.0 * np.sqrt(_arm.controller.kp)
     orca_logger.info(f"OSC 阻抗刚度 kp 设为 {kp_val}（kd=2√kp 临界阻尼）")
 
+    if args.grasp_integral:
+        r_arm.configure_integral(
+            ki=float(args.grasp_integral_ki),
+            max_bias=float(args.grasp_integral_max),
+            axes=str(args.grasp_integral_axes),
+            log_every=int(args.grasp_integral_log_every),
+        )
+        orca_logger.info(
+            f"抓取段外环积分: ON  ki={args.grasp_integral_ki} "
+            f"max={args.grasp_integral_max}m axes={args.grasp_integral_axes} "
+            f"log_every={args.grasp_integral_log_every} "
+            f"（仅 S2垂直下降/S3对准抓取/S4沉降闭爪）"
+        )
+        print(
+            f"  抓取段外环积分: ON  ki={args.grasp_integral_ki} "
+            f"max={args.grasp_integral_max}m axes={args.grasp_integral_axes}",
+            flush=True,
+        )
+    else:
+        orca_logger.info("抓取段外环积分: OFF（--grasp_integral 可开启）")
+
     l_gname = [env.actuator(n) for n in agent_conf.gripper_l["actuator_names"]]
     r_gname = [env.actuator(n) for n in agent_conf.gripper_r["actuator_names"]]
     init_lg = {n: v for n, v in zip(l_gname, agent_conf.gripper_l["init_ctrl"])}
@@ -1472,9 +2058,21 @@ def main() -> None:
 
     orca_logger.info(f"开始采集，共 {num_episodes} 轮，任务: {args.task}，输出: {lerobot_out}")
 
+    # 固定布局（复现用）：优先于 --randomize
+    fixed_assignment: np.ndarray | None = None
+    if args.assignment:
+        fixed_assignment = _parse_assignment(args.assignment)
+        layout0 = ", ".join(
+            f"slot{s}={_TOOL_NAMES[t]}" for s, t in enumerate(fixed_assignment.tolist())
+        )
+        orca_logger.info(f"[固定布局] --assignment → {layout0}")
+        if args.randomize:
+            orca_logger.warning("--assignment 已指定，忽略 --randomize")
+            print("  ⚠ --assignment 已指定，忽略 --randomize", flush=True)
+
     # 随机化基础种子：未指定 --seed 时用时间，保证每次运行不同；指定则整次运行可复现
     randomize_base_seed: int | None = None
-    if args.randomize:
+    if args.randomize and fixed_assignment is None:
         randomize_base_seed = (
             int(args.seed)
             if args.seed is not None
@@ -1485,6 +2083,52 @@ def main() -> None:
             f"（episode N 使用 base_seed+N；手电筒禁 slot4）"
         )
         print(f"  随机种子 base_seed={randomize_base_seed}", flush=True)
+
+    # 扰动基础种子：与槽位随机化解耦，未指定时用时间种子
+    perturb_base_seed: int | None = None
+    if args.perturb:
+        perturb_base_seed = (
+            int(args.perturb_seed)
+            if args.perturb_seed is not None
+            else int(time.time() * 1000) % (2**31 - 1)
+        )
+        orca_logger.info(
+            f"[放箱扰动] base_seed={perturb_base_seed} "
+            f"（ep N / tool T 用 base+N*131+T*17；抓取段不动）"
+        )
+        print(f"  扰动种子 base_seed={perturb_base_seed}", flush=True)
+
+    # 撤离点歧义分离独立种子（与 --perturb 解耦）
+    retreat_jitter_base_seed: int | None = None
+    if args.retreat_jitter:
+        retreat_jitter_base_seed = (
+            int(args.retreat_jitter_seed)
+            if args.retreat_jitter_seed is not None
+            else int(time.time() * 1000) % (2**31 - 1)
+        )
+        orca_logger.info(
+            f"[撤离点抖动] base_seed={retreat_jitter_base_seed} "
+            f"bias=[{args.retreat_bias_x*100:+.1f}cm(x),"
+            f"{args.retreat_bias_y*100:+.1f}cm(y),"
+            f"{args.retreat_bias_z*100:+.1f}cm(z)] "
+            f"jitter_xy=±{args.retreat_jitter_xy*100:.1f}cm "
+            f"jitter_z=±{args.retreat_jitter_z*100:.1f}cm"
+        )
+        print(f"  撤离点抖动种子 base_seed={retreat_jitter_base_seed}", flush=True)
+
+    # 过境段 S11 终点抖动独立种子（与 --perturb 解耦）
+    transit_jitter_base_seed: int | None = None
+    if args.transit_jitter:
+        transit_jitter_base_seed = (
+            int(args.transit_jitter_seed)
+            if args.transit_jitter_seed is not None
+            else int(time.time() * 1000) % (2**31 - 1)
+        )
+        orca_logger.info(
+            f"[过境抖动] base_seed={transit_jitter_base_seed} "
+            f"jitter_xy=±{args.transit_jitter_xy*100:.1f}cm jitter_z=±{args.transit_jitter_z*100:.1f}cm"
+        )
+        print(f"  过境段抖动种子 base_seed={transit_jitter_base_seed}", flush=True)
 
     n_success = 0
     place_retry = 0  # 当前目标集的入箱失败重试计数
@@ -1528,16 +2172,23 @@ def main() -> None:
                 episode_seed = None
                 slot_for_tool = {i: i for i in range(5)}
 
-                if args.randomize:
-                    assert randomize_base_seed is not None
-                    # 成功集用 base+n_success；失败重试用大步长错开，可换排列
-                    episode_seed = (
-                        int(randomize_base_seed)
-                        + n_success
-                        + place_retry * 10007
-                    ) % (2**31 - 1)
-                    rng_ep = np.random.default_rng(episode_seed)
-                    assignment = _sample_slot_assignment(rng_ep)
+                use_layout = fixed_assignment is not None or args.randomize
+                if use_layout:
+                    if fixed_assignment is not None:
+                        assignment = fixed_assignment.copy()
+                        episode_seed = None
+                        layout_tag = "固定布局"
+                    else:
+                        assert randomize_base_seed is not None
+                        # 成功集用 base+n_success；失败重试用大步长错开，可换排列
+                        episode_seed = (
+                            int(randomize_base_seed)
+                            + n_success
+                            + place_retry * 10007
+                        ) % (2**31 - 1)
+                        rng_ep = np.random.default_rng(episode_seed)
+                        assignment = _sample_slot_assignment(rng_ep)
+                        layout_tag = "槽位随机化"
 
                     _place_tools(env, base_body, assignment)
                     actual_pos_b = _query_tool_positions_b(env, base_body)
@@ -1568,12 +2219,15 @@ def main() -> None:
                         f"slot{s}={_TOOL_NAMES[t]}" for s, t in enumerate(grasp_order)
                     )
                     pick_seq = " → ".join(_TOOL_NAMES[t] for t in grasp_order)
+                    seed_msg = (
+                        f" seed={episode_seed}" if episode_seed is not None else ""
+                    )
                     orca_logger.info(
-                        f"[槽位随机化] ep={ep_display} seed={episode_seed} | {layout}"
+                        f"[{layout_tag}] ep={ep_display}{seed_msg} | {layout}"
                     )
                     orca_logger.info(f"[抓取顺序] {pick_seq}")
                     print(f"  布局: {layout}", flush=True)
-                    print(f"  抓取: {pick_seq} | seed={episode_seed}", flush=True)
+                    print(f"  抓取: {pick_seq}{seed_msg}", flush=True)
                     if override_hits:
                         msg = ", ".join(override_hits)
                         orca_logger.info(f"[槽位补录] 采用绝对 wp0/wp1: {msg}")
@@ -1591,28 +2245,46 @@ def main() -> None:
                             f"wp1={episode_tool_data[tool_idx]['waypoints'][1]['pos']}"
                         )
 
-                # 槽位5（最右）：抓取 wp0/wp1 再偏右
-                tool_at_slot5 = int(grasp_order[_SLOT5_IDX])
-                before_y = float(
-                    episode_tool_data[tool_at_slot5]["waypoints"][1]["pos"][1]
-                )
-                episode_tool_data[tool_at_slot5] = _bias_grasp_waypoints_y(
-                    episode_tool_data[tool_at_slot5], _SLOT5_GRASP_DY
-                )
-                after_y = float(
-                    episode_tool_data[tool_at_slot5]["waypoints"][1]["pos"][1]
-                )
-                orca_logger.info(
-                    f"[槽位5偏置] {_TOOL_NAMES[tool_at_slot5]} wp0/wp1 "
-                    f"y += {_SLOT5_GRASP_DY*1000:.1f}mm "
-                    f"(0.5×{_GRIPPER_OPEN_WIDTH_M*1000:.0f}mm 张开，偏右) "
-                    f"wp1.y {before_y:.4f}→{after_y:.4f}"
-                )
-                print(
-                    f"  [槽位5偏置] {_TOOL_NAMES[tool_at_slot5]} "
-                    f"抓取 y {_SLOT5_GRASP_DY*1000:+.1f}mm（偏右）",
-                    flush=True,
-                )
+                active_slots = list(range(5))
+                if args.slots:
+                    active_slots = [
+                        int(x.strip()) for x in args.slots.split(",") if x.strip()
+                    ]
+                    if not active_slots or any(s < 0 or s > 4 for s in active_slots):
+                        orca_logger.error(f"--slots 非法: {args.slots}（需 0..4）")
+                        return
+                    # grasp_order[s] = 该槽位上的 tool_idx（非随机时即 identity）
+                    grasp_order = [int(grasp_order[s]) for s in active_slots]
+                    pick_seq = " → ".join(_TOOL_NAMES[t] for t in grasp_order)
+                    orca_logger.info(f"[槽位筛选] slots={active_slots} → {pick_seq}")
+                    print(f"  槽位筛选: {active_slots} → {pick_seq}", flush=True)
+
+                # 槽位5（最右）：抓取 wp0/wp1 再偏右（本集未采该槽则跳过）
+                if _SLOT5_IDX in {int(slot_for_tool[t]) for t in grasp_order}:
+                    tool_at_slot5 = next(
+                        t for t in grasp_order
+                        if int(slot_for_tool[t]) == _SLOT5_IDX
+                    )
+                    before_y = float(
+                        episode_tool_data[tool_at_slot5]["waypoints"][1]["pos"][1]
+                    )
+                    episode_tool_data[tool_at_slot5] = _bias_grasp_waypoints_y(
+                        episode_tool_data[tool_at_slot5], _SLOT5_GRASP_DY
+                    )
+                    after_y = float(
+                        episode_tool_data[tool_at_slot5]["waypoints"][1]["pos"][1]
+                    )
+                    orca_logger.info(
+                        f"[槽位5偏置] {_TOOL_NAMES[tool_at_slot5]} wp0/wp1 "
+                        f"y += {_SLOT5_GRASP_DY*1000:.1f}mm "
+                        f"(0.5×{_GRIPPER_OPEN_WIDTH_M*1000:.0f}mm 张开，偏右) "
+                        f"wp1.y {before_y:.4f}→{after_y:.4f}"
+                    )
+                    print(
+                        f"  [槽位5偏置] {_TOOL_NAMES[tool_at_slot5]} "
+                        f"抓取 y {_SLOT5_GRASP_DY*1000:+.1f}mm（偏右）",
+                        flush=True,
+                    )
 
                 # 扳手@槽位4：wp0/wp1 略向左(+y)、向下(-z)，缓解跟踪够不着
                 if int(slot_for_tool.get(_WRENCH_IDX, -1)) == _SLOT4_IDX:
@@ -1645,10 +2317,79 @@ def main() -> None:
                 cum_steps = 0
                 last_release_quat = None
                 last_release_pos = None
-                for slot_idx, tool_idx in enumerate(grasp_order):
+                # 箱底内沿：低位放箱点 xy 夹紧用
+                place_xy_min = None
+                place_xy_max = None
+                if box_bottom is not None:
+                    place_xy_min = np.asarray(box_bottom["xy_min"], dtype=np.float64)
+                    place_xy_max = np.asarray(box_bottom["xy_max"], dtype=np.float64)
+
+                n_tools_this_ep = len(active_slots)
+                for tool_enum_idx, (slot_idx, tool_idx) in enumerate(
+                    zip(active_slots, grasp_order)
+                ):
                     td = episode_tool_data[tool_idx]
+                    wps_use = td["waypoints"]
+                    is_last_tool = (tool_enum_idx == n_tools_this_ep - 1)
+
+                    if args.perturb:
+                        assert perturb_base_seed is not None
+                        pert_seed = (
+                            int(perturb_base_seed)
+                            + n_success * 131
+                            + int(tool_idx) * 17
+                            + place_retry * 10007
+                        ) % (2**31 - 1)
+                        rng_pert = np.random.default_rng(pert_seed)
+                        wps_use, pert_logs = _perturb_place_waypoints(
+                            td["waypoints"],
+                            rng_pert,
+                            perturb_cfg,
+                            box_xy_min=place_xy_min,
+                            box_xy_max=place_xy_max,
+                        )
+                        msg = (
+                            f"[放箱扰动] ep={ep_display} "
+                            f"工具{tool_idx + 1}({_TOOL_NAMES[tool_idx]}) "
+                            f"seed={pert_seed} | " + " | ".join(pert_logs)
+                        )
+                        orca_logger.info(msg)
+                        print(f"  {msg}", flush=True)
+
+                    # 过境段 S11 终点抖动：只对非末件工具生效，末件置零（保证撤离起点干净）
+                    lift_after_delta: "np.ndarray | None" = None
+                    lift_after_quat: "list | None" = None
+                    if args.transit_jitter and not is_last_tool:
+                        assert transit_jitter_base_seed is not None
+                        tr_seed = (
+                            int(transit_jitter_base_seed)
+                            + n_success * 131
+                            + tool_enum_idx * 17
+                            + place_retry * 10007
+                        ) % (2**31 - 1)
+                        rng_tr = np.random.default_rng(tr_seed)
+                        dx_tr = float(rng_tr.uniform(-args.transit_jitter_xy, args.transit_jitter_xy))
+                        dy_tr = float(rng_tr.uniform(-args.transit_jitter_xy, args.transit_jitter_xy))
+                        dz_tr = float(rng_tr.uniform(-args.transit_jitter_z, args.transit_jitter_z))
+                        lift_after_delta = np.array([dx_tr, dy_tr, dz_tr], dtype=np.float64)
+                        lift_after_quat = _apply_quat_euler_delta(
+                            wps_use[-1]["quat"],
+                            jitter_deg=float(args.transit_quat_jitter_deg),
+                            rng=rng_tr,
+                        )
+                        tmsg = (
+                            f"[过境抖动] ep={ep_display} "
+                            f"工具{tool_idx + 1}({_TOOL_NAMES[tool_idx]}) "
+                            f"seed={tr_seed} | "
+                            f"S11 Δpos=[{dx_tr*1000:+.1f},{dy_tr*1000:+.1f},{dz_tr*1000:+.1f}]mm "
+                            f"quat_jitter=±{args.transit_quat_jitter_deg:.0f}deg "
+                            f"→ {[round(x, 4) for x in lift_after_quat]}"
+                        )
+                        orca_logger.info(tmsg)
+                        print(f"  {tmsg}", flush=True)
+
                     tool_segs = _build_tool_segments(
-                        wps=td["waypoints"],
+                        wps=wps_use,
                         safe_z=args.safe_z,
                         steps_transit=args.steps_transit,
                         steps_descend=args.steps_descend,
@@ -1660,9 +2401,17 @@ def main() -> None:
                         steps_release=args.steps_release,
                         steps_release_settle=args.steps_release_settle,
                         steps_lift_after=args.steps_lift_after,
+                        lift_after_delta=lift_after_delta,
+                        lift_after_quat=lift_after_quat,
                     )
                     for s in tool_segs:
-                        if args.randomize:
+                        if (
+                            args.randomize
+                            or args.assignment
+                            or args.slots
+                            or args.perturb
+                            or args.transit_jitter
+                        ):
                             prefix = (
                                 f"槽位{slot_idx + 1}-"
                                 f"工具{tool_idx + 1}({_TOOL_NAMES[tool_idx]})"
@@ -1671,8 +2420,8 @@ def main() -> None:
                             prefix = f"工具{tool_idx + 1}({_TOOL_NAMES[tool_idx]})"
                         s["label"] = f"{prefix}-{s['label']}"
                     tool_start = cum_steps
-                    last_release_pos = list(td["waypoints"][-1]["pos"])
-                    last_release_quat = list(td["waypoints"][-1]["quat"])
+                    last_release_pos = list(wps_use[-1]["pos"])
+                    last_release_quat = list(wps_use[-1]["quat"])
                     tool_steps = sum(int(s["steps"]) for s in tool_segs)
                     # 该工具全部路点结束后启动监视：等 EE xy 出整箱矩形再查接触
                     if args.check_box_bottom and box_bottom is not None:
@@ -1682,7 +2431,7 @@ def main() -> None:
                     cum_steps += tool_steps
                     orca_logger.info(
                         f"  拼段 {len(tool_segs)} | {_TOOL_NAMES[tool_idx]} | "
-                        f"{len(td['waypoints'])}点 | 接近位={td['waypoints'][0]['pos']}"
+                        f"{len(wps_use)}点 | 接近位={wps_use[0]['pos']}"
                     )
 
                 # 末工具后追加撤离+驻留，保证 EE xy 能出整箱矩形并留接触检查窗口
@@ -1703,12 +2452,83 @@ def main() -> None:
                     retreat_x = float(0.5 * (xy_min[0] + xy_max[0]))
                     retreat_y = float(xy_min[1] - 0.12)
                     retreat_pos = [retreat_x, retreat_y, float(args.safe_z)]
+                    if args.perturb:
+                        assert perturb_base_seed is not None
+                        retreat_seed = (
+                            int(perturb_base_seed)
+                            + n_success * 131
+                            + 999
+                            + place_retry * 10007
+                        ) % (2**31 - 1)
+                        rng_retreat = np.random.default_rng(retreat_seed)
+                        retreat_pos, retreat_delta = _perturb_retreat_pos(
+                            retreat_pos, rng_retreat, perturb_cfg
+                        )
+                        rmsg = (
+                            f"[放箱扰动] ep={ep_display} 撤离点 "
+                            f"seed={retreat_seed} | "
+                            f"Δ=[{retreat_delta[0]*1000:+.1f},"
+                            f"{retreat_delta[1]*1000:+.1f},"
+                            f"{retreat_delta[2]*1000:+.1f}]mm "
+                            f"→ {[round(x, 4) for x in retreat_pos]}"
+                        )
+                        orca_logger.info(rmsg)
+                        print(f"  {rmsg}", flush=True)
+
+                    # 撤离点歧义分离：位置偏置+抖动，叠加姿态偏置+抖动（独立于 --perturb）
+                    retreat_quat = list(last_release_quat)
+                    if args.retreat_jitter:
+                        assert retreat_jitter_base_seed is not None
+                        rj_seed = (
+                            int(retreat_jitter_base_seed)
+                            + n_success * 131
+                            + place_retry * 10007
+                        ) % (2**31 - 1)
+                        rng_rj = np.random.default_rng(rj_seed)
+                        dx_rj = args.retreat_bias_x + float(
+                            rng_rj.uniform(-args.retreat_jitter_xy, args.retreat_jitter_xy)
+                        )
+                        dy_rj = args.retreat_bias_y + float(
+                            rng_rj.uniform(-args.retreat_jitter_xy, args.retreat_jitter_xy)
+                        )
+                        dz_rj = args.retreat_bias_z + float(
+                            rng_rj.uniform(-args.retreat_jitter_z, args.retreat_jitter_z)
+                        )
+                        retreat_pos = [
+                            retreat_pos[0] + dx_rj,
+                            retreat_pos[1] + dy_rj,
+                            retreat_pos[2] + dz_rj,
+                        ]
+                        retreat_quat = _apply_quat_euler_delta(
+                            last_release_quat,
+                            bias_deg=(
+                                float(args.retreat_quat_bias_roll_deg),
+                                float(args.retreat_quat_bias_pitch_deg),
+                                float(args.retreat_quat_bias_yaw_deg),
+                            ),
+                            jitter_deg=float(args.retreat_quat_jitter_deg),
+                            rng=rng_rj,
+                        )
+                        rjmsg = (
+                            f"[撤离点抖动] ep={ep_display} "
+                            f"seed={rj_seed} | "
+                            f"Δpos=[{dx_rj*1000:+.1f},{dy_rj*1000:+.1f},{dz_rj*1000:+.1f}]mm "
+                            f"quat_bias=[r{args.retreat_quat_bias_roll_deg:+.0f},"
+                            f"p{args.retreat_quat_bias_pitch_deg:+.0f},"
+                            f"y{args.retreat_quat_bias_yaw_deg:+.0f}]deg "
+                            f"→ pos={[round(x, 4) for x in retreat_pos]} "
+                            f"quat={[round(x, 4) for x in retreat_quat]}"
+                        )
+                        orca_logger.info(rjmsg)
+                        print(f"  {rjmsg}", flush=True)
+
+                    steps_retreat = int(args.steps_retreat)
                     all_segments.append(
                         {
-                            "steps": _PLACE_RETREAT_STEPS,
+                            "steps": steps_retreat,
                             "l_hold": True,
                             "r_target_b": retreat_pos,
-                            "r_quat_b": last_release_quat,
+                            "r_quat_b": retreat_quat,
                             "gripper_r": "open",
                             "label": "S-撤离箱上方",
                         }
@@ -1720,15 +2540,15 @@ def main() -> None:
                             "steps": wait_steps,
                             "l_hold": True,
                             "r_target_b": retreat_pos,
-                            "r_quat_b": last_release_quat,
+                            "r_quat_b": retreat_quat,
                             "gripper_r": "open",
                             "label": "S-入箱检查等待",
                         }
                     )
-                    cum_steps += _PLACE_RETREAT_STEPS + wait_steps
+                    cum_steps += steps_retreat + wait_steps
                     orca_logger.info(
                         f"  追加撤离+等待: retreat={retreat_pos} "
-                        f"retreat_steps={_PLACE_RETREAT_STEPS} "
+                        f"retreat_steps={steps_retreat} "
                         f"timeout_steps={place_timeout_steps}"
                     )
 
@@ -1757,6 +2577,15 @@ def main() -> None:
                     last_idx = cum - 1
                     seg_bounds[last_idx] = (s["label"], list(s["r_target_b"]))
 
+                grasp_active_by_step = None
+                if args.grasp_integral:
+                    grasp_active_by_step = _build_grasp_active_mask(all_segments)
+                    n_on = int(np.count_nonzero(grasp_active_by_step))
+                    orca_logger.info(
+                        f"[积分] grasp_active 掩码: {n_on}/{len(grasp_active_by_step)} 步 "
+                        f"（标签含 {_GRASP_INTEGRAL_MARKERS}）"
+                    )
+
                 # ── 离线预构建完整轨迹 ──────────────────────────────────────
                 l_pos, l_quat, r_pos, r_quat_traj, l_gm, r_gm = (
                     scripted.build_segmented_trajectory(
@@ -1772,6 +2601,7 @@ def main() -> None:
                     box_bottom=box_bottom,
                     base_body_query=base_body,
                     place_timeout_steps=place_timeout_steps,
+                    grasp_active_by_step=grasp_active_by_step,
                 )
                 manager.set_device(device)
                 manager.run_episode()

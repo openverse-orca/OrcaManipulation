@@ -1,6 +1,4 @@
-# 6 点路点  2026-07-18 16:53:41
-# 坐标系：G1 OmniPicker base_body（g1_omnipicker_body_link1）
-# 与 reloc 同步：底座右移 pos'=pos-[0.0, -0.014278, 0.0]
+# 扳手 6 点路点（G1 OmniPicker base_body）
 # 语义：接近 / 抓取 / 经由1 / 经由2 / 箱上方 / 松开
 
 gripper_open: -0.8561
@@ -11,15 +9,15 @@ segments:
   # 路点 1  接近（抓取）
   - steps: 300
     l_hold: true
-    r_target_b: [0.5745, -0.2987, 0.1909]
-    r_quat_b: [-0.4633, 0.4682, 0.5474, 0.5163]
+    r_target_b: [0.5611, -0.0846, 0.1828]
+    r_quat_b: [-0.4995, 0.4293, 0.5641, 0.4980]
     gripper_r: open
 
   # 路点 2  抓取闭爪
   - steps: 300
     l_hold: true
-    r_target_b: [0.5770, -0.3135, 0.1848]
-    r_quat_b: [-0.4587, 0.4771, 0.5340, 0.5261]
+    r_target_b: [0.5579, -0.0842, 0.1810]
+    r_quat_b: [-0.5041, 0.4411, 0.5608, 0.4865]
     gripper_r: close
 
   # 路点 3  放箱经由1

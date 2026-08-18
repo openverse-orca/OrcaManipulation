@@ -1,33 +1,20 @@
-"""G1 OmniPicker 工具整理脚本化自动采集 → LeRobot v2.1 格式。
+"""G1 OmniPicker 工具整理脚本化自动采集（可选槽位）→ LeRobot v2.1。
 
-右臂从左到右依次抓取 5 个工具放入工具箱，全程单条 episode，
-自动插入安全过渡（抬升 → 高位水平移动 → 垂直下降）避免碰到相邻工具。
-左臂全程锁死。
-
-输入：5 个路点 YAML（默认 my_waypoint_tool1.yaml … my_waypoint_tool5.yaml），
-      每个支持 4 或 6 点位：
-        4 点：接近 / 抓取闭爪 / 箱上方 / 箱上松开
-        6 点：接近 / 抓取闭爪 / 放箱经由1 / 经由2 / 箱上方 / 箱上松开
-随机化（--randomize）流水线：
-  1) RNG 均匀排列 assignment[slot]=tool（拒绝采样：手电筒禁止 slot4）
-  2) _place_tools：工具只改槽位 y，保留自身 x/z/姿态
-  3) wp0/wp1 = 原 YAML 平移 delta；若存在合法补录 slotX_toolY 则用绝对位姿覆盖
-  4) 抓取顺序 = 槽位从左到右（slot0→slot4），因此「谁先被抓」随排列变化
-  5) 放箱路点（4点:wp2/wp3；6点:wp2..wp5）始终用该工具原 YAML（不随槽位变）
-
-控制：离线预构建轨迹（build_segmented_trajectory）。
-
-入箱检测（默认开）：每件工具全部路点结束后，待 EE 的 xy 投影已不在整箱矩形内，
-再检查该工具接触白名单——仅允许「箱子内表面」或「已入箱工具」；
-与机器人/货架工具/其它物体接触，或超时无接触 → 失败并换 seed 重采。
+基于 g1_omnipicker_collection_scripted_tool_lerobot.py，额外支持 --slots
+指定本集要抓的槽位（0-based）。不传 --slots 时与原脚本等价（抓满 5 槽）。
 
 用法：
-  cd src/examples/dataCollection/g1_omnipicker
-  python g1_omnipicker_collection_scripted_tool_lerobot.py \\
+  # 仅 slot0，无随机，100 集
+  python g1_omnipicker_collection_scripted_tool_slots_lerobot.py \\
       --task_config ../common/example.yaml \\
-      --lerobot_out /path/to/out_dataset \\
-      --repo_id local/g1_omnipicker_tool \\
-      --randomize --num_episodes 1 --fps 20
+      --lerobot_out /path/to/out \\
+      --slots 0 --num_episodes 100 --fps 20
+
+  # 抓 slot0 与 slot2（按给定顺序）
+  python g1_omnipicker_collection_scripted_tool_slots_lerobot.py ... --slots 0,2
+
+  # 与原脚本相同：全 5 槽 + 随机
+  python g1_omnipicker_collection_scripted_tool_slots_lerobot.py ... --randomize
 """
 import argparse
 import os
@@ -73,13 +60,13 @@ from scene.scene_manager import SceneManager
 from task.abstract_task import EmptyTask
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
-STREAM_TRIGGER_PATH = "/tmp/g1_scripted_tool_lerobot_stream"
+STREAM_TRIGGER_PATH = "/tmp/g1_scripted_tool_slots_lerobot_stream"
 
 log_dir = os.path.join(base_dir, "logs")
 
 orca_logger = get_orca_logger(
-    name="G1ToolScripted",
-    log_file="g1_omnipicker_collection_scripted_tool_lerobot.log",
+    name="G1ToolSlotsScripted",
+    log_file="g1_omnipicker_collection_scripted_tool_slots_lerobot.log",
     max_bytes=10 * 1024 * 1024,
     backup_count=5,
     console_level="INFO",
@@ -1150,7 +1137,7 @@ def _build_tool_segments(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="G1 OmniPicker 工具整理脚本化自动采集 → LeRobot v2.1 格式"
+        description="G1 OmniPicker 工具整理脚本化采集（可选 --slots）→ LeRobot v2.1"
     )
     parser.add_argument("--level", type=str, default="default")
     parser.add_argument("--task_config", type=str, default="../common/example.yaml")
@@ -1172,6 +1159,13 @@ def main() -> None:
     parser.add_argument(
         "--randomize", action="store_true",
         help="每个 episode 用 RNG 随机排列槽位（手电筒禁最右侧）；抓取按槽位左→右",
+    )
+    parser.add_argument(
+        "--slots",
+        type=str,
+        default=None,
+        help="要采集的槽位（0-based，逗号分隔，顺序=抓取顺序）。"
+             "例：0 或 0,2,4；不设=全部 5 槽（与原脚本一致）",
     )
     parser.add_argument(
         "--extra_slot_waypoints",
@@ -1315,9 +1309,10 @@ def main() -> None:
         default_joint_values[jn] = v
 
     print("=" * 62, flush=True)
-    print("  G1 OmniPicker 工具整理自动化采集", flush=True)
+    print("  G1 OmniPicker 工具整理自动化采集（可选槽位）", flush=True)
     print(f"  任务: {args.task}", flush=True)
     print(f"  工具顺序: {' → '.join(_TOOL_NAMES)}", flush=True)
+    print(f"  槽位筛选: {args.slots if args.slots else '全部 0..4'}", flush=True)
     print(f"  随机化: {'开' if args.randomize else '关'}", flush=True)
     print(f"  安全高度: {args.safe_z} m (base系z)", flush=True)
     print(f"  轮数: {num_episodes}", flush=True)
@@ -1591,28 +1586,46 @@ def main() -> None:
                             f"wp1={episode_tool_data[tool_idx]['waypoints'][1]['pos']}"
                         )
 
-                # 槽位5（最右）：抓取 wp0/wp1 再偏右
-                tool_at_slot5 = int(grasp_order[_SLOT5_IDX])
-                before_y = float(
-                    episode_tool_data[tool_at_slot5]["waypoints"][1]["pos"][1]
-                )
-                episode_tool_data[tool_at_slot5] = _bias_grasp_waypoints_y(
-                    episode_tool_data[tool_at_slot5], _SLOT5_GRASP_DY
-                )
-                after_y = float(
-                    episode_tool_data[tool_at_slot5]["waypoints"][1]["pos"][1]
-                )
-                orca_logger.info(
-                    f"[槽位5偏置] {_TOOL_NAMES[tool_at_slot5]} wp0/wp1 "
-                    f"y += {_SLOT5_GRASP_DY*1000:.1f}mm "
-                    f"(0.5×{_GRIPPER_OPEN_WIDTH_M*1000:.0f}mm 张开，偏右) "
-                    f"wp1.y {before_y:.4f}→{after_y:.4f}"
-                )
-                print(
-                    f"  [槽位5偏置] {_TOOL_NAMES[tool_at_slot5]} "
-                    f"抓取 y {_SLOT5_GRASP_DY*1000:+.1f}mm（偏右）",
-                    flush=True,
-                )
+                active_slots = list(range(5))
+                if args.slots:
+                    active_slots = [
+                        int(x.strip()) for x in args.slots.split(",") if x.strip()
+                    ]
+                    if not active_slots or any(s < 0 or s > 4 for s in active_slots):
+                        orca_logger.error(f"--slots 非法: {args.slots}（需 0..4）")
+                        return
+                    # grasp_order[s] = 该槽位上的 tool_idx（非随机时即 identity）
+                    grasp_order = [int(grasp_order[s]) for s in active_slots]
+                    pick_seq = " → ".join(_TOOL_NAMES[t] for t in grasp_order)
+                    orca_logger.info(f"[槽位筛选] slots={active_slots} → {pick_seq}")
+                    print(f"  槽位筛选: {active_slots} → {pick_seq}", flush=True)
+
+                # 槽位5（最右）：抓取 wp0/wp1 再偏右（本集未采该槽则跳过）
+                if _SLOT5_IDX in {int(slot_for_tool[t]) for t in grasp_order}:
+                    tool_at_slot5 = next(
+                        t for t in grasp_order
+                        if int(slot_for_tool[t]) == _SLOT5_IDX
+                    )
+                    before_y = float(
+                        episode_tool_data[tool_at_slot5]["waypoints"][1]["pos"][1]
+                    )
+                    episode_tool_data[tool_at_slot5] = _bias_grasp_waypoints_y(
+                        episode_tool_data[tool_at_slot5], _SLOT5_GRASP_DY
+                    )
+                    after_y = float(
+                        episode_tool_data[tool_at_slot5]["waypoints"][1]["pos"][1]
+                    )
+                    orca_logger.info(
+                        f"[槽位5偏置] {_TOOL_NAMES[tool_at_slot5]} wp0/wp1 "
+                        f"y += {_SLOT5_GRASP_DY*1000:.1f}mm "
+                        f"(0.5×{_GRIPPER_OPEN_WIDTH_M*1000:.0f}mm 张开，偏右) "
+                        f"wp1.y {before_y:.4f}→{after_y:.4f}"
+                    )
+                    print(
+                        f"  [槽位5偏置] {_TOOL_NAMES[tool_at_slot5]} "
+                        f"抓取 y {_SLOT5_GRASP_DY*1000:+.1f}mm（偏右）",
+                        flush=True,
+                    )
 
                 # 扳手@槽位4：wp0/wp1 略向左(+y)、向下(-z)，缓解跟踪够不着
                 if int(slot_for_tool.get(_WRENCH_IDX, -1)) == _SLOT4_IDX:
@@ -1645,7 +1658,7 @@ def main() -> None:
                 cum_steps = 0
                 last_release_quat = None
                 last_release_pos = None
-                for slot_idx, tool_idx in enumerate(grasp_order):
+                for slot_idx, tool_idx in zip(active_slots, grasp_order):
                     td = episode_tool_data[tool_idx]
                     tool_segs = _build_tool_segments(
                         wps=td["waypoints"],
@@ -1662,7 +1675,7 @@ def main() -> None:
                         steps_lift_after=args.steps_lift_after,
                     )
                     for s in tool_segs:
-                        if args.randomize:
+                        if args.randomize or args.slots:
                             prefix = (
                                 f"槽位{slot_idx + 1}-"
                                 f"工具{tool_idx + 1}({_TOOL_NAMES[tool_idx]})"

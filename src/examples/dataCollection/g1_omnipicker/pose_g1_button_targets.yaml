@@ -1,0 +1,32 @@
+# G1 OmniPicker 四色按钮末端位姿映射
+# 坐标系：G1 OmniPicker base_body（g1_omnipicker_body_link1）
+# 每个位姿为 my_waypoints1.yaml 中对应按钮4次采样的中位数（位置）+ 平均值归一化（姿态）
+
+gripper_open: -0.8561
+gripper_close: 2.0
+
+buttons:
+
+  red:
+    # 原始采样: WP1-4，中位数 pos=[0.8455,-0.0831,0.3616]
+    r_target_b: [0.8455, -0.0831, 0.3616]
+    r_quat_b: [-0.5260, -0.0975, 0.1728, 0.8271]
+    gripper_r: close
+
+  green:
+    # 原始采样: WP5-8，中位数 pos=[0.8487,-0.1591,0.2803]
+    r_target_b: [0.8487, -0.1591, 0.2803]
+    r_quat_b: [-0.4983, -0.0401, 0.1660, 0.8500]
+    gripper_r: close
+
+  yellow:
+    # 原始采样: WP9-12，中位数 pos=[0.8529,-0.3286,0.2725]
+    r_target_b: [0.8529, -0.3286, 0.2725]
+    r_quat_b: [-0.4420, 0.0216, 0.0454, 0.8956]
+    gripper_r: close
+
+  blue:
+    # 原始采样: WP13-16，中位数 pos=[0.8478,-0.2465,0.2332]
+    r_target_b: [0.8478, -0.2465, 0.2332]
+    r_quat_b: [-0.3887, 0.0984, 0.1183, 0.9084]
+    gripper_r: close

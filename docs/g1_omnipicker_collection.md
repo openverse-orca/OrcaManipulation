@@ -53,6 +53,37 @@ cd src/examples/dataCollection/g1_omnipicker
 
 ---
 
+## 路点标点（脚本化采集前置）
+
+脚本化采集使用遥操录好的右臂末端路点，而不是在线自动算接触点。请先在 OrcaLab 中加载 `g1_tool.json`，再在上一节的工作目录中录点。
+
+### 工具整理主路点
+
+左右 Grip 同时按下记录一点。推荐 6 点（`--guide tool6`）：接近、抓取闭爪、放箱经由 1、放箱经由 2、箱上方、箱上松开。
+
+```bash
+python record_g1_waypoints.py \
+    --task_config ../common/example.yaml \
+    --output my_waypoint_tool3.yaml \
+    --guide tool6
+```
+
+每个工具一份 YAML，默认文件名为 `my_waypoint_tool1.yaml` … `my_waypoint_tool5.yaml`。
+
+### 跨槽位补录
+
+当工具不在原生槽位时，用下面脚本补录该 `(槽位, 工具)` 的接近点 / 抓取点（wp0 / wp1）：
+
+```bash
+python record_slot_waypoints.py \
+    --task_config ../common/example.yaml \
+    --output my_slot_waypoints.yaml
+```
+
+脚本化采集会读取这些 YAML：主路点决定抓取与放箱轨迹，`my_slot_waypoints.yaml`（或 `*_reloc.yaml`）覆盖跨槽位抓取位姿。
+
+---
+
 ## 工具整理脚本化采集
 
 请先在 OrcaLab 中加载 `src/examples/dataCollection/g1_omnipicker/g1_tool.json`，再在上一节的工作目录中运行：
@@ -64,6 +95,20 @@ python g1_omnipicker_collection_scripted_tool_lerobot.py \
     --repo_id local/g1_omnipicker_tool \
     --num_episodes 20 \
     --fps 20
+```
+
+只抓指定槽位、或给放箱轨迹加扰动时，用同目录的另外两个入口：
+
+```bash
+python g1_omnipicker_collection_scripted_tool_slots_lerobot.py \
+    --task_config ../common/example.yaml \
+    --lerobot_out ~/datasets/g1_tool_slot01 \
+    --slots 0,1 --num_episodes 20 --fps 20
+
+python g1_omnipicker_collection_scripted_tool_perturb_lerobot.py \
+    --task_config ../common/example.yaml \
+    --lerobot_out ~/datasets/g1_tool_perturb \
+    --perturb --num_episodes 20 --fps 20
 ```
 
 断点续采时请追加 `--resume`。
