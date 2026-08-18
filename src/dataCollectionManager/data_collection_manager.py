@@ -75,9 +75,9 @@ class DataCollectionManager:
         self._saving = False
         self._mode = self.DataCollectionMode.TELECONTROL
         self._shutdown_requested = False
-        self._original_sigint = signal.getsignal(signal.SIGINT)
-        signal.signal(signal.SIGINT, self._sigint_handler)
-
+        # self._original_sigint = signal.getsignal(signal.SIGINT)
+        # signal.signal(signal.SIGINT, self._sigint_handler)
+        
     @property
     def save_video(self) -> bool:
         return self._save_video
@@ -265,7 +265,7 @@ class DataCollectionManager:
             orca_logger.error(f"Run error: {e}")
             raise
         finally:
-            signal.signal(signal.SIGINT, self._original_sigint)
+            # signal.signal(signal.SIGINT, self._original_sigint)
             orca_logger.info("Cleanup start")
             if self.data_storage is not None:
                 orca_logger.info("Clear data")
