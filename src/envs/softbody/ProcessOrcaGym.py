@@ -301,7 +301,7 @@ _RIGHT_PALM_SUFFIXES = ("arm_r_end_link", "zbr_base_link", "gripper_r_palm")
 _BASE_BODY_SUFFIXES = ("robot_holder1", "base_link")
 _EE_SITE_MARKERS = ("ee_center_site",)
 
-# tele conf 模块选择：关节名子串 → ``data_collection_cloth_tele --agent_name``
+# tele agent 识别：关节名子串 → agent 名
 _TELE_AGENT_JOINT_MARKERS: tuple[tuple[str, str], ...] = (
     ("idx21_arm_l_joint1", "g1_omnipicker"),
     ("J_arm_l_01", "openloong"),

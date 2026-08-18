@@ -760,19 +760,16 @@ def _pids_on_tcp_port(port: int) -> list[int]:
 
 
 def _kill_stale_cloth_processes(orcalink_port: int, pico_port: int) -> None:
-    from .ProcessXPBD import kill_pids_gracefully, pgrep
+    from .ProcessXPBD import kill_pids_gracefully
 
-    tele_pids = pgrep(r"data_collection_cloth_tele\.py")
     orca_pids = _pids_on_tcp_port(orcalink_port)
     pico_pids = _pids_on_tcp_port(pico_port)
 
-    if not (tele_pids or orca_pids or pico_pids):
+    if not (orca_pids or pico_pids):
         logger.info(f"无陈旧 cloth 联调进程（:{orcalink_port} / :{pico_port}）")
         return
 
     logger.info(f"清理陈旧 cloth 联调进程（OrcaLink :{orcalink_port}、Pico :{pico_port}）...")
-    if tele_pids:
-        kill_pids_gracefully("data_collection_cloth_tele", tele_pids)
     kill_pids_gracefully(f"orcalink(:{orcalink_port})", _pids_on_tcp_port(orcalink_port))
     kill_pids_gracefully(f"Pico(:{pico_port})", _pids_on_tcp_port(pico_port))
 
@@ -804,75 +801,297 @@ def _wait_port(port: int, label: str, max_sec: int) -> bool:
     return False
 
 
-def _run_with_tee(cmd: list[str], log_path: Path, cwd: Path) -> int:
-    import subprocess
+@dataclass
+class P23cParams:
+    """P23c 联调运行时参数（RunSim 组装，run_p23c 消费）。"""
 
-    with log_path.open("w", encoding="utf-8") as fh:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                text=True, bufsize=1, cwd=str(cwd))
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            sys.stdout.write(line)
-            sys.stdout.flush()
-            fh.write(line)
-        proc.wait()
-        return proc.returncode
+    repo_root: Path
+    base_dir: Path
+    log_dir: Path
+    level: str | None
+    agent: str
+    mjc_prefix: str
+    config_path: str
+    task_config: str | None = None
+    orcagym_port: int = 50051
+    pbd_grpc_port: int = 50263
+    orcalink_port: int = 50361
+    pico_port: int = 8001
+    wait_sec: int = 180
+    kill_stale: bool = True
+    auto_start_studio: bool = False
+    collect_data: bool = False
+    cloth_debug: bool = False
+    cloth_auto_start_orcalink: bool = False
+    cloth_auto_start_xpbd: bool = False
+    xpbd_ui: bool = True
+    cloth_sync_studio_vis: bool = True
+    cloth_no_realtime: bool = False
+    mujoco_viewer: bool = False
+    gripper_trace: bool = False
+    pico_delta_trace: bool = False
+    frame_skip: int = 20
+    time_step: float = 0.001
+    max_macro_frames: int | None = None
+    max_sec: int = 120
+    xpbd_auto_build: bool = True
+    xpbd_build_target: str = ""
+    agent_user_set: bool = False
+    config_explicit: bool = False
+    bench_json: str = ""
 
 
-def run_p23c(
-    *,
-    python: str,
-    tele_script: Path,
-    log_dir: Path,
-    repo_root: Path,
-    level: str | None,
-    agent: str,
-    mjc_prefix: str,
-    config_path: str,
-    orcagym_port: int,
-    pbd_grpc_port: int,
-    orcalink_port: int,
-    pico_port: int,
-    wait_sec: int,
-    kill_stale: bool,
-    auto_start_studio: bool,
+def _assemble_agent(
+    agent_name: str,
+    level: str,
     collect_data: bool,
-    cloth_debug: bool,
-    xpbd_ui: bool,
-    cloth_sync_studio_vis: bool,
-    cloth_no_realtime: bool,
-    max_macro_frames: int | None,
-    max_sec: int,
-    xpbd_auto_build: bool,
-    xpbd_build_target: str,
-    agent_user_set: bool,
-    config_explicit: bool,
-    mujoco_viewer: bool,
-    bench_json: str,
-) -> int:
-    """P23c 完整编排：清旧进程 → 等端口 → 扫描 MJCF → 准备 XPBD → 建 session → 导场景 → 启动 tele。"""
+    base_dir: Path,
+) -> tuple[Any, Any, dict[str, Any], Any]:
+    """组装机器人配置：加载 agent_conf + 建 data_storage + 算 default_joint_values + obs_callback。"""
+    import numpy as np
+
+    default_joint_values: dict[str, Any] = {}
+
+    if agent_name == "openloong":
+        from conf import openloong_conf as agent_conf
+
+        if not collect_data:
+            data_storage = None
+
+            def obs_callback(_env):
+                return {"bench_dummy": np.zeros(1, dtype=np.float32)}
+        else:
+            from dataStorage.openloong_data_storage import OpenLoongDataStorage
+
+            data_storage = OpenLoongDataStorage(
+                dataset_path=os.path.join(str(base_dir), "dataset", agent_name, level),
+                hdf5_path="record/proprio_stats.hdf5",
+            )
+            obs_callback = data_storage.obs_callback
+    elif agent_name == "tiangong2":
+        from conf import tiangong2_conf as agent_conf
+
+        if not collect_data:
+            data_storage = None
+
+            def obs_callback(_env):
+                return {"bench_dummy": np.zeros(1, dtype=np.float32)}
+        else:
+            from dataStorage.tiangong_data_storage import Tiangong2DataStorage
+
+            data_storage = Tiangong2DataStorage(
+                dataset_path=os.path.join(str(base_dir), "dataset", agent_name, level),
+                hdf5_path="record/proprio_stats.hdf5",
+            )
+            obs_callback = data_storage.obs_callback
+    elif agent_name == "g1_omnipicker":
+        from conf import g1_omnipicker_conf as agent_conf
+
+        # G1 尚无专用 HDF5 storage；OpenLoongDataStorage 夹爪 actuator 名与 G1 MJCF 不兼容
+        data_storage = None
+
+        def obs_callback(_env):
+            return {"bench_dummy": np.zeros(1, dtype=np.float32)}
+
+        if not collect_data:
+            logger.info("No-collect mode: skip dataset/HDF5")
+        else:
+            logger.warning(
+                "G1 cloth tele: 暂无 G1 dataset 存储，使用 bench_dummy obs（跳过 HDF5 采集）"
+            )
+    else:
+        raise ValueError(f"Invalid agent name: {agent_name}")
+
+    for joint_name, value in zip(agent_conf.l_arm["joint_names"], agent_conf.l_arm["neutral_joint_values"]):
+        default_joint_values[joint_name] = value
+    for joint_name, value in zip(agent_conf.r_arm["joint_names"], agent_conf.r_arm["neutral_joint_values"]):
+        default_joint_values[joint_name] = value
+
+    return agent_conf, data_storage, default_joint_values, obs_callback
+
+
+def _build_env(
+    params: P23cParams,
+    agent_conf: Any,
+    data_storage: Any,
+    default_joint_values: dict[str, Any],
+    obs_callback: Any,
+) -> tuple[Any, Any, Any, Any, Any, Any]:
+    """建 Pico 输入 + SceneManager + DataCollectionManager（MuJoCo env）+ env.reset + 可选 --gui。"""
+    import numpy as np
+
+    from dataCollectionManager.data_collection_manager import DataCollectionManager
+    from devices.abstract_device import PicoJoystickDevice
+    from orca_gym.devices.pico_joytsick import PicoJoystick
+    from scene.scene_manager import SceneManager
+    from scene.scene_config_util import load_scene_config
+
+    pico_joystick = PicoJoystick()
+    pico_joystick_device = PicoJoystickDevice(pico_joystick)
+
+    config = load_scene_config(params.base_dir, params.task_config)
+    scene_manager = SceneManager(f"localhost:{params.orcagym_port}", config=config)
+
+    if params.collect_data:
+        scene_manager.show_ui_message(1, "布料遥操采集，请操作手柄", "0xffff00", showtime=10)
+        scene_manager.get_scene_data("RunSim", "beginscene")
+
+    if data_storage is not None:
+        data_storage.set_video_path("video")
+
+    max_episode_steps = np.iinfo(np.int64).max
+    if params.max_macro_frames is not None:
+        max_episode_steps = max(1, int(params.max_macro_frames))
+    elif params.max_sec is not None:
+        max_episode_steps = int(params.max_sec / (params.time_step * params.frame_skip)) + 1
+
+    mjc_prefix = (params.mjc_prefix or "").strip() or None
+    if mjc_prefix is None and params.agent == "g1_omnipicker":
+        mjc_prefix = "g1_omnipicker"
+    elif mjc_prefix is None and params.level == "test20260508" and params.agent == "openloong":
+        mjc_prefix = "openloong_gripper_2f85_fix_base_usda"
+
+    data_collection_manager = DataCollectionManager(
+        agent_name=params.agent,
+        env_name="DataCollection",
+        entry_point="envs.dataCollection.dataCollection_env:DataCollectionEnv",
+        default_joint_values=default_joint_values,
+        obs_callback=obs_callback,
+        env_index=0,
+        max_episode_steps=max_episode_steps,
+        device=pico_joystick_device,
+        scene_manager=scene_manager,
+        data_storage=data_storage,
+        frame_skip=params.frame_skip,
+        time_step=params.time_step,
+        mjc_agent_prefix=mjc_prefix,
+    )
+    env = data_collection_manager.env
+    env.reset()
+
+    _gui_viewer = None
+    if params.mujoco_viewer:
+        import mujoco
+        import mujoco.viewer as mjv
+
+        m = env.gym._mjModel
+        d = env.gym._mjData
+        _gui_viewer = mjv.launch_passive(m, d)
+        positions = [
+            d.xpos[i].copy()
+            for i in range(1, m.nbody)
+            if "dummy" not in (mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, i) or "").lower()
+        ]
+        if positions:
+            arr = np.asarray(positions)
+            center = arr.mean(axis=0)
+            extent = float(np.linalg.norm(arr.max(axis=0) - arr.min(axis=0)))
+            with _gui_viewer.lock():
+                _gui_viewer.cam.lookat[:] = center
+                _gui_viewer.cam.distance = max(4.0, extent * 2.2)
+                _gui_viewer.cam.elevation = -25.0
+                _gui_viewer.cam.azimuth = 135.0
+                for g in range(6):
+                    _gui_viewer.opt.geomgroup[g] = True
+
+        def _sync_gui_viewer(_env):
+            if _gui_viewer is not None and _gui_viewer.is_running():
+                m = _env.gym._mjModel
+                d = _env.gym._mjData
+                mujoco.mj_forward(m, d)
+                _gui_viewer.sync()
+
+        data_collection_manager.add_post_step_callback(_sync_gui_viewer)
+
+    return data_collection_manager, env, pico_joystick, pico_joystick_device, scene_manager, config
+
+
+def _mount_cloth(
+    params: P23cParams,
+    env: Any,
+    data_collection_manager: Any,
+    pico_joystick: Any,
+    level: str,
+    agent: str,
+    mjc_prefix: str | None,
+) -> None:
+    """挂布料耦合：load config + apply overrides + start_cloth_coupling + 读 Pico 扳机。"""
+    cloth_cfg_path = params.config_path
+    if not cloth_cfg_path:
+        cloth_cfg_path = str(default_cloth_config_path())
+    cloth_config = load_cloth_config(cloth_cfg_path)
+    cloth_config = apply_runtime_cloth_overrides(
+        cloth_config,
+        level=level,
+        mjc_agent_prefix=mjc_prefix,
+    )
+    if agent == "openloong" and mjc_prefix:
+        sync = cloth_config.setdefault("orcagym", {}).setdefault("sync_mocap_from_gripper", {})
+        sync["enabled"] = True
+        sync["pairs"] = [
+            {"mocap_body": f"{mjc_prefix}_leftHandMocap", "palm_body": f"{mjc_prefix}_zbll_base_link"},
+            {"mocap_body": f"{mjc_prefix}_rightHandMocap", "palm_body": f"{mjc_prefix}_zbr_base_link"},
+        ]
+    if params.cloth_debug:
+        cloth_config.setdefault("debug", {})["debug_mode"] = True
+    else:
+        cloth_config.setdefault("debug", {})["debug_mode"] = False
+    cloth_config.setdefault("xpbd", {})["dg_traj"] = "pico"
+
+    mj_fs = int(cloth_config.get("mujoco", {}).get("frame_skip", 20))
+    if mj_fs != params.frame_skip:
+        logger.warning(
+            f"cloth frame_skip={mj_fs} 与 frame_skip={params.frame_skip} 不一致；建议对齐 dual_gripper_cross_full"
+        )
+
+    cloth_handle = start_cloth_coupling(
+        env,
+        cloth_config,
+        config_path=cloth_cfg_path,
+        log_dir=params.log_dir,
+        auto_start_orcalink=True if params.cloth_auto_start_orcalink else None,
+        auto_start_xpbd=True if params.cloth_auto_start_xpbd else None,
+    )
+    data_collection_manager.set_cloth_coupling(cloth_handle)
+    trigger_path = params.log_dir / "grip_triggers.txt"
+
+    def _read_pico_triggers() -> tuple[float, float]:
+        ks = pico_joystick.get_key_state()
+        if not ks:
+            return 0.0, 0.0
+        return (float(ks["leftHand"]["triggerValue"]), float(ks["rightHand"]["triggerValue"]))
+
+    cloth_handle.set_grip_trigger_provider(_read_pico_triggers, trigger_path)
+    data_collection_manager.set_skip_render(True)
+
+
+def run_p23c(params: P23cParams) -> int:
+    """P23c 完整编排：准备 → 组装 → 建 env → 挂耦合 → 装配 → 跑循环。"""
     from .common.paths import resolve_cloth_config_path
     from .ProcessOrcaGym import scan_tele_layout_from_mjcf
     from .ProcessStudio import ensure_ready, find_latest_studio_mjcf_path
     from .ProcessXPBD import DEFAULT_TARGET, cleanup, prepare
 
-    # 下游环境变量（tele / XPBD 读取）
+    # 下游环境变量
     os.environ["PYTHONPATH"] = (
-        f"{repo_root / 'OrcaGym'}:"
-        f"{repo_root / 'OrcaManipulation' / 'src'}:"
+        f"{params.repo_root / 'OrcaGym'}:"
+        f"{params.repo_root / 'OrcaManipulation' / 'src'}:"
         + os.environ.get("PYTHONPATH", "")
     )
     os.environ["PBD_GRPC_ADDRESS"] = (
-        os.environ.get("PBD_GRPC_ADDRESS", "").strip() or f"localhost:{pbd_grpc_port}"
+        os.environ.get("PBD_GRPC_ADDRESS", "").strip() or f"localhost:{params.pbd_grpc_port}"
     )
-    os.environ["XPBD_UI"] = "1" if xpbd_ui else "0"
+    os.environ["XPBD_UI"] = "1" if params.xpbd_ui else "0"
     os.environ.setdefault("PBDX_FORCE_GS_ONLY", "1")
     os.environ.setdefault("PBDX_SOLVER", "gs")
 
     # 关卡 / 配置解析
-    level = resolve_cloth_level(level)
+    level = resolve_cloth_level(params.level)
+    config_path = params.config_path
     if not config_path:
-        config_path = str(resolve_cloth_config_path(level=level, agent=agent, debug=cloth_debug))
+        config_path = str(resolve_cloth_config_path(level=level, agent=params.agent, debug=params.cloth_debug))
+    agent = params.agent
+    mjc_prefix = params.mjc_prefix
 
     # MJCF 扫描：检测 agent / mjc_prefix
     mjcf = find_latest_studio_mjcf_path()
@@ -883,35 +1102,33 @@ def run_p23c(
             detected_prefix = getattr(layout, "mjc_agent_prefix", "") or ""
         except Exception:
             detected_agent = detected_prefix = ""
-        if not agent_user_set:
+        if not params.agent_user_set:
             if detected_agent and detected_agent != agent:
                 logger.info(f"MJCF 扫描 tele_agent={detected_agent}（覆盖默认 openloong）")
                 agent, mjc_prefix = detected_agent, detected_prefix
-                if not config_explicit:
-                    config_path = str(resolve_cloth_config_path(level=level, agent=agent, debug=cloth_debug))
-                    logger.info(f"重解析 config={config_path}")
+                if not params.config_explicit:
+                    config_path = str(resolve_cloth_config_path(level=level, agent=agent, debug=params.cloth_debug))
         elif detected_prefix and detected_prefix != mjc_prefix:
-            logger.info(f"MJCF 扫描 mjc_prefix={detected_prefix}（覆盖默认 {mjc_prefix}）")
             mjc_prefix = detected_prefix
 
     os.environ["LEVEL"] = level or ""
     os.environ["AGENT"] = agent
     os.environ["MJC_PREFIX"] = mjc_prefix
     os.environ["CFG"] = config_path
-    os.environ["CLOTH_DEBUG"] = "1" if cloth_debug else "0"
+    os.environ["CLOTH_DEBUG"] = "1" if params.cloth_debug else "0"
 
-    if cloth_sync_studio_vis:
+    if params.cloth_sync_studio_vis:
         os.environ["CLOTH_SYNC_STUDIO_VIS"] = "1"
         os.environ.setdefault("CLOTH_STUDIO_VIS_STRIDE", "1")
-    if xpbd_ui:
+    if params.xpbd_ui:
         os.environ.pop("MJC_PBD_NO_UI", None)
         os.environ.setdefault("DISPLAY", ":0")
     else:
         os.environ["MJC_PBD_NO_UI"] = "1"
 
     # XPBD 二进制（清旧 + 准备）
-    if xpbd_auto_build:
-        target = xpbd_build_target or DEFAULT_TARGET
+    if params.xpbd_auto_build:
+        target = params.xpbd_build_target or DEFAULT_TARGET
         os.environ["XPBD_BUILD_TARGET"] = target
         cleanup(target)
         if prepare(target) != 0:
@@ -919,13 +1136,13 @@ def run_p23c(
             return 1
 
     # 进程 / 端口就绪
-    if kill_stale:
-        _kill_stale_cloth_processes(orcalink_port, pico_port)
+    if params.kill_stale:
+        _kill_stale_cloth_processes(params.orcalink_port, params.pico_port)
     else:
         logger.info("KILL_STALE=0：跳过陈旧进程清理")
-    ensure_ready(auto_start_studio)
-    _wait_port(orcagym_port, "OrcaGym", wait_sec)
-    _wait_port(pbd_grpc_port, "PBDRender", wait_sec)
+    ensure_ready(params.auto_start_studio)
+    _wait_port(params.orcagym_port, "OrcaGym", params.wait_sec)
+    _wait_port(params.pbd_grpc_port, "PBDRender", params.wait_sec)
 
     # 同步 XPBD session
     if mjcf is None or not mjcf.is_file():
@@ -937,41 +1154,62 @@ def run_p23c(
     )
     export_xpbd_scene_for_session(session_path)
 
-    # 启动 tele
-    tele_args = [
-        "--level", level or "",
-        "--agent_name", agent,
-        "--mjc-agent-prefix", mjc_prefix,
-        "--frame-skip", "20",
-        "--time-step", "0.001",
-        "--cloth-coupling",
-        "--cloth-config", config_path,
-    ]
-    if max_macro_frames is not None:
-        tele_args += ["--max-macro-frames", str(max_macro_frames)]
-    else:
-        tele_args += ["--max-episode-sec", str(max_sec)]
-    if cloth_debug:
-        tele_args += ["--cloth-debug"]
-    if not collect_data:
-        tele_args += ["--no-collect"]
-    if cloth_no_realtime:
-        tele_args += ["--no-realtime"]
-        os.environ["CLOTH_NO_REALTIME"] = "1"
-    if mujoco_viewer:
-        tele_args += ["--gui"]
-    if bench_json:
-        tele_args += ["--bench", bench_json]
+    # 组装 → 建 env → 挂耦合
+    agent_conf, data_storage, default_joint_values, obs_callback = _assemble_agent(
+        agent, level, params.collect_data, params.base_dir
+    )
+    data_collection_manager, env, pico_joystick, pico_joystick_device, scene_manager, config = _build_env(
+        params, agent_conf, data_storage, default_joint_values, obs_callback
+    )
+    _mount_cloth(params, env, data_collection_manager, pico_joystick, level, agent, mjc_prefix)
 
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_tag = f"p23c_{time.strftime('%Y%m%d_%H%M%S')}"
-    log_path = log_dir / f"{log_tag}_tele.log"
+    # 遥操装配 + 任务 + 跑循环
+    if params.bench_json:
+        data_collection_manager.enable_bench(params.bench_json)
 
-    logger.info("启动 data_collection_cloth_tele（OrcaLink + XPBD + bridge）...")
-    cmd = [python, str(tele_script), *tele_args]
-    ret = _run_with_tee(cmd, log_path, cwd=tele_script.parent)
-    logger.info(f"完成。日志: {log_path}")
-    return ret
+    setup_teleop_controllers(agent, data_collection_manager, env, agent_conf, pico_joystick_device)
+
+    from scene.scene_config_util import create_task, should_use_empty_task
+
+    data_collection_manager.set_task(create_task(env, config, params.task_config))
+    from controllers import controllers
+
+    controllers.add_task_status_pico_controller(
+        data_collection_manager, env, pico_joystick_device, agent_conf.base_body,
+    )
+
+    data_collection_manager.save_video = params.collect_data
+    if params.cloth_no_realtime:
+        data_collection_manager.set_realtime_sync(False)
+
+    if os.environ.get("CLOTH_CAMERA_MONITOR", "").strip().lower() in ("1", "true", "yes"):
+        for port in (7080, 7081, 7090, 7091):
+            data_collection_manager.add_monitor_port(port)
+
+    if params.pico_delta_trace:
+        from .ProcessPico import attach_pico_mjc_delta_tracer
+
+        delta_csv = params.log_dir / "pico_mjc_delta_trace.csv"
+        palm_l = palm_r = None
+        if agent == "g1_omnipicker":
+            palm_l, palm_r = "arm_l_end_link", "arm_r_end_link"
+        attach_pico_mjc_delta_tracer(
+            data_collection_manager,
+            env,
+            pico_joystick,
+            agent_conf.base_body,
+            agent_conf.l_arm,
+            agent_conf.r_arm,
+            delta_csv,
+            arm_controllers=data_collection_manager.controllers,
+            palm_l_body=palm_l,
+            palm_r_body=palm_r,
+        )
+
+    data_collection_manager.run(
+        max_episodes=1 if (params.max_macro_frames is not None or params.max_sec is not None) else None
+    )
+    return 0
 
 
 def setup_teleop_controllers(

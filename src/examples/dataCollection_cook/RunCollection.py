@@ -31,10 +31,6 @@ for _p in (
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-# 联调用 Python：默认用当前解释器（4-RunClothRobotP23c.sh 已 conda activate）。
-# 若显式设置 PYTHON，需为「单个可执行文件路径」（不支持 conda run 命令串）。
-PYTHON = os.environ.get("PYTHON", "").strip() or sys.executable
-
 
 def _env_or(name: str, default: str) -> str:
     return os.environ.get(name, "").strip() or default
@@ -70,37 +66,38 @@ def main() -> int:
     if os.environ.get("SHOW_UI", "").strip():          # 兼容旧变量
         cfg["XPBD_UI"] = os.environ["SHOW_UI"]
 
-    from envs.softbody.attach_coupling import run_p23c
+    from envs.softbody.attach_coupling import P23cParams, run_p23c
 
     return run_p23c(
-        python=PYTHON,
-        tele_script=TELE_DIR / "data_collection_cloth_tele.py",
-        log_dir=TELE_DIR / "logs",
-        repo_root=REPO_ROOT,
-        level=_env_or("LEVEL", _env_or("ORCA_LEVEL_NAME", "")) or None,
-        agent=_env_or("AGENT", "openloong"),
-        mjc_prefix=_env_or("MJC_PREFIX", "openloong_gripper_2f85_fix_base_usda"),
-        config_path=(os.environ.get("CFG") or os.environ.get("CLOTH_CONFIG") or "").strip(),
-        orcagym_port=int(_env_or("ORCAGYM_PORT", "50051")),
-        pbd_grpc_port=int(_env_or("PBD_GRPC_PORT", "50263")),
-        orcalink_port=int(_env_or("ORCALINK_PORT", "50361")),
-        pico_port=int(_env_or("PICO_PORT", "8001")),
-        wait_sec=int(_env_or("WAIT_SEC", "180")),
-        kill_stale=_env_or("KILL_STALE", "1") == "1" and not _env_flag("SKIP_STALE_KILL", False),
-        auto_start_studio=_env_flag("AUTO_START_STUDIO", False),
-        collect_data=cfg["COLLECT_DATA"] == "1",
-        cloth_debug=cfg["CLOTH_DEBUG"] == "1",
-        xpbd_ui=cfg["XPBD_UI"] == "1",
-        cloth_sync_studio_vis=cfg["CLOTH_SYNC_STUDIO_VIS"] == "1",
-        cloth_no_realtime=cfg["CLOTH_NO_REALTIME"] == "1",
-        max_macro_frames=int(cfg["MAX_MACRO_FRAMES"]) if cfg["MAX_MACRO_FRAMES"] else None,
-        max_sec=int(cfg["MAX_SEC"]),
-        xpbd_auto_build=_env_flag("XPBD_AUTO_BUILD", True),
-        xpbd_build_target=_env_or("XPBD_BUILD_TARGET", ""),
-        agent_user_set=bool(os.environ.get("AGENT", "").strip()),
-        config_explicit=bool(os.environ.get("CFG") or os.environ.get("CLOTH_CONFIG")),
-        mujoco_viewer=_env_or("MUJOCO_VIEWER", _env_or("GUI", "0")) == "1",
-        bench_json=os.environ.get("BENCH_JSON", "").strip(),
+        P23cParams(
+            repo_root=REPO_ROOT,
+            base_dir=TELE_DIR,
+            log_dir=TELE_DIR / "logs",
+            level=_env_or("LEVEL", _env_or("ORCA_LEVEL_NAME", "")) or None,
+            agent=_env_or("AGENT", "openloong"),
+            mjc_prefix=_env_or("MJC_PREFIX", "openloong_gripper_2f85_fix_base_usda"),
+            config_path=(os.environ.get("CFG") or os.environ.get("CLOTH_CONFIG") or "").strip(),
+            orcagym_port=int(_env_or("ORCAGYM_PORT", "50051")),
+            pbd_grpc_port=int(_env_or("PBD_GRPC_PORT", "50263")),
+            orcalink_port=int(_env_or("ORCALINK_PORT", "50361")),
+            pico_port=int(_env_or("PICO_PORT", "8001")),
+            wait_sec=int(_env_or("WAIT_SEC", "180")),
+            kill_stale=_env_or("KILL_STALE", "1") == "1" and not _env_flag("SKIP_STALE_KILL", False),
+            auto_start_studio=_env_flag("AUTO_START_STUDIO", False),
+            collect_data=cfg["COLLECT_DATA"] == "1",
+            cloth_debug=cfg["CLOTH_DEBUG"] == "1",
+            xpbd_ui=cfg["XPBD_UI"] == "1",
+            cloth_sync_studio_vis=cfg["CLOTH_SYNC_STUDIO_VIS"] == "1",
+            cloth_no_realtime=cfg["CLOTH_NO_REALTIME"] == "1",
+            max_macro_frames=int(cfg["MAX_MACRO_FRAMES"]) if cfg["MAX_MACRO_FRAMES"] else None,
+            max_sec=int(cfg["MAX_SEC"]),
+            xpbd_auto_build=_env_flag("XPBD_AUTO_BUILD", True),
+            xpbd_build_target=_env_or("XPBD_BUILD_TARGET", ""),
+            agent_user_set=bool(os.environ.get("AGENT", "").strip()),
+            config_explicit=bool(os.environ.get("CFG") or os.environ.get("CLOTH_CONFIG")),
+            mujoco_viewer=_env_or("MUJOCO_VIEWER", _env_or("GUI", "0")) == "1",
+            bench_json=os.environ.get("BENCH_JSON", "").strip(),
+        )
     )
 
 
