@@ -505,6 +505,7 @@ def main():
     env = manager.env
     manager.set_disable_actuator_group([agent_conf.positions_group])
     manager.set_task(EmptyTask(env))
+    manager.mode = DataCollectionManager.DataCollectionMode.INFERENCE
     # 必须在 DataCollectionManager 构造之后重新注册，否则 Ctrl+C 无效
     _install_interrupt_handlers()
 
@@ -775,12 +776,27 @@ def main():
                 f"[{'done' if completed else 'stopped'}] "
                 f"Episode {episode_index + 1} finished: steps={step}  truncated={truncated}"
             )
+            if completed:
+                scene_manager.show_ui_message(1, "推理完成", "0x00ff00", showtime=0)
+            else:
+                scene_manager.show_ui_message(1, "推理中断", "0xff8800", showtime=0)
             if _interrupt.is_set():
                 orca_logger.info("用户中断，结束评估")
                 break
 
         done_count = sum(1 for ok in episode_results if ok)
         orca_logger.info(f"全部 {len(episode_results)} 集完成: {done_count} 集完整跑完")
+
+        if not _interrupt.is_set():
+            scene_manager.show_ui_message(1, "推理完成", "0x00ff00", showtime=0)
+            orca_logger.info("推理完成，场景保持打开，按 Ctrl+C 退出")
+            print("推理完成，场景保持打开，按 Ctrl+C 退出", flush=True)
+            while not _interrupt.is_set():
+                if device is not None:
+                    action = manager.run_controllers()
+                    env.step(action)
+                env.render()
+                time.sleep(0.05)
 
     finally:
         if _shared_cameras:
