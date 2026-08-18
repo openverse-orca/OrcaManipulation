@@ -22,7 +22,7 @@ l_arm = {
         "left_wrist_pitch_joint",
         "left_wrist_yaw_joint",
     ],
-    "neutral_joint_values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "neutral_joint_values": [0.0, 0.127, 0.0, 1.5708, 0.0, 0.0, 0.0],
     "motors_names": [
         "left_shoulder_pitch_joint_mctrl",
         "left_shoulder_roll_joint_mctrl",

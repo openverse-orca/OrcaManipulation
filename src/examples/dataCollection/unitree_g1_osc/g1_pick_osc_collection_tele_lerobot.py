@@ -10,6 +10,7 @@
   - waist_yaw/roll/pitch 三关节用 JointHoldController 定死
   - 腿部 position 执行器保持 ctrl=0（站立位），不额外锁定
 """
+
 import argparse
 import os
 import sys
@@ -67,15 +68,20 @@ orca_logger = get_orca_logger(
 )
 
 # 双臂初始关节值（全零 = 站立位，手臂自然下垂）
-_L_INIT_JOINT_VALUES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+_L_INIT_JOINT_VALUES = [0.0, 0.127, 0.0, 1.5708, 0.0, 0.0, 0.0]
 _R_INIT_JOINT_VALUES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
 
 class JointHoldController:
     """将指定关节锁定在给定位置，每 episode 重置时重新读取 qpos。"""
 
-    def __init__(self, env, ctrl_name: list[str], init_positions: np.ndarray,
-                 joint_names: list[str]):
+    def __init__(
+        self,
+        env,
+        ctrl_name: list[str],
+        init_positions: np.ndarray,
+        joint_names: list[str],
+    ):
         self.env = env
         self.ctrl_name = ctrl_name
         self._joint_names = joint_names
@@ -130,7 +136,10 @@ def lock_waist_joints(manager: DataCollectionManager, env):
     joint_ids = [env.joint(n) for n in joint_names]
     qpos = env.query_joint_qpos(joint_ids)
     init_positions = np.array(
-        [float(np.asarray(qpos[j], dtype=np.float64).reshape(-1)[0]) for j in joint_ids],
+        [
+            float(np.asarray(qpos[j], dtype=np.float64).reshape(-1)[0])
+            for j in joint_ids
+        ],
         dtype=np.float32,
     )
 
@@ -149,7 +158,9 @@ def pin_waist_joints(env, agent_name: str) -> bool:
     """
     import mujoco
 
-    gym = getattr(env, "gym", None) or getattr(getattr(env, "unwrapped", env), "gym", None)
+    gym = getattr(env, "gym", None) or getattr(
+        getattr(env, "unwrapped", env), "gym", None
+    )
     if gym is None or not hasattr(gym, "_mjModel") or not hasattr(gym, "_mjData"):
         orca_logger.warning("[WAIST-PIN] env.gym._mjModel/_mjData unavailable")
         return False
@@ -202,7 +213,9 @@ def pin_floating_base(env, agent_name: str) -> bool:
     """
     import mujoco
 
-    gym = getattr(env, "gym", None) or getattr(getattr(env, "unwrapped", env), "gym", None)
+    gym = getattr(env, "gym", None) or getattr(
+        getattr(env, "unwrapped", env), "gym", None
+    )
     if gym is None or not hasattr(gym, "_mjModel") or not hasattr(gym, "_mjData"):
         orca_logger.warning("[BASE-PIN] env.gym._mjModel/_mjData unavailable")
         return False
@@ -216,20 +229,95 @@ def pin_floating_base(env, agent_name: str) -> bool:
 
     qadr = int(mj.jnt_qposadr[jid])
     dadr = int(mj.jnt_dofadr[jid])
-    q0 = np.array(md.qpos[qadr:qadr + 7], dtype=np.float64, copy=True)
+    q0 = np.array(md.qpos[qadr : qadr + 7], dtype=np.float64, copy=True)
     _orig_mj_step = gym.mj_step
 
     def _mj_step_pinned(nstep=1):
         n = int(nstep) if nstep is not None else 1
         for _ in range(max(n, 1)):
-            md.qpos[qadr:qadr + 7] = q0
-            md.qvel[dadr:dadr + 6] = 0.0
+            md.qpos[qadr : qadr + 7] = q0
+            md.qvel[dadr : dadr + 6] = 0.0
             _orig_mj_step(1)
-            md.qpos[qadr:qadr + 7] = q0
-            md.qvel[dadr:dadr + 6] = 0.0
+            md.qpos[qadr : qadr + 7] = q0
+            md.qvel[dadr : dadr + 6] = 0.0
         mujoco.mj_forward(mj, md)
 
     gym.mj_step = _mj_step_pinned
+    return True
+
+
+def pin_left_arm_joints(env, agent_name: str) -> bool:
+    """硬钉死左臂 7 个 motor 关节到 neutral_joint_values 目标位姿（横展不动）。
+
+    motor 是力矩执行器，ctrl 无法保持位置（ctrl=0 即无力矩），
+    必须用 mj_step 包装硬锁 qpos/qvel，同时把 motor ctrl 清零避免力矩干扰。
+    用途：左臂横展定死，让机器人靠近桌子，方便右臂拿放遥操。
+    """
+    import mujoco
+
+    gym = getattr(env, "gym", None) or getattr(
+        getattr(env, "unwrapped", env), "gym", None
+    )
+    if gym is None or not hasattr(gym, "_mjModel") or not hasattr(gym, "_mjData"):
+        orca_logger.warning("[LARM-PIN] env.gym._mjModel/_mjData unavailable")
+        return False
+
+    mj, md = gym._mjModel, gym._mjData
+    joint_names = g1_pick_osc_conf.l_arm["joint_names"]
+    motor_names = g1_pick_osc_conf.l_arm["motors_names"]
+    target_qpos = list(g1_pick_osc_conf.l_arm["neutral_joint_values"])
+
+    qadrs: list[int] = []
+    dadrs: list[int] = []
+    for short in joint_names:
+        full = f"{agent_name}_{short}"
+        jid = mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_JOINT, full)
+        if jid < 0:
+            orca_logger.warning(f"[LARM-PIN] joint not found: {full}")
+            return False
+        qadrs.append(int(mj.jnt_qposadr[jid]))
+        dadrs.append(int(mj.jnt_dofadr[jid]))
+
+    act_ids: list[int] = []
+    for short in motor_names:
+        full = f"{agent_name}_{short}"
+        aid = mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_ACTUATOR, full)
+        if aid < 0:
+            orca_logger.warning(f"[LARM-PIN] actuator not found: {full}")
+            return False
+        act_ids.append(aid)
+
+    # 先把 qpos/qvel 设为目标值并 forward，确保起始位姿正确
+    for qadr, q0 in zip(qadrs, target_qpos):
+        md.qpos[qadr] = float(q0)
+    for dadr in dadrs:
+        md.qvel[dadr] = 0.0
+    for aid in act_ids:
+        md.ctrl[aid] = 0.0
+    mujoco.mj_forward(mj, md)
+
+    _orig_mj_step = gym.mj_step
+
+    def _mj_step_larm_pinned(nstep=1):
+        n = int(nstep) if nstep is not None else 1
+        for _ in range(max(n, 1)):
+            for qadr, q0 in zip(qadrs, target_qpos):
+                md.qpos[qadr] = float(q0)
+            for dadr in dadrs:
+                md.qvel[dadr] = 0.0
+            for aid in act_ids:
+                md.ctrl[aid] = 0.0
+            _orig_mj_step(1)
+            for qadr, q0 in zip(qadrs, target_qpos):
+                md.qpos[qadr] = float(q0)
+            for dadr in dadrs:
+                md.qvel[dadr] = 0.0
+            for aid in act_ids:
+                md.ctrl[aid] = 0.0
+        mujoco.mj_forward(mj, md)
+
+    gym.mj_step = _mj_step_larm_pinned
+    orca_logger.info(f"[LARM-PIN] 已硬钉死左臂关节到目标位姿: {target_qpos}")
     return True
 
 
@@ -237,46 +325,65 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="G1 Pick OSC VR 遥操作采集 → LeRobot v2.1 格式"
     )
-    parser.add_argument("--level", type=str, default="default", help="场景的名称（默认 default）")
-    parser.add_argument("--task_config", default="../common/example.yaml", help="场景配置 YAML 文件名")
     parser.add_argument(
-        "--lerobot_out", default=None,
+        "--level", type=str, default="default", help="场景的名称（默认 default）"
+    )
+    parser.add_argument(
+        "--task_config", default="../common/example.yaml", help="场景配置 YAML 文件名"
+    )
+    parser.add_argument(
+        "--lerobot_out",
+        default=None,
         help="LeRobot 数据集输出根目录（--teleop_only 时可省略）",
     )
     parser.add_argument(
-        "--repo_id", default="local/g1_pick_osc",
+        "--repo_id",
+        default="local/g1_pick_osc",
         help="LeRobot repo_id（默认 local/g1_pick_osc）",
     )
     parser.add_argument(
-        "--task", default="g1 pick osc teleoperation",
+        "--task",
+        default="g1 pick osc teleoperation",
         help="任务语言描述（写入 LeRobot 元数据）",
     )
-    parser.add_argument("--fps", type=int, default=20, help="采集帧率（默认 20，wall 遥操作推荐）")
     parser.add_argument(
-        "--clock", choices=("sim", "wall"), default="wall",
+        "--fps", type=int, default=20, help="采集帧率（默认 20，wall 遥操作推荐）"
+    )
+    parser.add_argument(
+        "--clock",
+        choices=("sim", "wall"),
+        default="wall",
         help="采帧时钟源：wall 使用系统时钟，sim 使用仿真时钟",
     )
-    parser.add_argument("--resume", action="store_true", help="追加到已有数据集（断点续采）")
+    parser.add_argument(
+        "--resume", action="store_true", help="追加到已有数据集（断点续采）"
+    )
     parser.add_argument("--orcagym_addr", default="localhost:50051")
     parser.add_argument(
-        "--agent_name", default="unitree_humanoid_robot_1",
+        "--agent_name",
+        default="unitree_humanoid_robot_1",
         help="OrcaStudio 场景中的 agent 名称",
     )
     parser.add_argument(
-        "--cameras", default="head,wrist_r",
+        "--cameras",
+        default="head,wrist_r",
         help="启用的相机列表（逗号分隔，可选 head/wrist_r）；"
-             "设为 none/off/空 或配合 --teleop_only 可关闭相机。",
+        "设为 none/off/空 或配合 --teleop_only 可关闭相机。",
     )
     parser.add_argument(
-        "--cam_resolution", default="480x640",
+        "--cam_resolution",
+        default="480x640",
         help="采集帧 resize 目标分辨率 HxW（默认 480x640）。",
     )
     parser.add_argument(
-        "--camera_source", choices=("websocket", "mp4"), default="websocket",
+        "--camera_source",
+        choices=("websocket", "mp4"),
+        default="websocket",
         help="相机数据来源。websocket（默认）：内存流流式写盘；mp4：集末从服务端 MP4 提取帧。",
     )
     parser.add_argument(
-        "--teleop_only", action="store_true",
+        "--teleop_only",
+        action="store_true",
         help="仅遥操、不保存数据；关闭相机也可正常运行（跳过相机推流与 LeRobot 写盘）。",
     )
     args = parser.parse_args()
@@ -316,7 +423,9 @@ def main() -> None:
         _h, _w = (int(x) for x in args.cam_resolution.lower().split("x"))
         cam_hw_override = (_h, _w)
     except Exception:
-        orca_logger.warning(f"--cam_resolution 格式错误 '{args.cam_resolution}'，使用默认 {DEFAULT_HW}")
+        orca_logger.warning(
+            f"--cam_resolution 格式错误 '{args.cam_resolution}'，使用默认 {DEFAULT_HW}"
+        )
         cam_hw_override = DEFAULT_HW
 
     # ── 关节初值（双臂全零 = 站立位）─────────────────────────────────────────
@@ -343,7 +452,9 @@ def main() -> None:
 
     # ── 场景管理 ──────────────────────────────────────────────────────────────
     orca_logger.info("Creating scene manager")
-    with open(os.path.abspath(os.path.join(base_dir, args.task_config)), "r", encoding="utf-8") as f:
+    with open(
+        os.path.abspath(os.path.join(base_dir, args.task_config)), "r", encoding="utf-8"
+    ) as f:
         scene_config = load(f, Loader=Loader)
     # 覆盖 agent_joint_prefix 以匹配 G1 humanoid agent 名称
     if "data_collection" in scene_config:
@@ -352,7 +463,9 @@ def main() -> None:
         scene_config["data_collection"] = {"agent_joint_prefix": f"{args.agent_name}_"}
     scene_manager = SceneManager(args.orcagym_addr, config=scene_config)
 
-    script_name = os.path.basename(sys.argv[0]) if sys.argv else os.path.basename(__file__)
+    script_name = (
+        os.path.basename(sys.argv[0]) if sys.argv else os.path.basename(__file__)
+    )
     scene_manager.show_ui_message(
         1, "开始仿真程序，请按左右遥杆进行操作", "0xffff00", showtime=10
     )
@@ -362,9 +475,8 @@ def main() -> None:
     scratch_dir = os.path.join(base_dir, "_lerobot_scratch", "g1_pick_osc", args.level)
     storage = G1PickOscLeRobotStorage(dataset_path=scratch_dir)
 
-    _n_motor = (
-        len(g1_pick_osc_conf.gripper_l["actuator_names"])
-        + len(g1_pick_osc_conf.gripper_r["actuator_names"])
+    _n_motor = len(g1_pick_osc_conf.gripper_l["actuator_names"]) + len(
+        g1_pick_osc_conf.gripper_r["actuator_names"]
     )
 
     def _obs_callback_safe(env):
@@ -410,7 +522,8 @@ def main() -> None:
             # 夹爪控制（使用 reverse 版本，与 OmniPicker 一致）
             orca_logger.info("Adding left gripper controller")
             controllers.add_gripper_2f85_reverse_pico_controller(
-                manager, env,
+                manager,
+                env,
                 g1_pick_osc_conf.gripper_l,
                 g1_pick_osc_conf.base_body,
                 pico_device,
@@ -419,7 +532,8 @@ def main() -> None:
 
             orca_logger.info("Adding right gripper controller")
             controllers.add_gripper_2f85_reverse_pico_controller(
-                manager, env,
+                manager,
+                env,
                 g1_pick_osc_conf.gripper_r,
                 g1_pick_osc_conf.base_body,
                 pico_device,
@@ -428,18 +542,14 @@ def main() -> None:
 
             # 臂 OSC：与 ~/OrcaManipulation 一致，Pico Unity→MuJoCo 后直接 update_goal，
             # 不再叠加 OmniPicker 风格的 Rx(±π/2) / 轴重映射（否则无法手指朝下）。
-            orca_logger.info("Adding left arm OSC controller")
-            controllers.add_arm_osc_pico_controller(
-                manager, env,
-                g1_pick_osc_conf.l_arm,
-                g1_pick_osc_conf.base_body,
-                pico_device,
-                PicoJoystickKey.L_TRANSFORM,
-            )
+            # 左臂：横展定死（不绑 Pico），方便右臂靠近桌面拿放
+            orca_logger.info("Pinning left arm joints (horizontal, no OSC)")
+            pin_left_arm_joints(env, args.agent_name)
 
             orca_logger.info("Adding right arm OSC controller")
             controllers.add_arm_osc_pico_controller(
-                manager, env,
+                manager,
+                env,
                 g1_pick_osc_conf.r_arm,
                 g1_pick_osc_conf.base_body,
                 pico_device,
@@ -471,7 +581,10 @@ def main() -> None:
                 print(f"[场景] 机器人已就绪（nu={env.model.nu}），跳过相机", flush=True)
             else:
                 orca_logger.info(f"启用相机: {list(camera_map.keys())}")
-                print(f"[场景] 机器人已就绪（nu={env.model.nu}），加载相机推流...", flush=True)
+                print(
+                    f"[场景] 机器人已就绪（nu={env.model.nu}），加载相机推流...",
+                    flush=True,
+                )
                 if args.camera_source == "websocket":
                     os.makedirs(STREAM_TRIGGER_PATH, exist_ok=True)
                     env.begin_save_video(STREAM_TRIGGER_PATH)
@@ -480,9 +593,13 @@ def main() -> None:
                     cameras = bring_up_cameras(camera_map)
                     camera_map = {n: v for n, v in camera_map.items() if n in cameras}
                     if cameras:
-                        cam_hw = probe_camera_hw(cameras, camera_map, default_hw=cam_hw_override)
+                        cam_hw = probe_camera_hw(
+                            cameras, camera_map, default_hw=cam_hw_override
+                        )
                 else:
-                    orca_logger.info("mp4 模式：跳过 WebSocket 相机连接，每集 begin_save_video 按集触发")
+                    orca_logger.info(
+                        "mp4 模式：跳过 WebSocket 相机连接，每集 begin_save_video 按集触发"
+                    )
 
     except KeyboardInterrupt:
         orca_logger.info("初始化阶段收到 Ctrl+C，正在释放相机推流会话...")
@@ -511,7 +628,9 @@ def main() -> None:
     if teleop_only or _cameras_disabled:
         orca_logger.info("仅遥操模式：不初始化相机 / 不写 LeRobot")
     elif cameras:
-        orca_logger.info(f"相机分辨率 {cam_hw[0]}x{cam_hw[1]}，fps={args.fps}，路数={len(cameras)}")
+        orca_logger.info(
+            f"相机分辨率 {cam_hw[0]}x{cam_hw[1]}，fps={args.fps}，路数={len(cameras)}"
+        )
     else:
         orca_logger.info(
             f"mp4 模式，帧分辨率 {cam_hw[0]}x{cam_hw[1]}，fps={args.fps}，"
@@ -520,8 +639,8 @@ def main() -> None:
 
     # ── 后台状态监控线程 ───────────────────────────────────────────────────────
     _monitor_stop = threading.Event()
-    _discard_episode_event = threading.Event()   # 右Grip单按：丢弃本集并重置场景
-    _first_connect_notified = {"done": False}    # 首次连接手柄提示（一次性）
+    _discard_episode_event = threading.Event()  # 右Grip单按：丢弃本集并重置场景
+    _first_connect_notified = {"done": False}  # 首次连接手柄提示（一次性）
     _POLL_DT = 0.02
     _STATUS_EVERY = 2.0
     _GRIP_DEBOUNCE = 0.3  # 右Grip / 双Grip 触发防抖时间（秒）
@@ -594,13 +713,20 @@ def main() -> None:
                         if both_grip and not _both_grip_prev:
                             orca_logger.info(
                                 "[Grip] 左右Grip同按 → 终止"
-                                + ("遥操" if teleop_only else "全部采集，等待编码完成后退出")
+                                + (
+                                    "遥操"
+                                    if teleop_only
+                                    else "全部采集，等待编码完成后退出"
+                                )
                             )
                             try:
                                 scene_manager.show_ui_message(
                                     1,
-                                    "遥操终止..." if teleop_only else "采集终止，等待保存...",
-                                    "0xff4400", showtime=0,
+                                    "遥操终止..."
+                                    if teleop_only
+                                    else "采集终止，等待保存...",
+                                    "0xff4400",
+                                    showtime=0,
                                 )
                             except Exception:
                                 pass
@@ -614,8 +740,11 @@ def main() -> None:
                             try:
                                 scene_manager.show_ui_message(
                                     1,
-                                    "重置场景..." if teleop_only else "已丢弃，重置场景...",
-                                    "0xff0000", showtime=2,
+                                    "重置场景..."
+                                    if teleop_only
+                                    else "已丢弃，重置场景...",
+                                    "0xff0000",
+                                    showtime=2,
                                 )
                             except Exception:
                                 pass
@@ -660,9 +789,7 @@ def main() -> None:
     # 双臂均可用（不锁定 L_TRANSFORM）。
     _LOCKED_KEYS: set = set()  # 空集 = 双臂均可控
     _all_pico_keys = [k for k in pico_device.keys if k not in _LOCKED_KEYS]
-    _pre_start_keys = [
-        k for k in _all_pico_keys if k == PicoJoystickKey.L_GRIPBUTTON
-    ]
+    _pre_start_keys = [k for k in _all_pico_keys if k == PicoJoystickKey.L_GRIPBUTTON]
 
     def _gated_pico_update():
         tsc = manager.task_status_controller
@@ -695,7 +822,9 @@ def main() -> None:
     print("-" * 60, flush=True)
     if teleop_only:
         print("  【遥操流程（不保存）】", flush=True)
-        print("  注意：开始前机械臂保持静止，不响应手柄；开始后才随手柄运动", flush=True)
+        print(
+            "  注意：开始前机械臂保持静止，不响应手柄；开始后才随手柄运动", flush=True
+        )
         print("  开始遥操  →  轻按一下【左手柄 Grip 侧握键】", flush=True)
         print("  结束本轮  →  再轻按一下【左手柄 Grip 侧握键】（不写盘）", flush=True)
         print("  重置场景  →  轻按【右手柄 Grip 侧握键】", flush=True)
@@ -703,12 +832,24 @@ def main() -> None:
         ui_msg = "左Grip×1=开始 左Grip×2=结束 右Grip=重置 左右Grip同按=退出（不保存）"
     else:
         print("  【采集流程（强制保存）】", flush=True)
-        print("  注意：开始采集前机械臂保持静止，不响应手柄；开始后才随手柄运动", flush=True)
+        print(
+            "  注意：开始采集前机械臂保持静止，不响应手柄；开始后才随手柄运动",
+            flush=True,
+        )
         print("  第1步 开始采集  →  轻按一下【左手柄 Grip 侧握键】", flush=True)
         print("  第2步 遥操作完成后", flush=True)
-        print("         保 存   →  再轻按一下【左手柄 Grip 侧握键】（无论成功与否均保存）", flush=True)
-        print("  放弃本集        →  轻按【右手柄 Grip 侧握键】（丢弃数据，重置场景，继续采集）", flush=True)
-        print("  终止全部采集    →  【左右 Grip 同时按下】（等待编码保存后自动退出）", flush=True)
+        print(
+            "         保 存   →  再轻按一下【左手柄 Grip 侧握键】（无论成功与否均保存）",
+            flush=True,
+        )
+        print(
+            "  放弃本集        →  轻按【右手柄 Grip 侧握键】（丢弃数据，重置场景，继续采集）",
+            flush=True,
+        )
+        print(
+            "  终止全部采集    →  【左右 Grip 同时按下】（等待编码保存后自动退出）",
+            flush=True,
+        )
         print("  强制退出        →  终端按 Ctrl+C", flush=True)
         ui_msg = "左Grip×1=开始 左Grip×2=保存 右Grip=丢弃重置 左右Grip同按=退出"
     print("=" * 60, flush=True)
@@ -718,7 +859,8 @@ def main() -> None:
         scene_manager.show_ui_message(
             1,
             ui_msg,
-            "0x00ff00", showtime=0,
+            "0x00ff00",
+            showtime=0,
         )
     except Exception as ui_err:
         orca_logger.warning(f"VR 提示发送失败（可忽略）: {ui_err}")
@@ -762,7 +904,9 @@ def main() -> None:
                     print("\n[结束] 已停止遥操", flush=True)
                     break
 
-                orca_logger.info(f"[EP {_ep_idx}] 本轮结束，时长 {_ep_dur:.1f}s（未保存）")
+                orca_logger.info(
+                    f"[EP {_ep_idx}] 本轮结束，时长 {_ep_dur:.1f}s（未保存）"
+                )
                 print(f">>> 本轮结束（未保存），时长 {_ep_dur:.1f}s", flush=True)
         else:
             writer = LeRobotDatasetWriter.create(
@@ -808,14 +952,18 @@ def main() -> None:
                         video_started = True
 
                     _collecting_ep_no = writer.num_episodes + 1
-                    orca_logger.info(f"========== 正在采集第 {_collecting_ep_no} 集 ==========")
+                    orca_logger.info(
+                        f"========== 正在采集第 {_collecting_ep_no} 集 =========="
+                    )
                     print(
                         f"\n>>> 正在采集第 {_collecting_ep_no} 集（按左Grip开始，再按左Grip保存）",
                         flush=True,
                     )
 
                     _ep_t0 = time.perf_counter()
-                    _task_is_success, _rec_start, _rec_end, _init_qpos = manager.run_episode()
+                    _task_is_success, _rec_start, _rec_end, _init_qpos = (
+                        manager.run_episode()
+                    )
                     _ep_dur = time.perf_counter() - _ep_t0
 
                     _ep_frames = storage.buffered_frame_count
@@ -824,7 +972,9 @@ def main() -> None:
                         try:
                             env.stop_save_video()
                         except Exception as _stop_e:
-                            orca_logger.warning(f"stop_save_video 失败（可忽略）: {_stop_e}")
+                            orca_logger.warning(
+                                f"stop_save_video 失败（可忽略）: {_stop_e}"
+                            )
                         video_started = False
 
                     # 右Grip单按：丢弃本集并继续下一集
@@ -832,12 +982,16 @@ def main() -> None:
                         _discard_episode_event.clear()
                         manager._shutdown_requested = False  # noqa: SLF001
                         storage.clear_data()
-                        orca_logger.info(f"[EP {_ep_idx}] 已丢弃本集（右Grip），重置场景")
+                        orca_logger.info(
+                            f"[EP {_ep_idx}] 已丢弃本集（右Grip），重置场景"
+                        )
                         continue
 
                     # Ctrl+C 或 左右Grip同按：终止全部采集
                     if manager._shutdown_requested:  # noqa: SLF001
-                        orca_logger.info("结束采集（左右Grip/Ctrl+C），丢弃当前未保存集")
+                        orca_logger.info(
+                            "结束采集（左右Grip/Ctrl+C），丢弃当前未保存集"
+                        )
                         print("\n[结束采集] 已停止采集，丢弃当前未保存集", flush=True)
                         storage.clear_data()
                         break
