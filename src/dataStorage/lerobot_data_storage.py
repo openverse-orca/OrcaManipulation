@@ -115,11 +115,18 @@ def _import_video_encoding_manager():
 
 
 # ---------------------------------------------------------------------------
-# NVENC 流式视频编码（GPU av1_nvenc，内存 numpy → mp4，无 PNG 磁盘往返）
+# AV1 流式视频编码（硬件 nvenc 优先，自动回退软件，内存 numpy → mp4，无 PNG 磁盘往返）
 # ---------------------------------------------------------------------------
 
+# AV1 编码器优先级：硬件优先，软件回退。逐级尝试 add_stream + open，成功即用。
+_AV1_ENCODER_CANDIDATES = (
+    ("av1_nvenc", {"cq": "30", "preset": "p4"}),      # NVIDIA 硬件 AV1
+    ("libsvtav1", {"crf": "30", "preset": "8"}),      # SVT-AV1 软件编码
+    ("libaom-av1", {"crf": "30", "cpu-used": "6"}),   # libaom 软件编码（如可用）
+)
+
 class _CameraEncodeWorker:
-    """单相机后台编码线程：RGB numpy 帧 → av1_nvenc → mp4（PyAV）。"""
+    """单相机后台编码线程：RGB numpy 帧 → AV1（优先 av1_nvenc，自动回退软件）→ mp4（PyAV）。"""
 
     _FINISH = object()   # 正常结束哨兵
     _DISCARD = object()  # 丢弃哨兵
@@ -177,18 +184,36 @@ class _CameraEncodeWorker:
         self._thread.join()
 
     def _worker(self) -> None:
+        container = None
+        st = None
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            container = av.open(str(self._path), "w")
-            st = container.add_stream("av1_nvenc", rate=self._fps)
-            st.pix_fmt = "yuv420p"
-            st.width = self._width
-            st.height = self._height
-            st.options = {"cq": "30", "preset": "p4"}
-            # 显式打开编码器。PyAV 默认把 avcodec_open2 懒到首次 encode()，而这一步
-            # 实测独占 GIL 约 230ms/路：留到集内首帧会把整个主线程冻住（两路 ~430ms）。
-            # 提前 open 不产生任何 packet，因此不影响视频内容。
-            st.codec_context.open()
+            last_err = None
+            for enc_name, options in _AV1_ENCODER_CANDIDATES:
+                try:
+                    container = av.open(str(self._path), "w")
+                    st = container.add_stream(enc_name, rate=self._fps)
+                    st.pix_fmt = "yuv420p"
+                    st.width = self._width
+                    st.height = self._height
+                    st.options = options
+                    # 显式打开编码器。PyAV 默认把 avcodec_open2 懒到首次 encode()，而这一步
+                    # 实测独占 GIL 约 230ms/路：留到集内首帧会把整个主线程冻住（两路 ~430ms）。
+                    # 提前 open 不产生任何 packet，因此不影响视频内容。
+                    st.codec_context.open()
+                    break
+                except BaseException as e:
+                    last_err = e
+                    if container is not None:
+                        container.close()
+                        container = None
+                    st = None
+                    _log.warning(f"[NVENC] 编码器 {enc_name} 打开失败: {e!r}")
+            else:
+                tried = ", ".join(n for n, _ in _AV1_ENCODER_CANDIDATES)
+                raise RuntimeError(
+                    f"无可用 AV1 编码器（已尝试 {tried}），最后错误: {last_err!r}"
+                )
         except BaseException as e:
             self._open_error = repr(e)
             self._ready.set()
