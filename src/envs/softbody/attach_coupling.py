@@ -764,6 +764,225 @@ def _resolve_cloth_from_model(
     return cfg, scene_assets
 
 
+# openloong 夹爪精简：_geom_* 网格所在 link body（非 mesh 实体本身）
+_GRIPPER_GEOM_SUFFIX_TO_BODY_SUFFIX: dict[str, str] = {
+    "_geom_27": "zbr_base_link",
+    "_geom_65": "zbll_base_link",
+    "_geom_35": "r_left_spring_link",
+    "_geom_38": "r_left_follower",
+    "_geom_45": "r_right_spring_link",
+    "_geom_47": "r_right_follower",
+    "_geom_73": "l_left_spring_link",
+    "_geom_76": "l_left_follower",
+    "_geom_83": "l_right_spring_link",
+    "_geom_85": "l_right_follower",
+}
+
+
+def identify_xpbd_bodies(model: Any) -> list[str]:
+    """
+    扫描所有 ``{body}_XPBD_TRACK_GEOM`` 几何体，返回待跟踪刚体 body 名列表（字母序）。
+
+    仅包含 MJCF 中显式打标的 body；zbll/zbr 子树由 Studio ``EditorMjXpbdBodyTrackComponent`` 写入。
+    """
+    import mujoco
+
+    bodies: set[str] = set()
+    for gid in range(model.ngeom):
+        gname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, gid) or ""
+        if "_XPBD_TRACK_GEOM" not in gname:
+            continue
+        bid = int(model.geom_bodyid[gid])
+        bname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid) or ""
+        if bname and bname != "world":
+            bodies.add(bname)
+    result = sorted(bodies)
+    logger.info("identify_xpbd_bodies: found %d bodies", len(result))
+    return result
+
+
+def resolve_bodies_by_geom_suffixes(
+    model: Any,
+    geom_suffixes: list[str] | None = None,
+) -> list[str]:
+    """
+    按 MJCF geom 名后缀（如 ``_geom_47``）解析其挂载 body 全名。
+
+    用于夹爪精简：指尖/掌面/弹簧片 mesh 对应 link body，供 XPBD 白名单过滤。
+    """
+    import mujoco
+
+    suffixes = geom_suffixes or list(_GRIPPER_GEOM_SUFFIX_TO_BODY_SUFFIX.keys())
+    found: dict[str, str] = {}
+    for gid in range(model.ngeom):
+        gname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, gid) or ""
+        for suf in suffixes:
+            if suf not in gname:
+                continue
+            bid = int(model.geom_bodyid[gid])
+            bname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid) or ""
+            if bname and bname != "world":
+                found[suf] = bname
+    return [found[s] for s in suffixes if s in found]
+
+
+def resolve_bodies_by_name_substrings(
+    model: Any,
+    substrings: list[str] | None,
+) -> list[str]:
+    """
+    在 MJCF 全部 body 名中按子串白名单匹配（如 ``zbll_base_link``、``r_left_follower``）。
+
+    当 Studio 未写出 ``_XPBD_TRACK_GEOM`` 时，仍可将夹爪 link 纳入 ``rigid_body_map``。
+    """
+    import mujoco
+
+    if not substrings:
+        return []
+    found: list[str] = []
+    for bid in range(model.nbody):
+        bname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid) or ""
+        if not bname or bname == "world":
+            continue
+        if any(sub in bname for sub in substrings):
+            found.append(bname)
+    result = sorted(set(found))
+    if result:
+        logger.info("resolve_bodies_by_name_substrings: %d bodies", len(result))
+    return result
+
+
+def filter_body_names(
+    body_names: list[str],
+    *,
+    include_substrings: list[str] | None = None,
+    exclude_substrings: list[str] | None = None,
+    exclude_exact: list[str] | None = None,
+) -> list[str]:
+    """
+    按子串/精确名过滤扫描结果。
+
+    ``include_substrings`` 非空时，仅保留名称包含任一子串的 body（白名单，用于夹爪精简 + Cube）。
+    """
+    include_substrings = include_substrings or []
+    exclude_substrings = exclude_substrings or []
+    exclude_exact = set(exclude_exact or [])
+    out: list[str] = []
+    for name in body_names:
+        if name in exclude_exact:
+            continue
+        if any(sub in name for sub in exclude_substrings):
+            continue
+        if include_substrings and not any(sub in name for sub in include_substrings):
+            continue
+        out.append(name)
+    return out
+
+
+def bodies_to_rigid_body_map(
+    body_names: list[str],
+    *,
+    default_follow_mode: str = "kinematic",
+) -> list[dict[str, Any]]:
+    """将扫描得到的 body 名列表转为 ``rigid_body_map`` 行（body_track body-only，无 anchor SITE）。"""
+    rows: list[dict[str, Any]] = []
+    for name in body_names:
+        rows.append(
+            {
+                "logical_name": name,
+                "mjc_body_name": name,
+                "follow_mode": default_follow_mode,
+                "discovered": True,
+            }
+        )
+    return rows
+
+
+def _resolve_bodies_from_model(model: Any, config: dict[str, Any]) -> dict[str, Any]:
+    """
+    扫描 MJCF ``_XPBD_TRACK_GEOM``（scan-first），把扫描到的刚体写入 ``config["rigid_body_map"]``。
+
+    与 ``_resolve_cloth_from_model`` 对称：刚体识别统一收在编排器，``adapt_config_for_orcagym``
+    只做 OrcaLink 富化，不再重复扫描。
+    """
+    out = copy.deepcopy(config)
+    disc = out.setdefault("anchor_discovery", {})
+    disc["auto_from_model"] = False
+
+    auto = out.get("xpbd_auto_discover") or {}
+    map_key = str((out.get("orcagym") or {}).get("rigid_body_map_key", "rigid_body_map"))
+    if not auto.get("bodies", False):
+        # 不扫描：沿用配置既有刚体表（优先 map_key），等价旧 adapt_config_for_orcagym 的 else 分支
+        out["rigid_body_map"] = list(out.get(map_key) or out.get("rigid_body_map") or [])
+        return out
+
+    scanned = identify_xpbd_bodies(model)
+    scan_only = bool(auto.get("body_track_scan_only", True))
+    include_substrings: list[str] = []
+    if not scan_only:
+        include_substrings = list(auto.get("body_include_substrings") or [])
+        geom_suffixes = list(auto.get("body_include_geom_suffixes") or [])
+        if include_substrings:
+            by_name = resolve_bodies_by_name_substrings(model, include_substrings)
+            if by_name:
+                scanned = sorted(set(scanned) | set(by_name))
+        if geom_suffixes:
+            for bname in resolve_bodies_by_geom_suffixes(model, geom_suffixes):
+                short = bname.rsplit("_", 1)[-1] if "_" in bname else bname
+                if short not in include_substrings:
+                    include_substrings.append(short)
+    elif auto.get("body_include_substrings") or auto.get("body_include_geom_suffixes"):
+        logger.info(
+            "xpbd_auto_discover: body_track_scan_only=true, ignoring config body include lists"
+        )
+    if scan_only and not scanned:
+        logger.warning(
+            "xpbd_auto_discover: no _XPBD_TRACK_GEOM in MJCF; "
+            "add EditorMjXpbdBodyTrack on MjBody entities in Studio"
+        )
+    scanned = filter_body_names(
+        scanned,
+        include_substrings=include_substrings or None,
+        exclude_substrings=list(auto.get("body_exclude_substrings") or []),
+        exclude_exact=list(auto.get("body_exclude_exact") or []),
+    )
+    scanned_rows = bodies_to_rigid_body_map(
+        scanned,
+        default_follow_mode=str(auto.get("default_follow_mode", "kinematic")),
+    )
+    overrides_by_mjc = {
+        str(r.get("mjc_body_name")): r for r in (out.get(map_key) or []) if r.get("mjc_body_name")
+    }
+    rows_in: list[dict[str, Any]] = []
+    for row in scanned_rows:
+        mjc = str(row["mjc_body_name"])
+        merged = None
+        if mjc in overrides_by_mjc:
+            merged = dict(row)
+            merged.update(overrides_by_mjc[mjc])
+        else:
+            for key, ov in overrides_by_mjc.items():
+                if mjc == key or mjc.endswith(f"_{key}"):
+                    merged = dict(row)
+                    merged.update(ov)
+                    break
+        rows_in.append(merged if merged is not None else row)
+    scanned_set = {str(r["mjc_body_name"]) for r in rows_in}
+    for row in out.get(map_key) or []:
+        mjc = str(row.get("mjc_body_name", ""))
+        if mjc and mjc not in scanned_set:
+            rows_in.append(dict(row))
+
+    og = out.setdefault("orcagym", {})
+    pr = dict(og.get("pose_remap") or {})
+    pr["enabled"] = False
+    og["pose_remap"] = pr
+    logger.info("xpbd_auto_discover: %d bodies from MJCF scan", len(rows_in))
+
+    out["rigid_body_map"] = rows_in
+    return out
+
+
 def apply_runtime_cloth_overrides(
     config: dict[str, Any],
     *,
@@ -841,10 +1060,9 @@ def build_p2_session_from_mjcf(
     model = mujoco.MjModel.from_xml_path(str(mjcf_path.resolve()))
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
-    from modules.identify_xpbd_bodies import merge_body_discovery  # noqa: WPS433
 
     base_cfg, scene_assets = _resolve_cloth_from_model(model, data, base_cfg, cloth_data_dir=cloth_data_dir)
-    base_cfg = merge_body_discovery(base_cfg, model, data)
+    base_cfg = _resolve_bodies_from_model(model, base_cfg)
     adapted = adapt_config_for_orcagym(model, base_cfg, data=data)
     xpbd_session = build_xpbd_session_config(base_cfg, adapted, cloth_data_dir=cloth_data_dir)
     xpbd_session.setdefault("mujoco", {})["model_path"] = str(mjcf_path.resolve())
@@ -885,6 +1103,7 @@ def _connect_cloth_bridge(
     model, data = get_mujoco_model_data(env)
     if adapted is None:
         config, _ = _resolve_cloth_from_model(model, data, config, cloth_data_dir=cloth_data_dir)
+        config = _resolve_bodies_from_model(model, config)
         adapted = adapt_config_for_orcagym(model, config, data=data)
     publish_entries = load_body_map_ordered(model, adapted)
     errs = validate_orcagym_body_map(model, publish_entries)
@@ -978,6 +1197,7 @@ def start_cloth_coupling(
             "跳过: CLOTH_SKIP_MASKED_PREFAB_CHECK=1"
         )
 
+    cfg = _resolve_bodies_from_model(model, cfg)
     adapted = adapt_config_for_orcagym(model, cfg, data=data)
     xpbd_session_cfg = build_xpbd_session_config(base_cfg, adapted, cloth_data_dir=cloth_data_dir)
     mjcf_path = get_mujoco_xml_path(env)

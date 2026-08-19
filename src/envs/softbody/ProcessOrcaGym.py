@@ -70,120 +70,20 @@ def adapt_config_for_orcagym(
     data: mujoco.MjData | None = None,
 ) -> dict[str, Any]:
     """
-    按当前 Studio MJCF 构建 rigid_body_map；支持 ``xpbd_auto_discover`` 扫描优先。
+    按已扫描的 ``rigid_body_map`` 富化 OrcaLink 发布刚体（resolve body 名 + box_half_extents + publish 拆分）。
 
-    - ``xpbd_auto_discover.bodies=true``：默认 ``body_track_scan_only=true``，扫描 ``_XPBD_TRACK_GEOM``；
-      ``body_track_scan_only=false`` 时用 ``body_include_substrings`` 兜底；
-    - 扫描模式下强制 ``pose_remap.enabled=false``；
-    - body_track body-only：不要求 anchor SITE。
-
-    布片识别/资产解析已由编排器 ``_resolve_cloth_from_model`` 完成，本函数只做刚体映射。
+    刚体扫描已由编排器 ``_resolve_bodies_from_model`` 完成（scan-first）；本函数只做富化，不扫描。
     """
     cfg = copy.deepcopy(config)
-    disc = cfg.setdefault("anchor_discovery", {})
-    disc["auto_from_model"] = False
-
-    auto = cfg.get("xpbd_auto_discover") or {}
-    use_bodies = bool(auto.get("bodies", False))
-
-    map_key = str(cfg.get("orcagym", {}).get("rigid_body_map_key", "rigid_body_map"))
-    rows_in: list[dict[str, Any]] = []
-
-    primary_collision_half_extents = None
-    if use_bodies:
-        try:
-            from modules.identify_xpbd_bodies import (  # noqa: WPS433
-                bodies_to_rigid_body_map,
-                filter_body_names,
-                identify_xpbd_bodies,
-                resolve_bodies_by_name_substrings,
-            )
-            from modules.body_map import primary_collision_half_extents as _pce  # noqa: WPS433
-
-            primary_collision_half_extents = _pce
-        except ImportError as exc:
-            logger.warning("body auto discover skipped: %s", exc)
-            use_bodies = False
-
-    if use_bodies:
-        scanned = identify_xpbd_bodies(model)
-        scan_only = bool(auto.get("body_track_scan_only", True))
-        include_substrings: list[str] = []
-        if not scan_only:
-            include_substrings = list(auto.get("body_include_substrings") or [])
-            geom_suffixes = list(auto.get("body_include_geom_suffixes") or [])
-            if include_substrings:
-                by_name = resolve_bodies_by_name_substrings(model, include_substrings)
-                if by_name:
-                    scanned = sorted(set(scanned) | set(by_name))
-            if geom_suffixes:
-                try:
-                    from modules.identify_xpbd_bodies import resolve_bodies_by_geom_suffixes  # noqa: WPS433
-
-                    for bname in resolve_bodies_by_geom_suffixes(model, geom_suffixes):
-                        short = bname.rsplit("_", 1)[-1] if "_" in bname else bname
-                        if short not in include_substrings:
-                            include_substrings.append(short)
-                except ImportError as exc:
-                    logger.warning("geom suffix body resolve skipped: %s", exc)
-        elif auto.get("body_include_substrings") or auto.get("body_include_geom_suffixes"):
-            logger.info(
-                "xpbd_auto_discover: body_track_scan_only=true, ignoring config body include lists"
-            )
-        if scan_only and not scanned:
-            logger.warning(
-                "xpbd_auto_discover: no _XPBD_TRACK_GEOM in MJCF; "
-                "add EditorMjXpbdBodyTrack on MjBody entities in Studio"
-            )
-        scanned = filter_body_names(
-            scanned,
-            include_substrings=include_substrings or None,
-            exclude_substrings=list(auto.get("body_exclude_substrings") or []),
-            exclude_exact=list(auto.get("body_exclude_exact") or []),
-        )
-        scanned_rows = bodies_to_rigid_body_map(
-            scanned,
-            default_follow_mode=str(auto.get("default_follow_mode", "kinematic")),
-            logical_name_from_body=False,
-        )
-        overrides_by_mjc = {
-            str(r.get("mjc_body_name")): r for r in (cfg.get(map_key) or []) if r.get("mjc_body_name")
-        }
-        rows_in = []
-        for row in scanned_rows:
-            mjc = str(row["mjc_body_name"])
-            merged = None
-            if mjc in overrides_by_mjc:
-                merged = dict(row)
-                merged.update(overrides_by_mjc[mjc])
-            else:
-                for key, ov in overrides_by_mjc.items():
-                    if mjc == key or mjc.endswith(f"_{key}"):
-                        merged = dict(row)
-                        merged.update(ov)
-                        break
-            rows_in.append(merged if merged is not None else row)
-        scanned_set = {str(r["mjc_body_name"]) for r in rows_in}
-        for row in cfg.get(map_key) or []:
-            mjc = str(row.get("mjc_body_name", ""))
-            if mjc and mjc not in scanned_set:
-                rows_in.append(dict(row))
-        og = cfg.setdefault("orcagym", {})
-        pr = dict(og.get("pose_remap") or {})
-        pr["enabled"] = False
-        og["pose_remap"] = pr
-        logger.info("xpbd_auto_discover: %d bodies from MJCF scan", len(rows_in))
-    else:
-        rows_in = list(cfg.get(map_key) or cfg.get("rigid_body_map") or [])
+    rows_in = list(cfg.get("rigid_body_map") or [])
 
     rows_out: list[dict[str, Any]] = []
     publish_out: list[dict[str, Any]] = []
-    pce_fn = primary_collision_half_extents
-    if pce_fn is None:
-        try:
-            from modules.body_map import primary_collision_half_extents as pce_fn  # noqa: WPS433
-        except ImportError:
-            pce_fn = None
+    pce_fn = None
+    try:
+        from modules.body_map import primary_collision_half_extents as pce_fn  # noqa: WPS433
+    except ImportError:
+        pce_fn = None
     pce_data = data
     if pce_fn is not None and pce_data is None:
         pce_data = mujoco.MjData(model)
