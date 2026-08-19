@@ -2,9 +2,9 @@
     "version": "3.0",
     "viewport_camera_transform": {
         "position": [
-            19.827024459838867,
-            -24.126873016357422,
-            1.939070224761963
+            19.41097640991211,
+            -24.1414852142334,
+            2.444553852081299
         ],
         "rotation": [
             0.6506158590761653,
@@ -72,27 +72,6 @@
                             },
                             "asset_path": "assets/e071469a36d3c8aa/southgrid_competetion_2026/csg_robotcompetition_2026/props/blocks/block",
                             "entity_overrides": [
-                                {
-                                    "entity_path": [],
-                                    "group_overrids": [
-                                        {
-                                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
-                                            "type_index": 0,
-                                            "property_overrides": [
-                                                {
-                                                    "name": "translate.x",
-                                                    "value": 20.21137809753418,
-                                                    "type": "float"
-                                                },
-                                                {
-                                                    "name": "translate.y",
-                                                    "value": -24.175708770751953,
-                                                    "type": "float"
-                                                }
-                                            ]
-                                        }
-                                    ]
-                                },
                                 {
                                     "entity_path": [
                                         {
@@ -2379,20 +2358,20 @@
             ]
         },
         {
-            "name": "g1_pick_southgrid_usda_1",
-            "path": "/g1_pick_southgrid_usda_1",
+            "name": "humanoid_robot_1",
+            "path": "/humanoid_robot_1",
             "type": "AssetActor",
             "transform": {
                 "position": [
-                    20.212162017822266,
-                    -24.086931228637695,
-                    0.2026619017124176
+                    20.239904403686523,
+                    -24.101564407348633,
+                    0.19999997317790985
                 ],
                 "rotation": [
-                    0.9999641510661149,
+                    1.0,
                     0.0,
                     0.0,
-                    -0.008467383457975288
+                    0.0
                 ],
                 "scale": 1.0
             },
@@ -2407,335 +2386,13 @@
                             "property_overrides": [
                                 {
                                     "name": "translate.x",
-                                    "value": 20.212162017822266,
+                                    "value": 20.239904403686523,
                                     "type": "float"
                                 },
                                 {
                                     "name": "translate.y",
-                                    "value": -24.086931228637695,
+                                    "value": -24.101564407348633,
                                     "type": "float"
-                                },
-                                {
-                                    "name": "rotate.z",
-                                    "value": -0.9703023433685303,
-                                    "type": "float"
-                                }
-                            ]
-                        }
-                    ]
-                },
-                {
-                    "entity_path": [
-                        {
-                            "name": "mujoco_wrap",
-                            "index": 0
-                        },
-                        {
-                            "name": "rootPrim",
-                            "index": 0
-                        },
-                        {
-                            "name": "pelvis",
-                            "index": 0
-                        },
-                        {
-                            "name": "pelvis",
-                            "index": 0
-                        },
-                        {
-                            "name": "waist_yaw_link_rev_1_0",
-                            "index": 5
-                        },
-                        {
-                            "name": "waist_roll_link_rev_1_0",
-                            "index": 0
-                        },
-                        {
-                            "name": "torso_link_rev_1_0",
-                            "index": 0
-                        },
-                        {
-                            "name": "right_shoulder_pitch_link",
-                            "index": 8
-                        },
-                        {
-                            "name": "right_shoulder_roll_link",
-                            "index": 1
-                        },
-                        {
-                            "name": "right_shoulder_yaw_link",
-                            "index": 1
-                        },
-                        {
-                            "name": "right_elbow_link",
-                            "index": 1
-                        },
-                        {
-                            "name": "right_wrist_roll_link",
-                            "index": 1
-                        },
-                        {
-                            "name": "right_wrist_pitch_link",
-                            "index": 0
-                        },
-                        {
-                            "name": "right_wrist_yaw_link",
-                            "index": 0
-                        },
-                        {
-                            "name": "arm_r_end_link",
-                            "index": 2
-                        },
-                        {
-                            "name": "camera_right_body1",
-                            "index": 4
-                        },
-                        {
-                            "name": "camera_right_body2",
-                            "index": 1
-                        },
-                        {
-                            "name": "cameras",
-                            "index": 1
-                        },
-                        {
-                            "name": "camera_right",
-                            "index": 0
-                        }
-                    ],
-                    "group_overrids": [
-                        {
-                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
-                            "type_index": 0,
-                            "property_overrides": [
-                                {
-                                    "name": "NearClipDistance",
-                                    "value": 0.0010000000474974513,
-                                    "type": "float"
-                                },
-                                {
-                                    "name": "ColorCamera",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "UseNvEnc",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "IsRecording",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "ColorPort",
-                                    "value": 7080,
-                                    "type": "int"
-                                },
-                                {
-                                    "name": "Enable",
-                                    "value": true,
-                                    "type": "bool"
-                                }
-                            ]
-                        }
-                    ]
-                },
-                {
-                    "entity_path": [
-                        {
-                            "name": "mujoco_wrap",
-                            "index": 0
-                        },
-                        {
-                            "name": "rootPrim",
-                            "index": 0
-                        },
-                        {
-                            "name": "pelvis",
-                            "index": 0
-                        },
-                        {
-                            "name": "pelvis",
-                            "index": 0
-                        },
-                        {
-                            "name": "waist_yaw_link_rev_1_0",
-                            "index": 5
-                        },
-                        {
-                            "name": "waist_roll_link_rev_1_0",
-                            "index": 0
-                        },
-                        {
-                            "name": "torso_link_rev_1_0",
-                            "index": 0
-                        },
-                        {
-                            "name": "left_shoulder_pitch_link",
-                            "index": 2
-                        },
-                        {
-                            "name": "left_shoulder_roll_link",
-                            "index": 0
-                        },
-                        {
-                            "name": "left_shoulder_yaw_link",
-                            "index": 0
-                        },
-                        {
-                            "name": "left_elbow_link",
-                            "index": 0
-                        },
-                        {
-                            "name": "left_wrist_roll_link",
-                            "index": 2
-                        },
-                        {
-                            "name": "left_wrist_pitch_link",
-                            "index": 1
-                        },
-                        {
-                            "name": "left_wrist_yaw_link",
-                            "index": 2
-                        },
-                        {
-                            "name": "arm_l_end_link",
-                            "index": 1
-                        },
-                        {
-                            "name": "camera_left_body1",
-                            "index": 3
-                        },
-                        {
-                            "name": "camera_left_body2",
-                            "index": 1
-                        },
-                        {
-                            "name": "cameras",
-                            "index": 1
-                        },
-                        {
-                            "name": "camera_left",
-                            "index": 0
-                        }
-                    ],
-                    "group_overrids": [
-                        {
-                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
-                            "type_index": 0,
-                            "property_overrides": [
-                                {
-                                    "name": "NearClipDistance",
-                                    "value": 0.0010000000474974513,
-                                    "type": "float"
-                                },
-                                {
-                                    "name": "ColorCamera",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "UseNvEnc",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "IsRecording",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "Enable",
-                                    "value": true,
-                                    "type": "bool"
-                                }
-                            ]
-                        }
-                    ]
-                },
-                {
-                    "entity_path": [
-                        {
-                            "name": "mujoco_wrap",
-                            "index": 0
-                        },
-                        {
-                            "name": "rootPrim",
-                            "index": 0
-                        },
-                        {
-                            "name": "pelvis",
-                            "index": 0
-                        },
-                        {
-                            "name": "pelvis",
-                            "index": 0
-                        },
-                        {
-                            "name": "waist_yaw_link_rev_1_0",
-                            "index": 5
-                        },
-                        {
-                            "name": "waist_roll_link_rev_1_0",
-                            "index": 0
-                        },
-                        {
-                            "name": "torso_link_rev_1_0",
-                            "index": 0
-                        },
-                        {
-                            "name": "head_camera1",
-                            "index": 0
-                        },
-                        {
-                            "name": "head_camera2",
-                            "index": 1
-                        },
-                        {
-                            "name": "cameras",
-                            "index": 1
-                        },
-                        {
-                            "name": "head_cam",
-                            "index": 0
-                        }
-                    ],
-                    "group_overrids": [
-                        {
-                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
-                            "type_index": 0,
-                            "property_overrides": [
-                                {
-                                    "name": "NearClipDistance",
-                                    "value": 0.0010000000474974513,
-                                    "type": "float"
-                                },
-                                {
-                                    "name": "ColorCamera",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "UseNvEnc",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "IsRecording",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "ColorPort",
-                                    "value": 7090,
-                                    "type": "int"
-                                },
-                                {
-                                    "name": "Enable",
-                                    "value": true,
-                                    "type": "bool"
                                 }
                             ]
                         }
