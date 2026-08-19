@@ -33,7 +33,6 @@ from .base.paths import (
     ORCA_REPO_ROOT,
     SOFTBODY_DIR,
     SOFTBODY_DOMAIN_DIR,
-    SOFTBODY_SCRIPTS_DIR,
     default_cloth_config_path,
     level_lower_for_hint,
     qualified_vtk_asset_path,
@@ -299,6 +298,151 @@ def write_xpbd_runtime_session_config(
     return session_path
 
 
+def _export_xpbd_scene(config_path: Path, out_path: Path) -> Path:
+    """
+    从 session JSON + MJCF 导出 ``xpbd_scene_from_mjcf.json``（原 scripts/export_xpbd_scene_from_mjcf.py 归位）。
+
+    session 须含 ``rigid_body_map`` 与 ``mujoco.model_path`` 或 ``_cloth_robot_session_meta.source_mjcf``。
+    返回写出 JSON 的绝对路径。
+    """
+    import mujoco
+    import numpy as np
+
+    _ensure_domain_import_path()
+    from domain.anchor_tetrahedron import anchor_local_positions, anchor_site_names  # noqa: WPS433
+    from domain.body_map import load_body_map, validate_body_map  # noqa: WPS433
+    from domain.mjc_coords import orca_quat_to_yup_link_orientation, orca_vec_to_yup  # noqa: WPS433
+
+    config_path = config_path.resolve()
+    if not config_path.is_file():
+        raise FileNotFoundError(f"config not found: {config_path}")
+
+    cfg = json.loads(config_path.read_text(encoding="utf-8"))
+    config_dir = config_path.parent
+    meta = cfg.get("_cloth_robot_session_meta") or {}
+    src_mjcf = meta.get("source_mjcf")
+    mjcf_rel = cfg.get("mujoco", {}).get("model_path", "")
+    if src_mjcf and Path(src_mjcf).is_file():
+        mjcf_path = Path(src_mjcf).resolve()
+    elif mjcf_rel:
+        mjcf_path = (config_dir / mjcf_rel).resolve()
+    else:
+        raise RuntimeError("missing mujoco.model_path or _cloth_robot_session_meta.source_mjcf")
+
+    model = mujoco.MjModel.from_xml_path(str(mjcf_path))
+    data = mujoco.MjData(model)
+    mujoco.mj_resetData(model, data)
+    mujoco.mj_forward(model, data)
+
+    entries_by_mjc = {e.mjc_body_name: e for e in load_body_map(model, cfg)}
+    map_rows = cfg.get("rigid_body_map", [])
+    if not map_rows:
+        raise RuntimeError("rigid_body_map is empty")
+
+    all_entries = [entries_by_mjc[row["mjc_body_name"]] for row in map_rows]
+    body_only = body_track_position_packet_body_only(cfg)
+    if body_only:
+        for row in map_rows:
+            mjc_name = row["mjc_body_name"]
+            if mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, mjc_name) < 0:
+                raise RuntimeError(f"body missing {mjc_name}")
+    else:
+        val_errs = validate_body_map(model, all_entries)
+        if val_errs:
+            raise RuntimeError("body_map validation: " + "; ".join(val_errs))
+
+    def half_extents_mjc_to_yup(hx: float, hy: float, hz: float) -> list[float]:
+        yx, yy, yz = orca_vec_to_yup(hx, hy, hz)
+        return [abs(yx), abs(yy), abs(yz)]
+
+    bodies_out: list[dict] = []
+    for body_index, row in enumerate(map_rows):
+        mjc_name = row["mjc_body_name"]
+        entry = entries_by_mjc[mjc_name]
+        bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, mjc_name)
+        follow = row.get("follow_mode", entry.follow_mode)
+        mj_mass = float(model.body_mass[bid])
+        mass_kg = 0.0 if follow == "kinematic" else mj_mass
+
+        hx, hy, hz = entry.box_half_extents
+        half_yup = half_extents_mjc_to_yup(hx, hy, hz)
+
+        xpos = data.xpos[bid].astype(np.float64)
+        xquat = data.xquat[bid].astype(np.float64)
+        center_yup = orca_vec_to_yup(float(xpos[0]), float(xpos[1]), float(xpos[2]))
+        quat_yup = orca_quat_to_yup_link_orientation(
+            float(xquat[0]), float(xquat[1]), float(xquat[2]), float(xquat[3])
+        )
+
+        anchors_out: list[dict] = []
+        anchor_sites = list(entry.anchor_sites)
+        if body_only and len(anchor_sites) < 4:
+            anchor_sites = anchor_site_names(mjc_name)
+        for ai, sname in enumerate(anchor_sites):
+            sid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, sname)
+            if sid >= 0:
+                lp = model.site_pos[sid].astype(np.float64)
+                local_mjc = [float(lp[0]), float(lp[1]), float(lp[2])]
+            elif body_only:
+                _, verts = anchor_local_positions(hx, hy, hz)
+                vx, vy, vz = verts[ai]
+                local_mjc = [float(vx), float(vy), float(vz)]
+            else:
+                raise RuntimeError(f"site missing {sname}")
+            local_yup = list(orca_vec_to_yup(local_mjc[0], local_mjc[1], local_mjc[2]))
+            anchors_out.append(
+                {
+                    "index": ai,
+                    "site_name": sname,
+                    "local_pos_mjc": local_mjc,
+                    "local_pos_yup": local_yup,
+                }
+            )
+
+        if len(anchors_out) != 4:
+            raise RuntimeError(f"{mjc_name} expected 4 anchors, got {len(anchors_out)}")
+
+        bodies_out.append(
+            {
+                "body_index": body_index,
+                "logical_name": mjc_name,
+                "mjc_body_name": mjc_name,
+                "follow_mode": follow,
+                "mass_kg": mass_kg,
+                "mass_mjcf_kg": mj_mass,
+                "box_half_extents_mjc": [hx, hy, hz],
+                "box_half_extents_yup": list(half_yup),
+                "center_mjc": [float(xpos[0]), float(xpos[1]), float(xpos[2])],
+                "center_yup": list(center_yup),
+                "quat_wxyz_mjc": [
+                    float(xquat[0]),
+                    float(xquat[1]),
+                    float(xquat[2]),
+                    float(xquat[3]),
+                ],
+                "quat_wxyz_yup": list(quat_yup),
+                "anchors": anchors_out,
+            }
+        )
+
+    doc = {
+        "schema_version": 1,
+        "coord_system_sim": "yup",
+        "coord_system_mjcf": "zup",
+        "exported_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "source_config": str(config_path),
+        "source_mjcf": str(mjcf_path),
+        "body_count": len(bodies_out),
+        "bodies": bodies_out,
+    }
+
+    out_path = out_path.resolve()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+    logger.info("exported xpbd scene: %s (%d bodies)", out_path, len(bodies_out))
+    return out_path
+
+
 def export_xpbd_scene_for_session(
     session_path: Path,
     *,
@@ -306,43 +450,25 @@ def export_xpbd_scene_for_session(
     cloth_data_dir: Path | None = None,
 ) -> Path:
     """
-    调用 ``softbody/scripts/export_xpbd_scene_from_mjcf.py``，从 session JSON 导出
-    ``xpbd_scene_from_mjcf.json``（与 XPBD ``mjc_pbd_bridge`` 自动导出同源）。
+    从 session JSON 导出 ``xpbd_scene_from_mjcf.json``（逻辑已归位到 ``_export_xpbd_scene``，不再 subprocess）。
 
     session 须含 ``rigid_body_map`` 与 ``mujoco.model_path`` 或 ``_cloth_robot_session_meta.source_mjcf``。
     返回写出 JSON 的绝对路径。
     """
-    import subprocess
-    import sys
-
     session_path = session_path.resolve()
     if not session_path.is_file():
         raise FileNotFoundError(f"session config not found: {session_path}")
 
-    export_script = SOFTBODY_SCRIPTS_DIR / "export_xpbd_scene_from_mjcf.py"
-    if not export_script.is_file():
-        raise FileNotFoundError(f"export script not found: {export_script}")
-
-    cmd = [sys.executable, str(export_script), "--config", str(session_path)]
     if out_path is not None:
-        cmd.extend(["--out", str(out_path.resolve())])
-
-    logger.info("export xpbd scene: %s", " ".join(cmd))
-    data_dir = resolve_cloth_data_dir(cloth_data_dir)
-    proc = subprocess.run(cmd, cwd=str(data_dir), capture_output=True, text=True)
-    if proc.returncode != 0:
-        detail = (proc.stdout or "") + (proc.stderr or "")
-        raise RuntimeError(f"export_xpbd_scene_from_mjcf failed (rc={proc.returncode}): {detail}")
-
-    if out_path is not None:
-        return out_path.resolve()
+        return _export_xpbd_scene(session_path, out_path.resolve())
 
     cfg = json.loads(session_path.read_text(encoding="utf-8"))
     dbg = cfg.get("debug", {})
     dbg_dir = Path(str(dbg.get("debug_log_dir", _XPBD_DEBUG_LOG)))
+    data_dir = resolve_cloth_data_dir(cloth_data_dir)
     if not dbg_dir.is_absolute():
         dbg_dir = (data_dir / dbg_dir).resolve()
-    return (dbg_dir / "xpbd_scene_from_mjcf.json").resolve()
+    return _export_xpbd_scene(session_path, (dbg_dir / "xpbd_scene_from_mjcf.json").resolve())
 
 
 def cloth_scene_assets_config_path(cloth_data_dir: Path | None = None) -> Path:
@@ -1590,7 +1716,7 @@ def start_cloth_coupling(
             logger.info("XPBD scene exported: %s", scene_path)
         except Exception as exc:
             ctx.process_manager.cleanup_all()
-            raise RuntimeError(f"export_xpbd_scene_from_mjcf 失败: {exc}") from exc
+            raise RuntimeError(f"XPBD 场景导出失败: {exc}") from exc
 
     logger.info("=" * 60)
     logger.info("布料 MjcPBD 耦合挂载（OrcaGym → OrcaLink → XPBD → Studio）")

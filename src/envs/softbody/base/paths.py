@@ -10,10 +10,9 @@ PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent.parent
 ORCA_REPO_ROOT: Path = PROJECT_ROOT.parent.parent
 XPBD_ROOT: Path = ORCA_REPO_ROOT / "XPBD"
 
-# 迁入 softbody 的布料模块/脚本本地副本
+# 迁入 softbody 的布料模块本地副本
 SOFTBODY_DIR: Path = Path(__file__).resolve().parent.parent  # src/envs/softbody
 SOFTBODY_DOMAIN_DIR: Path = SOFTBODY_DIR / "domain"
-SOFTBODY_SCRIPTS_DIR: Path = SOFTBODY_DIR / "scripts"
 
 CLOTH_CONFIG_BASENAME = "cloth_sim_config.json"
 
