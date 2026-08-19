@@ -284,5 +284,18 @@
     "scan_levels_glob": "{studio_project_rel}/Levels/*"
   },
   "xpbd_default_target": "dual_gripper_g1_cook2",
-  "xpbd_default_version": "26.8.1.9"
+  "xpbd_default_version": "26.8.1.9",
+  "run": {
+    "level": "Life_Kitchen_01_with_utree",
+    "agent": "g1_omnipicker",
+    "mjc_prefix": "g1_cook2_usda",
+    "collect_data": false,
+    "xpbd_ui": true,
+    "cloth_sync_studio_vis": true,
+    "cloth_no_realtime": false,
+    "max_macro_frames": 20000,
+    "max_sec": 120,
+    "pbd_grpc_sbt_rotation": "zup_yflip",
+    "mjc_pbd_cloth_scale": 0.05
+  }
 }
