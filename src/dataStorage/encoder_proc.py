@@ -130,8 +130,15 @@ class FrameRing:
 
 
 # ---------------------------------------------------------------------------
-# 子进程内：单相机 NVENC 线程
+# 子进程内：单相机 AV1 编码线程（硬件 nvenc 优先，自动回退软件）
 # ---------------------------------------------------------------------------
+
+# AV1 编码器优先级：硬件优先，软件回退。逐级尝试 add_stream + open，成功即用。
+_AV1_ENCODER_CANDIDATES = (
+    ("av1_nvenc", {"cq": "30", "preset": "p4"}),      # NVIDIA 硬件 AV1
+    ("libsvtav1", {"crf": "30", "preset": "8"}),      # SVT-AV1 软件编码
+    ("libaom-av1", {"crf": "30", "cpu-used": "6"}),   # libaom 软件编码（如可用）
+)
 
 # 子进程内串行化 NVENC 会话创建，避免多相机同时 avcodec_open2 触发 libnvcuvid segfault
 _NVENC_OPEN_LOCK = threading.Lock()
@@ -208,13 +215,33 @@ class _ChildNvencWorker:
         st = None
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
+            last_err = None
             with self._open_lock:
-                container = av.open(str(self._path), "w")
-                st = container.add_stream("av1_nvenc", rate=self._fps)
-                st.pix_fmt = "yuv420p"
-                st.width = self._width
-                st.height = self._height
-                st.options = {"cq": "30", "preset": "p4"}
+                for enc_name, options in _AV1_ENCODER_CANDIDATES:
+                    try:
+                        container = av.open(str(self._path), "w")
+                        st = container.add_stream(enc_name, rate=self._fps)
+                        st.pix_fmt = "yuv420p"
+                        st.width = self._width
+                        st.height = self._height
+                        st.options = options
+                        _log.info(f"[ENC-PROC] {self._path.stem} 使用编码器: {enc_name}")
+                        break
+                    except Exception as e:
+                        last_err = e
+                        if container is not None:
+                            try:
+                                container.close()
+                            except Exception:
+                                pass
+                            container = None
+                        st = None
+                        _log.warning(f"[ENC-PROC] 编码器 {enc_name} 打开失败: {e!r}")
+                else:
+                    tried = ", ".join(n for n, _ in _AV1_ENCODER_CANDIDATES)
+                    raise RuntimeError(
+                        f"无可用 AV1 编码器（已尝试 {tried}），最后错误: {last_err!r}"
+                    )
             self._ready.set()
         except Exception as e:
             self._open_error = f"NVENC open failed {self._path}: {e}"
@@ -627,22 +654,35 @@ def encoder_worker_main(
                     container = None
                     try:
                         with _NVENC_OPEN_LOCK:
-                            container = _av.open(str(tmp), "w")
-                            st = container.add_stream("av1_nvenc", rate=f)
-                            st.pix_fmt = "yuv420p"
-                            st.width = w_
-                            st.height = h
-                            st.options = {"cq": "30", "preset": "p4"}
-                            av_frame = _av.VideoFrame.from_ndarray(dummy, format="rgb24")
-                            av_frame.pts = 0
-                            pkt = st.encode(av_frame)
-                            if pkt:
-                                container.mux(pkt)
-                            pkt = st.encode()
-                            if pkt:
-                                container.mux(pkt)
-                            container.close()
-                            container = None
+                            for enc_name, options in _AV1_ENCODER_CANDIDATES:
+                                try:
+                                    container = _av.open(str(tmp), "w")
+                                    st = container.add_stream(enc_name, rate=f)
+                                    st.pix_fmt = "yuv420p"
+                                    st.width = w_
+                                    st.height = h
+                                    st.options = options
+                                    av_frame = _av.VideoFrame.from_ndarray(dummy, format="rgb24")
+                                    av_frame.pts = 0
+                                    pkt = st.encode(av_frame)
+                                    if pkt:
+                                        container.mux(pkt)
+                                    pkt = st.encode()
+                                    if pkt:
+                                        container.mux(pkt)
+                                    container.close()
+                                    container = None
+                                    break
+                                except Exception as e:
+                                    _log.warning(f"[ENC-PROC] prewarm {ck} 编码器 {enc_name} 失败: {e}")
+                                    if container is not None:
+                                        try:
+                                            container.close()
+                                        except Exception:
+                                            pass
+                                        container = None
+                            else:
+                                _log.warning(f"[ENC-PROC] prewarm {ck} 无可用 AV1 编码器")
                     except Exception as e:
                         _log.warning(f"[ENC-PROC] prewarm {ck} 失败: {e}")
                     finally:

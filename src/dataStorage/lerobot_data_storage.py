@@ -53,6 +53,7 @@ from dataStorage.lerobot_camera import (
 from dataStorage.openloong_data_storage import OpenLoongDataStorage
 from dataStorage.tiangong_data_storage import Tiangong2DataStorage
 from dataStorage.g1_omnipicker_data_storage import G1OmniPickerDataStorage
+from dataStorage.encoder_proc import _AV1_ENCODER_CANDIDATES
 
 if TYPE_CHECKING:
     from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
@@ -117,13 +118,6 @@ def _import_video_encoding_manager():
 # ---------------------------------------------------------------------------
 # AV1 流式视频编码（硬件 nvenc 优先，自动回退软件，内存 numpy → mp4，无 PNG 磁盘往返）
 # ---------------------------------------------------------------------------
-
-# AV1 编码器优先级：硬件优先，软件回退。逐级尝试 add_stream + open，成功即用。
-_AV1_ENCODER_CANDIDATES = (
-    ("av1_nvenc", {"cq": "30", "preset": "p4"}),      # NVIDIA 硬件 AV1
-    ("libsvtav1", {"crf": "30", "preset": "8"}),      # SVT-AV1 软件编码
-    ("libaom-av1", {"crf": "30", "cpu-used": "6"}),   # libaom 软件编码（如可用）
-)
 
 class _CameraEncodeWorker:
     """单相机后台编码线程：RGB numpy 帧 → AV1（优先 av1_nvenc，自动回退软件）→ mp4（PyAV）。"""
