@@ -52,7 +52,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _XPBD_DEBUG_LOG = ORCA_REPO_ROOT / "XPBD" / "MjcPBD_orcalink" / "debug_log"
-CLOTH_SCENE_ASSETS_BASENAME = "cloth_scene_assets.json"
+CLOTH_SCENE_ASSETS_BASENAME = "Config.json"
 
 
 def _ensure_domain_import_path() -> None:
@@ -227,7 +227,7 @@ def load_cloth_config(config_path: str | Path, cloth_data_dir: Path | None = Non
 def require_orcalink_port(orcalink_cfg: dict[str, Any]) -> int:
     """读取并校验 ``orcalink.port``（缺失抛 KeyError、越界抛 ValueError）。"""
     if "port" not in orcalink_cfg:
-        raise KeyError('配置缺少 orcalink.port（请在 cloth_sim_config.*.json 中设置）')
+        raise KeyError('配置缺少 orcalink.port（请在 Config.json 中设置）')
     port = int(orcalink_cfg["port"])
     if not (1 <= port <= 65535):
         raise ValueError(f"orcalink.port 无效: {port}")
@@ -472,7 +472,7 @@ def export_xpbd_scene_for_session(
 
 
 def cloth_scene_assets_config_path(cloth_data_dir: Path | None = None) -> Path:
-    """``cloth_scene_assets.json`` 路径；可用 ``CLOTH_SCENE_ASSETS_CONFIG`` 覆盖。"""
+    """``Config.json`` 路径；可用 ``CLOTH_SCENE_ASSETS_CONFIG`` 覆盖。"""
     override = os.environ.get("CLOTH_SCENE_ASSETS_CONFIG", "").strip()
     if override:
         return Path(override).expanduser().resolve()
@@ -1131,7 +1131,7 @@ def apply_runtime_cloth_overrides(
     """
     将运行时关卡名、MuJoCo 机器人前缀写入配置（深拷贝）。
 
-    关卡与机器人型号不写进 ``cloth_sim_config.json``，由 CLI / 环境变量注入。
+    关卡与机器人型号不写进 ``Config.json``，由 CLI / 环境变量注入。
     """
     out = copy.deepcopy(config)
     og = out.setdefault("orcagym", {})
@@ -1843,7 +1843,6 @@ class P23cParams:
     kill_stale: bool = True
     auto_start_studio: bool = False
     collect_data: bool = False
-    cloth_debug: bool = False
     cloth_auto_start_orcalink: bool = False
     cloth_auto_start_xpbd: bool = False
     xpbd_ui: bool = True
@@ -2055,10 +2054,6 @@ def _mount_cloth(
             {"mocap_body": f"{mjc_prefix}_leftHandMocap", "palm_body": f"{mjc_prefix}_zbll_base_link"},
             {"mocap_body": f"{mjc_prefix}_rightHandMocap", "palm_body": f"{mjc_prefix}_zbr_base_link"},
         ]
-    if params.cloth_debug:
-        cloth_config.setdefault("debug", {})["debug_mode"] = True
-    else:
-        cloth_config.setdefault("debug", {})["debug_mode"] = False
     cloth_config.setdefault("xpbd", {})["dg_traj"] = "pico"
 
     mj_fs = int(cloth_config.get("mujoco", {}).get("frame_skip", 20))
@@ -2094,7 +2089,7 @@ def run_p23c(params: P23cParams) -> int:
     from .base.paths import resolve_cloth_config_path
     from .ProcessOrcaGym import scan_tele_layout_from_mjcf
     from .ProcessStudio import ensure_ready, find_latest_studio_mjcf_path
-    from .ProcessXPBD import DEFAULT_TARGET, cleanup, prepare
+    from .ProcessXPBD import cleanup, prepare
 
     # 下游环境变量
     os.environ["PYTHONPATH"] = (
@@ -2114,7 +2109,7 @@ def run_p23c(params: P23cParams) -> int:
     level = resolve_cloth_level(params.level, cloth_data_dir=cloth_data_dir)
     config_path = params.config_path
     if not config_path:
-        config_path = str(resolve_cloth_config_path(level=level, agent=params.agent, debug=params.cloth_debug, cloth_data_dir=cloth_data_dir))
+        config_path = str(resolve_cloth_config_path(level=level, agent=params.agent, cloth_data_dir=cloth_data_dir))
     agent = params.agent
     mjc_prefix = params.mjc_prefix
 
@@ -2132,7 +2127,7 @@ def run_p23c(params: P23cParams) -> int:
                 logger.info(f"MJCF 扫描 tele_agent={detected_agent}（覆盖默认 openloong）")
                 agent, mjc_prefix = detected_agent, detected_prefix
                 if not params.config_explicit:
-                    config_path = str(resolve_cloth_config_path(level=level, agent=agent, debug=params.cloth_debug, cloth_data_dir=cloth_data_dir))
+                    config_path = str(resolve_cloth_config_path(level=level, agent=agent, cloth_data_dir=cloth_data_dir))
         elif detected_prefix and detected_prefix != mjc_prefix:
             mjc_prefix = detected_prefix
 
@@ -2140,7 +2135,6 @@ def run_p23c(params: P23cParams) -> int:
     os.environ["AGENT"] = agent
     os.environ["MJC_PREFIX"] = mjc_prefix
     os.environ["CFG"] = config_path
-    os.environ["CLOTH_DEBUG"] = "1" if params.cloth_debug else "0"
 
     if params.cloth_sync_studio_vis:
         os.environ["CLOTH_SYNC_STUDIO_VIS"] = "1"
@@ -2153,8 +2147,13 @@ def run_p23c(params: P23cParams) -> int:
 
     # XPBD 二进制（清旧 + 准备）
     if params.xpbd_auto_build:
-        target = params.xpbd_build_target or DEFAULT_TARGET
+        # 默认 target/version 从 Config.json 读（单一来源）；环境变量 / 参数可覆盖
+        _cfg = load_cloth_config(config_path, cloth_data_dir=cloth_data_dir)
+        default_target = str(_cfg.get("xpbd_default_target") or "").strip()
+        default_version = str(_cfg.get("xpbd_default_version") or "").strip()
+        target = params.xpbd_build_target or default_target
         os.environ["XPBD_BUILD_TARGET"] = target
+        os.environ.setdefault("ORCA_XPBD_VERSION", default_version)
         cleanup(target)
         if prepare(target) != 0:
             logger.error("XPBD 准备失败")
@@ -2351,13 +2350,13 @@ def setup_teleop_controllers(
 # 场景配置：模板 + scene_levels.json 同步（从 domain/scene_cloth_config 迁入）
 # ---------------------------------------------------------------------------
 
-_TEMPLATE_BASENAME = "cloth_scene_assets.json"
+_TEMPLATE_BASENAME = "Config.json"
 _LEVELS_BASENAME_DEFAULT = "scene_levels.json"
 _GENERATOR_NAME = "scene_cloth_config"
 
 
 def template_config_path(cloth_data_dir: Path | None = None) -> Path:
-    """仓库内通用模板 ``cloth_scene_assets.json``（``cloth_data_dir`` 指定数据目录）。"""
+    """仓库内通用模板 ``Config.json``（``cloth_data_dir`` 指定数据目录）。"""
     override = os.environ.get("CLOTH_SCENE_ASSETS_CONFIG", "").strip()
     if override:
         return Path(override).expanduser().resolve()

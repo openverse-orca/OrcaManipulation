@@ -26,8 +26,6 @@ logger = logging.getLogger(__name__)
 # 常量
 # ---------------------------------------------------------------------------
 
-DEFAULT_TARGET = "dual_gripper_g1_cook2"
-DEFAULT_VERSION = "26.8.1.8"
 TEST_PYPI_INDEX = "https://test.pypi.org/simple/"
 PYPI_EXTRA = "https://pypi.org/simple/"
 
@@ -89,7 +87,9 @@ def kill_pids_gracefully(label: str, pids: list[int]) -> None:
 
 def cleanup(target: str | None = None) -> None:
     """清理旧的 XPBD 进程（按 target 进程名匹配）。"""
-    target = target or os.environ.get("XPBD_BUILD_TARGET", "").strip() or DEFAULT_TARGET
+    target = (target or os.environ.get("XPBD_BUILD_TARGET", "")).strip()
+    if not target:
+        raise RuntimeError("缺少 XPBD target（XPBD_BUILD_TARGET 未设置）")
     pids = pgrep(target)
     if not pids:
         print(f"[ProcessXPBD] 无陈旧 XPBD 进程（{target}）", flush=True)
@@ -141,8 +141,12 @@ def _ensure_orca_xpbd_installed(version: str) -> str:
 
 def prepare(target: str | None = None) -> int:
     """确保 orca-xpbd 包已安装（含 XPBD 可执行文件）；返回 0 成功。"""
-    target = target or os.environ.get("XPBD_BUILD_TARGET", "").strip() or DEFAULT_TARGET
-    version = os.environ.get("ORCA_XPBD_VERSION", DEFAULT_VERSION).strip() or DEFAULT_VERSION
+    target = (target or os.environ.get("XPBD_BUILD_TARGET", "")).strip()
+    version = os.environ.get("ORCA_XPBD_VERSION", "").strip()
+    if not target:
+        raise RuntimeError("缺少 XPBD target（XPBD_BUILD_TARGET 未设置）")
+    if not version:
+        raise RuntimeError("缺少 orca-xpbd 版本（ORCA_XPBD_VERSION 未设置）")
     print(f"[ProcessXPBD] 确保 orca-xpbd 已安装（{target}）...", flush=True)
     try:
         installed = _ensure_orca_xpbd_installed(version)

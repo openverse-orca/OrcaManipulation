@@ -51,7 +51,6 @@ def resolve_defaults() -> dict[str, str]:
         return _env_or(name, d1 if debug else d0)
 
     return {
-        "CLOTH_DEBUG": g("CLOTH_DEBUG", "1", "0"),
         "COLLECT_DATA": g("COLLECT_DATA", "1", "0"),
         "XPBD_UI": g("XPBD_UI", "1", "1"),
         "CLOTH_SYNC_STUDIO_VIS": g("CLOTH_SYNC_STUDIO_VIS", "1", "1"),
@@ -86,7 +85,6 @@ def main() -> int:
             kill_stale=_env_or("KILL_STALE", "1") == "1" and not _env_flag("SKIP_STALE_KILL", False),
             auto_start_studio=_env_flag("AUTO_START_STUDIO", False),
             collect_data=cfg["COLLECT_DATA"] == "1",
-            cloth_debug=cfg["CLOTH_DEBUG"] == "1",
             xpbd_ui=cfg["XPBD_UI"] == "1",
             cloth_sync_studio_vis=cfg["CLOTH_SYNC_STUDIO_VIS"] == "1",
             cloth_no_realtime=cfg["CLOTH_NO_REALTIME"] == "1",

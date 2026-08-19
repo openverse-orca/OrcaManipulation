@@ -14,7 +14,7 @@
 | 目录 | 定位 |
 |------|------|
 | `src/envs/softbody` | 布料 MjcPBD 耦合的**核心库（引擎）**：编排器 + 子进程生命周期 + 领域工具 + 中性基础设施。只含逻辑，不含具体场景/关卡参数。 |
-| `src/examples/dataCollection_cook` | **薄启动器 + 数据目录（入口）**。`RunCollection.py` 只从环境变量组装 `P23cParams` 并调用 `run_p23c`；同时承载布料配置/数据（`cloth_sim_config*.json`、`cloth_scene_assets.json`）与运行时产物（`cloth_sim_session_*.json`、`logs/`）。 |
+| `src/examples/dataCollection_cook` | **薄启动器 + 数据目录（入口）**。`RunCollection.py` 只从环境变量组装 `P23cParams` 并调用 `run_p23c`；同时承载**单配置文件 `Config.json`**（布料 sim + 场景资产路径 + XPBD target/版本）与运行时产物（`cloth_sim_session_*.json`、`logs/`）。 |
 
 ### softbody 分层
 

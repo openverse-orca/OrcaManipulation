@@ -1,4 +1,4 @@
-# dataCollection_cook 布料三进程联调（P23c）依赖
+# dataCollection_cook 三进程联调依赖
 #
 # 顶层 requirements.txt 已包含 orca-gym / numba / gymnasium / av / opencv-python
 # / h5py 等通用依赖，这里直接引用避免重复声明。
