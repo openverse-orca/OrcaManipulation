@@ -15,8 +15,8 @@ from typing import Any, Dict, Iterable, Optional
 import mujoco
 import numpy as np
 
-from .common.process_utils import ProcessManager, _subprocess_preexec
-from .common.paths import ORCA_REPO_ROOT
+from .base.process_utils import ProcessManager, _subprocess_preexec
+from .base.paths import ORCA_REPO_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ class OrcaLinkPoseRemapper:
         """
         if not self._enabled:
             return
-        from modules.mjc_coords import orca_vec_to_yup, yup_vec_to_mjc  # noqa: WPS433
+        from domain.mjc_coords import orca_vec_to_yup, yup_vec_to_mjc  # noqa: WPS433
 
         self._offset_mjc.clear()
         for entry in entries:

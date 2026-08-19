@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# src/envs/softbody/common/paths.py -> parent=common, parent.parent=softbody, parent.parent.parent=envs, parent.parent.parent.parent=src
+# src/envs/softbody/base/paths.py -> parent=base, parent.parent=softbody, parent.parent.parent=envs, parent.parent.parent.parent=src
 PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent.parent
 
 # 仓库根（src → OrcaManipulation → 上级仓库）
@@ -12,7 +12,7 @@ XPBD_ROOT: Path = ORCA_REPO_ROOT / "XPBD"
 
 # 迁入 softbody 的布料模块/脚本本地副本
 SOFTBODY_DIR: Path = Path(__file__).resolve().parent.parent  # src/envs/softbody
-SOFTBODY_MODULES_DIR: Path = SOFTBODY_DIR / "modules"
+SOFTBODY_DOMAIN_DIR: Path = SOFTBODY_DIR / "domain"
 SOFTBODY_SCRIPTS_DIR: Path = SOFTBODY_DIR / "scripts"
 
 CLOTH_CONFIG_BASENAME = "cloth_sim_config.json"

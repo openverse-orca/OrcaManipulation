@@ -10,7 +10,7 @@ from typing import Any
 import mujoco
 import numpy as np
 
-from modules.anchor_tetrahedron import anchor_site_names, circumradius_from_half_extents
+from domain.anchor_tetrahedron import anchor_site_names, circumradius_from_half_extents
 
 logger = logging.getLogger(__name__)
 

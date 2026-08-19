@@ -1,6 +1,7 @@
 """将布料 MjcPBD 耦合挂载到已有 OrcaGym 环境（数据采集 / 遥操）。"""
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import logging
@@ -11,11 +12,11 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Sequence
 
 from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
 
-from .common.process_utils import ProcessManager
+from .base.process_utils import ProcessManager
 
 from .ProcessOrcaGym import (
     adapt_config_for_orcagym,
@@ -28,22 +29,26 @@ from .ProcessOrcaGym import sync_gripper_mocap_from_bodies
 from .ProcessOrcaLink import OrcaLinkPoseRemapper, resolve_pose_remap, start_orcalink_if_configured
 from .ProcessXPBD import start_xpbd_if_configured
 
-from .common.paths import (
+from .base.paths import (
     ORCA_REPO_ROOT,
     SOFTBODY_DIR,
-    SOFTBODY_MODULES_DIR,
+    SOFTBODY_DOMAIN_DIR,
     SOFTBODY_SCRIPTS_DIR,
     default_cloth_config_path,
     level_lower_for_hint,
     qualified_vtk_asset_path,
     resolve_cloth_data_dir,
 )
-from .common.masked_vtk import (
+from .base.masked_vtk import (
     companion_paths_for_vtk,
     load_idxmap_file,
     normalize_vtk_asset_name,
     resolve_vtk_asset_path,
 )
+
+if TYPE_CHECKING:
+    from domain.anchor_frame import AnchorFrame
+    from domain.body_map import BodyMapEntry
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +56,7 @@ _XPBD_DEBUG_LOG = ORCA_REPO_ROOT / "XPBD" / "MjcPBD_orcalink" / "debug_log"
 CLOTH_SCENE_ASSETS_BASENAME = "cloth_scene_assets.json"
 
 
-def _ensure_cloth_modules_import_path() -> None:
+def _ensure_domain_import_path() -> None:
     root = str(SOFTBODY_DIR)
     if root not in sys.path:
         sys.path.insert(0, root)
@@ -238,6 +243,14 @@ def build_xpbd_session_config(base_cfg: dict[str, Any], adapted_cfg: dict[str, A
     ``rigid_body_map`` 保持基配置短链（暂不向 XPBD 传递 Studio 扫描的 N 刚体）。
     """
     out = copy.deepcopy(adapted_cfg)
+    # 归一化 debug.debug_log_dir 为绝对路径：config 里是相对 dataCollection_cook 的 ../../../../XPBD/...，
+    # 但 session 落盘在 logs/<ts>/ 下，C++ 侧按 session 目录解析会错位到 OrcaManipulation/src/XPBD。
+    dbg = out.get("debug") or {}
+    log_dir = str(dbg.get("debug_log_dir") or "").strip()
+    if log_dir and cloth_data_dir:
+        p = Path(log_dir)
+        if not p.is_absolute():
+            dbg["debug_log_dir"] = str((resolve_cloth_data_dir(cloth_data_dir) / p).resolve())
     xpbd_blk = out.setdefault("xpbd", {})
     if bool(xpbd_blk.get("cloth_discover_only", True)):
         if "rigid_body_map" in base_cfg:
@@ -362,9 +375,9 @@ def studio_cloth_assets_dir(level: str, cloth_data_dir: Path | None = None) -> P
 
     import sys
 
-    modules_dir = SOFTBODY_MODULES_DIR
-    if str(modules_dir) not in sys.path:
-        sys.path.insert(0, str(modules_dir))
+    domain_dir = SOFTBODY_DOMAIN_DIR
+    if str(domain_dir) not in sys.path:
+        sys.path.insert(0, str(domain_dir))
 
     ensure_level_scene_config(level_name, cloth_data_dir=cloth_data_dir)
     level_entry(level_name, auto_sync=False, cloth_data_dir=cloth_data_dir)
@@ -374,9 +387,9 @@ def studio_cloth_assets_dir(level: str, cloth_data_dir: Path | None = None) -> P
 def _studio_project_dir_from_template(cloth_data_dir: Path | None = None) -> Path:
     import sys
 
-    modules_dir = SOFTBODY_MODULES_DIR
-    if str(modules_dir) not in sys.path:
-        sys.path.insert(0, str(modules_dir))
+    domain_dir = SOFTBODY_DOMAIN_DIR
+    if str(domain_dir) not in sys.path:
+        sys.path.insert(0, str(domain_dir))
 
     return studio_project_dir(load_template_config_for_paths(cloth_data_dir=cloth_data_dir))
 
@@ -393,9 +406,9 @@ def level_primary_masked_stem(level: str, cloth_data_dir: Path | None = None) ->
         return None
     import sys
 
-    modules_dir = SOFTBODY_MODULES_DIR
-    if str(modules_dir) not in sys.path:
-        sys.path.insert(0, str(modules_dir))
+    domain_dir = SOFTBODY_DOMAIN_DIR
+    if str(domain_dir) not in sys.path:
+        sys.path.insert(0, str(domain_dir))
     if str(SOFTBODY_DIR) not in sys.path:
         sys.path.insert(0, str(SOFTBODY_DIR))
 
@@ -543,7 +556,7 @@ def enrich_cloth_discovery_pose(model: Any, data: Any, discovered: list[dict[str
     import mujoco
     import numpy as np
 
-    from modules.mjc_coords import orca_quat_to_yup, orca_vec_to_yup  # noqa: WPS433
+    from domain.mjc_coords import orca_quat_to_yup, orca_vec_to_yup  # noqa: WPS433
 
     out: list[dict[str, Any]] = []
     for entry in discovered:
@@ -1011,9 +1024,9 @@ def apply_runtime_orcagym_level(config: dict[str, Any], level: str) -> dict[str,
 
 def _ensure_level_scene_config(level: str, cloth_data_dir: Path | None = None) -> None:
     """解析关卡后自动同步本机 scene_levels（失败不阻断联调）。"""
-    modules_dir = SOFTBODY_MODULES_DIR
-    if str(modules_dir) not in sys.path:
-        sys.path.insert(0, str(modules_dir))
+    domain_dir = SOFTBODY_DOMAIN_DIR
+    if str(domain_dir) not in sys.path:
+        sys.path.insert(0, str(domain_dir))
     try:
 
         if ensure_level_scene_config(level, cloth_data_dir=cloth_data_dir):
@@ -1087,6 +1100,364 @@ def build_p2_session_from_mjcf(
     return xpbd_session, adapted, session_path
 
 
+def body_track_position_packet_body_only(cfg: dict[str, Any]) -> bool:
+    """
+    是否采用 body_track 精简发包（每刚体 4 个 DataUnit：body_p/q/v/w）。
+
+    当 body_track.enabled 且 use_anchor_sites 为 false 时返回 True；
+    anchor_follow / 旧 phase1 路径仍发 12 unit/体（含 4×SITE）。
+    """
+    bt = cfg.get("body_track", {})
+    if not bt.get("enabled", False):
+        return False
+    return not bool(bt.get("use_anchor_sites", False))
+
+
+def frame_to_units(frame: AnchorFrame, *, body_only: bool = False) -> list[Any]:
+    """
+    构建 proto DataUnit 列表（延迟 import orcalink_pb2）。
+
+    body_only=True（body_track）：每刚体 4 unit（body_p/q/v/w），不含 SITE/锚点速度。
+    body_only=False（anchor_follow）：每刚体 12 unit（4×锚点 + body_*）。
+    """
+    from orcalink_client.protos import orcalink_pb2
+
+    units: list[Any] = []
+    for body in frame.bodies:
+        ln = body.logical_name
+        if not body_only:
+            for i, anchor in enumerate(body.anchors):
+                units.append(
+                    orcalink_pb2.DataUnit(
+                        object_id=f"{ln}_a{i}",
+                        data_type=orcalink_pb2.DATA_TYPE_POSITION,
+                        position=orcalink_pb2.PositionValue(
+                            x=float(anchor.position[0]),
+                            y=float(anchor.position[1]),
+                            z=float(anchor.position[2]),
+                            qw=1.0,
+                            qx=0.0,
+                            qy=0.0,
+                            qz=0.0,
+                        ),
+                    )
+                )
+                units.append(
+                    orcalink_pb2.DataUnit(
+                        object_id=f"{ln}_a{i}_v",
+                        data_type=orcalink_pb2.DATA_TYPE_VELOCITY,
+                        velocity=orcalink_pb2.VelocityValue(
+                            vx=float(anchor.linear_velocity[0]),
+                            vy=float(anchor.linear_velocity[1]),
+                            vz=float(anchor.linear_velocity[2]),
+                            wx=0.0,
+                            wy=0.0,
+                            wz=0.0,
+                        ),
+                    )
+                )
+        units.append(
+            orcalink_pb2.DataUnit(
+                object_id=f"{ln}_body_q",
+                data_type=orcalink_pb2.DATA_TYPE_POSITION,
+                position=orcalink_pb2.PositionValue(
+                    x=0.0,
+                    y=0.0,
+                    z=0.0,
+                    qw=float(body.quat_wxyz[0]),
+                    qx=float(body.quat_wxyz[1]),
+                    qy=float(body.quat_wxyz[2]),
+                    qz=float(body.quat_wxyz[3]),
+                ),
+            )
+        )
+        units.append(
+            orcalink_pb2.DataUnit(
+                object_id=f"{ln}_body_p",
+                data_type=orcalink_pb2.DATA_TYPE_POSITION,
+                position=orcalink_pb2.PositionValue(
+                    x=float(body.com_pos[0]),
+                    y=float(body.com_pos[1]),
+                    z=float(body.com_pos[2]),
+                    qw=1.0,
+                    qx=0.0,
+                    qy=0.0,
+                    qz=0.0,
+                ),
+            )
+        )
+        units.append(
+            orcalink_pb2.DataUnit(
+                object_id=f"{ln}_body_v",
+                data_type=orcalink_pb2.DATA_TYPE_VELOCITY,
+                velocity=orcalink_pb2.VelocityValue(
+                    vx=float(body.com_linvel[0]),
+                    vy=float(body.com_linvel[1]),
+                    vz=float(body.com_linvel[2]),
+                    wx=0.0,
+                    wy=0.0,
+                    wz=0.0,
+                ),
+            )
+        )
+        units.append(
+            orcalink_pb2.DataUnit(
+                object_id=f"{ln}_body_w",
+                data_type=orcalink_pb2.DATA_TYPE_VELOCITY,
+                velocity=orcalink_pb2.VelocityValue(
+                    vx=0.0,
+                    vy=0.0,
+                    vz=0.0,
+                    wx=float(body.ang_vel[0]),
+                    wy=float(body.ang_vel[1]),
+                    wz=float(body.ang_vel[2]),
+                ),
+            )
+        )
+    return units
+
+
+def log_mujoco_send(frame: AnchorFrame) -> None:
+    if not (os.environ.get("ORCALINK_DEBUG_ANCHOR") or os.environ.get("CLOTH_DEBUG_ANCHOR")):
+        return
+    print(
+        f"[MUJOCO SEND] macro_frame={frame.macro_frame} sim_time={frame.sim_time:.4f} "
+        f"bodies={len(frame.bodies)}",
+        flush=True,
+    )
+    for body in frame.bodies:
+        print(
+            f"  body={body.logical_name} com={body.com_pos.tolist()} com_v={body.com_linvel.tolist()} "
+            f"quat={body.quat_wxyz.tolist()} omega={body.ang_vel.tolist()}",
+            flush=True,
+        )
+        for i, a in enumerate(body.anchors):
+            print(
+                f"    a{i} pos={a.position.tolist()} vel={a.linear_velocity.tolist()}",
+                flush=True,
+            )
+
+
+def export_frame_jsonl(frame: AnchorFrame, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "macro_frame": frame.macro_frame,
+        "sim_time": frame.sim_time,
+        "bodies": [
+            {
+                "logical_name": b.logical_name,
+                "anchors": [
+                    {"site": a.site_name, "pos": a.position.tolist(), "vel": a.linear_velocity.tolist()}
+                    for a in b.anchors
+                ],
+                "com_pos": b.com_pos.tolist(),
+                "com_linvel": b.com_linvel.tolist(),
+                "quat_wxyz": b.quat_wxyz.tolist(),
+                "ang_vel": b.ang_vel.tolist(),
+            }
+            for b in frame.bodies
+        ],
+    }
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+class ClothOrcaLinkBridge:
+    def __init__(self, config: dict[str, Any], model, data, pose_remapper=None, *, cloth_root: Path | None = None, orcalink_port: int) -> None:
+        self._config = config
+        self._model = model
+        self._data = data
+        self._ol = config["orcalink"]
+        self._orcalink_port = orcalink_port
+        from domain.body_map import load_body_map_ordered  # noqa: WPS433
+
+        self._body_entries = load_body_map_ordered(model, config)
+        self._pose_remapper = pose_remapper
+        self._client = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._connected = False
+        dbg = config.get("debug", {})
+        self._export_path = dbg.get("anchor_export_path")
+        if not cloth_root:
+            raise ValueError("ClothOrcaLinkBridge 需要 cloth_root（布料数据目录未指定）")
+        self._cloth_root = Path(cloth_root).expanduser().resolve()
+
+    @property
+    def body_entries(self) -> list[BodyMapEntry]:
+        return self._body_entries
+
+    def bind_mujoco(self, model, data) -> bool:
+        """
+        绑定与 OrcaGym ``mj_step`` 一致的 ``MjModel`` / ``MjData``。
+
+        ``SceneManager.publish_scene`` 会触发 ``init_env()`` 并重建 ``gym._mjData``；
+        桥接必须在每宏步发布前指向当前实例，否则 ``sim_time`` 与刚体位姿会冻结在连接时刻。
+
+        返回:
+            bool: ``data`` 是否为与上次不同的新 ``MjData`` 对象。
+        """
+        changed = self._data is not data
+        self._model = model
+        self._data = data
+        return changed
+
+    def connect(self) -> bool:
+        try:
+            from orcalink_client import OrcaLinkClient
+            from orcalink_client.config_loader import _build_orcalink_config_from_dict
+            from orcalink_client.orcalink_client import setup_logging
+
+            setup_logging()
+        except ImportError as e:
+            logger.error("orcalink_client not installed: %s", e)
+            return False
+
+        host = self._ol.get("host", "localhost")
+        port = self._orcalink_port
+        client_cfg = self._ol.get("client", {})
+        session_cfg = dict(client_cfg.get("session", {}))
+        if self._config.get("debug", {}).get("publish_only", False):
+            session_cfg["expected_clients"] = 1
+        pos_ch = client_cfg.get("channels", {}).get("position", {})
+        force_ch = client_cfg.get("channels", {}).get("force", {})
+        pos_id = int(pos_ch.get("channel_id", 20))
+        force_id = int(force_ch.get("channel_id", 21))
+        cfg_dict = {
+            "orcalink_client": {
+                "enabled": True,
+                "server_address": f"{host}:{port}",
+                "session_id": client_cfg.get("session_id", 101),
+                "client_name": client_cfg.get("client_name", "cloth_mujoco"),
+                "update_rate_hz": client_cfg.get("update_rate_hz", 50),
+                "session": session_cfg,
+            },
+            "orcalink_bridge": {
+                "coupling_mode": "force_position",
+                "force_position": {
+                    "channels": {
+                        "force": {
+                            "channel_id": force_id,
+                            "publish": force_ch.get("publish", False),
+                            "subscribe": force_ch.get("subscribe", True),
+                        },
+                        "position": {
+                            "channel_id": pos_id,
+                            "publish": pos_ch.get("publish", True),
+                            "subscribe": pos_ch.get("subscribe", False),
+                        },
+                    },
+                },
+            },
+        }
+        config = _build_orcalink_config_from_dict(cfg_dict)
+
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
+        self._client = OrcaLinkClient(config)
+        ok = self._loop.run_until_complete(self._client.initialize())
+        self._connected = bool(ok)
+        if not self._connected:
+            logger.error("OrcaLinkClient.initialize() 返回 False")
+            return False
+        logger.info(
+            "ClothOrcaLinkBridge connected session_id=%s bodies=%d",
+            client_cfg.get("session_id"),
+            len(self._body_entries),
+        )
+        if self._sync_mode_active():
+            async def _drain_stale_force(max_rounds: int = 64) -> None:
+                for _ in range(max_rounds):
+                    seq, _ = await self._client.subscribe_force_macro_frame(max_count=1)
+                    if seq is None:
+                        break
+
+            self._loop.run_until_complete(_drain_stale_force())
+            logger.info("sync: 已排空 ch21 残留 FORCE")
+        return self._connected
+
+    def should_pause(self) -> bool:
+        if not self._client:
+            return False
+        if self._ol.get("client", {}).get("session", {}).get("control_mode") != "sync":
+            return False
+        return self._client.should_pause_this_cycle()
+
+    def _sync_mode_active(self) -> bool:
+        """sync 双向会话：发 POSITION 后须等 XPBD 回 FORCE 才能继续仿真。"""
+        if not self._client:
+            return False
+        if self._ol.get("client", {}).get("session", {}).get("control_mode") != "sync":
+            return False
+        return bool(self._client.is_session_bidirectional)
+
+    async def _wait_force_for_macro(
+        self, macro_frame: int, timeout_sec: float = 120.0
+    ) -> tuple[int | None, float]:
+        """
+        阻塞直到收到 sequence==macro_frame 的 FORCE，或超时。
+        丢弃陈旧/乱序 FORCE，与 verify_vertex_pos_mjc_xpbd 一致。
+        返回 (收到的 macro_frame 或 None, 墙钟 t4)。
+        """
+        deadline = time.time() + timeout_sec
+        while time.time() < deadline:
+            seq, t4 = await self._client.subscribe_force_macro_frame(max_count=1)
+            if seq == macro_frame:
+                return seq, t4
+            if seq is not None:
+                continue
+            await asyncio.sleep(0.002)
+        return None, 0.0
+
+    def publish_anchor_macro_frame(self, macro_frame: int) -> bool:
+        from domain.anchor_frame import collect_anchor_frame  # noqa: WPS433
+
+        if not self._connected or not self._client or not self._loop:
+            return False
+        # 采集点 ①：MuJoCo 宏步边界物理量（Z-up）
+        body_only = body_track_position_packet_body_only(self._config)
+        frame = collect_anchor_frame(
+            self._model, self._data, self._body_entries, macro_frame, skip_anchor_sites=body_only
+        )
+        if self._pose_remapper is not None and getattr(self._pose_remapper, "enabled", False):
+            self._pose_remapper.apply_to_anchor_frame(frame)
+        log_mujoco_send(frame)
+        if self._export_path:
+            export_frame_jsonl(frame, Path(self._export_path))
+        # 采集点 ②：与 OrcaLink PublishFrame 一致的 DataUnit
+        units = frame_to_units(frame, body_only=body_only)
+        ok = self._loop.run_until_complete(
+            self._client.publish_anchor_frame(units, macro_frame, frame.sim_time)
+        )
+        if not ok:
+            return False
+
+        if self._sync_mode_active():
+            force_seq, _ = self._loop.run_until_complete(
+                self._wait_force_for_macro(macro_frame)
+            )
+            if force_seq != macro_frame:
+                logger.error(
+                    "sync: 未收到 FORCE macro_frame=%s (got=%s)",
+                    macro_frame,
+                    force_seq,
+                )
+                return False
+
+        return True
+
+    def close(self) -> None:
+        if self._client and self._loop:
+            try:
+                self._loop.run_until_complete(self._client.shutdown())
+            except Exception:
+                pass
+        self._connected = False
+        if self._loop:
+            self._loop.close()
+        self._loop = None
+        self._client = None
+
+
 def _connect_cloth_bridge(
     env: OrcaGymLocalEnv,
     config: dict[str, Any],
@@ -1096,9 +1467,8 @@ def _connect_cloth_bridge(
     cloth_data_dir: Path | None = None,
     orcalink_port: int,
 ) -> bool:
-    _ensure_cloth_modules_import_path()
-    from modules.body_map import load_body_map_ordered  # noqa: WPS433
-    from modules.cloth_orcalink_bridge import ClothOrcaLinkBridge  # noqa: WPS433
+    _ensure_domain_import_path()
+    from domain.body_map import load_body_map_ordered  # noqa: WPS433
 
     model, data = get_mujoco_model_data(env)
     if adapted is None:
@@ -1163,7 +1533,7 @@ def start_cloth_coupling(
     2. XPBD dual_gripper_cross_mjc（可选 auto_start，须先于 MuJoCo 凑齐 expected_clients）
     3. ClothOrcaLinkBridge 连接并等待 session_ready
     """
-    _ensure_cloth_modules_import_path()
+    _ensure_domain_import_path()
 
     cfg = copy.deepcopy(config)
     orcalink_port = require_orcalink_port(cfg.get("orcalink", {}))
@@ -1595,7 +1965,7 @@ def _mount_cloth(
 
 def run_p23c(params: P23cParams) -> int:
     """P23c 完整编排：准备 → 组装 → 建 env → 挂耦合 → 装配 → 跑循环。"""
-    from .common.paths import resolve_cloth_config_path
+    from .base.paths import resolve_cloth_config_path
     from .ProcessOrcaGym import scan_tele_layout_from_mjcf
     from .ProcessStudio import ensure_ready, find_latest_studio_mjcf_path
     from .ProcessXPBD import DEFAULT_TARGET, cleanup, prepare
@@ -1852,7 +2222,7 @@ def setup_teleop_controllers(
 
 
 # ---------------------------------------------------------------------------
-# 场景配置：模板 + scene_levels.json 同步（从 modules/scene_cloth_config 迁入）
+# 场景配置：模板 + scene_levels.json 同步（从 domain/scene_cloth_config 迁入）
 # ---------------------------------------------------------------------------
 
 _TEMPLATE_BASENAME = "cloth_scene_assets.json"

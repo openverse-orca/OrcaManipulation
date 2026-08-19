@@ -81,7 +81,7 @@ def adapt_config_for_orcagym(
     publish_out: list[dict[str, Any]] = []
     pce_fn = None
     try:
-        from modules.body_map import primary_collision_half_extents as pce_fn  # noqa: WPS433
+        from domain.body_map import primary_collision_half_extents as pce_fn  # noqa: WPS433
     except ImportError:
         pce_fn = None
     pce_data = data

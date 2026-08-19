@@ -46,9 +46,9 @@ def main() -> int:
         return 1
 
     sys.path.insert(0, str(ROOT))
-    from modules.anchor_tetrahedron import anchor_local_positions, anchor_site_names  # noqa: E402
-    from modules.body_map import load_body_map  # noqa: E402
-    from modules.mjc_coords import (  # noqa: E402
+    from domain.anchor_tetrahedron import anchor_local_positions, anchor_site_names  # noqa: E402
+    from domain.body_map import load_body_map  # noqa: E402
+    from domain.mjc_coords import (  # noqa: E402
         orca_quat_to_yup_link_orientation,
         orca_vec_to_yup,
     )
@@ -104,7 +104,7 @@ def main() -> int:
                 print(f"FAIL: body missing {mjc_name}", file=sys.stderr)
                 return 1
     else:
-        from modules.body_map import validate_body_map  # noqa: E402
+        from domain.body_map import validate_body_map  # noqa: E402
 
         val_errs = validate_body_map(model, all_entries)
         if val_errs:

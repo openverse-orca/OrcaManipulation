@@ -1,7 +1,7 @@
 """OrcaGym 布料 MjcPBD 耦合（OrcaLink + XPBD + Studio gRPC）。"""
 from __future__ import annotations
 
-from .common.paths import (
+from .base.paths import (
     default_cloth_config_path,
     resolve_cloth_config_path,
 )

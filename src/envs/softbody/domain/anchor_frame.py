@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import mujoco
 import numpy as np
 
-from modules.body_map import BodyMapEntry
+from domain.body_map import BodyMapEntry
 
 
 @dataclass
