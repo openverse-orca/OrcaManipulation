@@ -10,7 +10,7 @@
   - [2.2 激活 conda 环境](#激活-conda-环境)
   - [2.3 安装依赖](#安装依赖)
   - [2.4 运行三进程联调](#运行三进程联调)
-    - [2.4.1 完整命令（默认 G1 Cook 布料遥操）](#完整命令默认-g1-cook-布料遥操)
+    - [2.4.1 完整命令](#完整命令)
     - [2.4.2 运行参数（Config.json run 段）](#运行参数configjson-run-段)
 
 ---
@@ -87,7 +87,7 @@ cd <REPO_ROOT>/OrcaManipulation/src/examples/dataCollection_cook
 python RunCollection.py
 ```
 
-#### 2.4.1 完整命令（默认 G1 Cook 布料遥操）
+#### 2.4.1 完整命令
 
 ```bash
 cd OrcaManipulation/src/examples/dataCollection_cook

@@ -6,10 +6,9 @@ gripper_mocap_sync.py 与 openloong_osc_actuators.py。
 from __future__ import annotations
 
 import copy
-import json
 import logging
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Tuple
 
@@ -200,30 +199,6 @@ class MjcfTeleLayout:
     right_palm_body: str
     left_ee_site: str
     right_ee_site: str
-    tele_arm_joint_values: dict[str, float]
-
-    def to_orcagym_dict(self) -> dict[str, Any]:
-        return {
-            "mjc_agent_prefix": self.mjc_agent_prefix,
-            "tele_agent_name": self.tele_agent_name,
-            "tele_layout": {
-                "base_body": self.base_body,
-                "left_palm_body": self.left_palm_body,
-                "right_palm_body": self.right_palm_body,
-                "left_ee_site": self.left_ee_site,
-                "right_ee_site": self.right_ee_site,
-            },
-        }
-
-    def shell_export(self) -> str:
-        lines = [
-            f"export AGENT={self.tele_agent_name}",
-            f"export MJC_PREFIX={self.mjc_agent_prefix}",
-            f"export ROBOT_BASE_BODY={self.base_body}",
-            f"export ROBOT_PALM_L={self.left_palm_body}",
-            f"export ROBOT_PALM_R={self.right_palm_body}",
-        ]
-        return "\n".join(lines)
 
 
 def _body_names(model: mujoco.MjModel) -> list[str]:
@@ -333,30 +308,6 @@ def infer_tele_agent_name(model: mujoco.MjModel) -> str:
     )
 
 
-def default_arm_qpos_from_mjcf(model: mujoco.MjModel, prefix: str) -> dict[str, float]:
-    """
-    ``mj_resetData`` 后读取双臂关节默认 ``qpos``，键为 tele 用短名。
-
-    只收录名称含 ``arm_l`` / ``arm_r`` 且含 ``joint`` 的关节。
-    """
-    data = mujoco.MjData(model)
-    mujoco.mj_resetData(model, data)
-    mujoco.mj_forward(model, data)
-    out: dict[str, float] = {}
-    for jid in range(model.njnt):
-        full = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, jid) or ""
-        if not full:
-            continue
-        short = _strip_prefix(full, prefix)
-        if not _ARM_JOINT_RE.search(short):
-            continue
-        adr = model.jnt_qposadr[jid]
-        out[short] = float(data.qpos[adr])
-    if not out:
-        raise RuntimeError("MJCF default arm qpos: no arm_l/arm_r joints found")
-    return out
-
-
 def scan_tele_layout_from_model(model: mujoco.MjModel) -> MjcfTeleLayout:
     """从 ``MjModel`` 扫描遥操布局（掌/基座/site/前缀/neutral/agent）。"""
     left_full = _find_body_by_suffixes(model, _LEFT_PALM_SUFFIXES)
@@ -378,7 +329,6 @@ def scan_tele_layout_from_model(model: mujoco.MjModel) -> MjcfTeleLayout:
     base_full = _find_base_body(model, prefix)
     left_ee, right_ee = _find_ee_sites(model, prefix)
     tele_agent = infer_tele_agent_name(model)
-    qpos = default_arm_qpos_from_mjcf(model, prefix)
 
     return MjcfTeleLayout(
         mjc_agent_prefix=prefix,
@@ -388,7 +338,6 @@ def scan_tele_layout_from_model(model: mujoco.MjModel) -> MjcfTeleLayout:
         right_palm_body=_strip_prefix(right_full, prefix),
         left_ee_site=_strip_prefix(left_ee, prefix),
         right_ee_site=_strip_prefix(right_ee, prefix),
-        tele_arm_joint_values=qpos,
     )
 
 
@@ -396,96 +345,6 @@ def scan_tele_layout_from_mjcf(mjcf_path: str | Path) -> MjcfTeleLayout:
     path = Path(mjcf_path).expanduser().resolve()
     model = mujoco.MjModel.from_xml_path(str(path))
     return scan_tele_layout_from_model(model)
-
-
-def _mjcf_path_from_session(session: dict[str, Any]) -> str:
-    mjcf = (session.get("mujoco") or {}).get("model_path") or ""
-    meta = session.get("_cloth_robot_session_meta") or {}
-    if not mjcf:
-        mjcf = meta.get("source_mjcf") or ""
-    if not mjcf:
-        raise FileNotFoundError("session has no mjcf path for tele layout scan")
-    return str(mjcf)
-
-
-def _layout_from_orcagym_cache(og: dict[str, Any]) -> MjcfTeleLayout | None:
-    layout = og.get("tele_layout") or og.get("robot_scan")
-    prefix = str(og.get("mjc_agent_prefix", "")).strip()
-    tele = str(og.get("tele_agent_name", "")).strip()
-    if not layout or not tele:
-        return None
-    mjcf_path = og.get("_mjcf_path_for_qpos")
-    qpos: dict[str, float] = {}
-    if mjcf_path and Path(mjcf_path).is_file():
-        try:
-            qpos = default_arm_qpos_from_mjcf(mujoco.MjModel.from_xml_path(str(mjcf_path)), prefix)
-        except (OSError, RuntimeError):
-            qpos = {}
-    return MjcfTeleLayout(
-        mjc_agent_prefix=prefix,
-        tele_agent_name=tele,
-        base_body=str(layout["base_body"]),
-        left_palm_body=str(layout["left_palm_body"]),
-        right_palm_body=str(layout["right_palm_body"]),
-        left_ee_site=str(layout["left_ee_site"]),
-        right_ee_site=str(layout["right_ee_site"]),
-        tele_arm_joint_values=qpos,
-    )
-
-
-def scan_tele_layout_from_session(session: dict[str, Any]) -> MjcfTeleLayout:
-    """优先 session 缓存；否则从 ``mujoco.model_path`` 扫描 MJCF。"""
-    og = session.get("orcagym") or {}
-    cached = _layout_from_orcagym_cache(og)
-    mjcf = _mjcf_path_from_session(session)
-    if cached is not None and cached.mjc_agent_prefix and cached.tele_arm_joint_values:
-        return cached
-    layout = scan_tele_layout_from_mjcf(mjcf)
-    return layout
-
-
-def load_tele_layout_from_session_path(session_path: str | Path) -> MjcfTeleLayout:
-    path = Path(session_path).expanduser().resolve()
-    session = json.loads(path.read_text(encoding="utf-8"))
-    return scan_tele_layout_from_session(session)
-
-
-def apply_tele_layout_to_session(session: dict[str, Any], layout: MjcfTeleLayout) -> dict[str, Any]:
-    out = dict(session)
-    og = dict(out.get("orcagym") or {})
-    og.update(layout.to_orcagym_dict())
-    try:
-        og["_mjcf_path_for_qpos"] = _mjcf_path_from_session(session)
-    except FileNotFoundError:
-        pass
-    out["orcagym"] = og
-    return out
-
-
-def resolve_palm_logical_names(session: dict[str, Any]) -> tuple[str, str]:
-    """左右掌 ``logical_name``（全名）：先 ``rigid_body_map`` 子串，再 MJCF tele_layout。"""
-    bodies = (
-        (session.get("rigid_body_map") or [])
-        + (session.get("orcalink_rigid_body_map") or [])
-        + (session.get("orcagym_rigid_body_map") or [])
-    )
-    names = [str(b.get("logical_name") or b.get("mjc_body_name") or "") for b in bodies]
-    left = next((n for n in names if any(s in n for s in _LEFT_PALM_SUFFIXES)), None)
-    right = next((n for n in names if any(s in n for s in _RIGHT_PALM_SUFFIXES)), None)
-    if left and right:
-        return left, right
-
-    layout = scan_tele_layout_from_session(session)
-    prefix = layout.mjc_agent_prefix
-
-    def _full(short: str) -> str:
-        return f"{prefix}_{short}" if prefix else short
-
-    return _full(layout.left_palm_body), _full(layout.right_palm_body)
-
-
-def layout_as_json(layout: MjcfTeleLayout) -> str:
-    return json.dumps(asdict(layout), ensure_ascii=False, indent=2)
 
 
 # ---------------------------------------------------------------------------

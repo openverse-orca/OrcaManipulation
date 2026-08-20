@@ -5,8 +5,11 @@ import asyncio
 import copy
 import json
 import logging
+import math
 import os
 import re
+import socket
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -16,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Sequence
 
 from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
 
+from .base.filesystem import ensure_import_path
 from .base.process_utils import ProcessManager
 
 from .ProcessOrcaGym import (
@@ -53,12 +57,6 @@ logger = logging.getLogger(__name__)
 
 _XPBD_DEBUG_LOG = ORCA_REPO_ROOT / "XPBD" / "MjcPBD_orcalink" / "debug_log"
 CLOTH_SCENE_ASSETS_BASENAME = "Config.json"
-
-
-def _ensure_domain_import_path() -> None:
-    root = str(SOFTBODY_DIR)
-    if root not in sys.path:
-        sys.path.insert(0, root)
 
 
 def _deep_merge(base: dict, overlay: dict) -> dict:
@@ -163,7 +161,7 @@ def _export_xpbd_scene(config_path: Path, out_path: Path) -> Path:
     import mujoco
     import numpy as np
 
-    _ensure_domain_import_path()
+    ensure_import_path(SOFTBODY_DIR)
     from domain.anchor_tetrahedron import anchor_local_positions, anchor_site_names  # noqa: WPS433
     from domain.body_map import load_body_map, validate_body_map  # noqa: WPS433
     from domain.mjc_coords import orca_quat_to_yup_link_orientation, orca_vec_to_yup  # noqa: WPS433
@@ -354,11 +352,7 @@ def studio_cloth_assets_dir(level: str, cloth_data_dir: Path | None = None) -> P
     if not level_name:
         raise ValueError("studio_cloth_assets_dir requires non-empty level")
 
-    import sys
-
-    domain_dir = SOFTBODY_DOMAIN_DIR
-    if str(domain_dir) not in sys.path:
-        sys.path.insert(0, str(domain_dir))
+    ensure_import_path(SOFTBODY_DOMAIN_DIR)
 
     ensure_level_scene_config(level_name, cloth_data_dir=cloth_data_dir)
     level_entry(level_name, auto_sync=False, cloth_data_dir=cloth_data_dir)
@@ -366,11 +360,7 @@ def studio_cloth_assets_dir(level: str, cloth_data_dir: Path | None = None) -> P
 
 
 def _studio_project_dir_from_template(cloth_data_dir: Path | None = None) -> Path:
-    import sys
-
-    domain_dir = SOFTBODY_DOMAIN_DIR
-    if str(domain_dir) not in sys.path:
-        sys.path.insert(0, str(domain_dir))
+    ensure_import_path(SOFTBODY_DOMAIN_DIR)
 
     return studio_project_dir(load_template_config_for_paths(cloth_data_dir=cloth_data_dir))
 
@@ -385,13 +375,7 @@ def level_primary_masked_stem(level: str, cloth_data_dir: Path | None = None) ->
     level_name = str(level).strip()
     if not level_name:
         return None
-    import sys
-
-    domain_dir = SOFTBODY_DOMAIN_DIR
-    if str(domain_dir) not in sys.path:
-        sys.path.insert(0, str(domain_dir))
-    if str(SOFTBODY_DIR) not in sys.path:
-        sys.path.insert(0, str(SOFTBODY_DIR))
+    ensure_import_path(SOFTBODY_DOMAIN_DIR, SOFTBODY_DIR)
 
     _ensure_level_scene_config(level_name, cloth_data_dir=cloth_data_dir)
     entry = level_entry(level_name, auto_sync=False, cloth_data_dir=cloth_data_dir)
@@ -533,7 +517,6 @@ def enrich_cloth_discovery_pose(model: Any, data: Any, discovered: list[dict[str
 
     坐标：MuJoCo Z-up（``center_mjc``）与 XPBD Y-up（``center_yup``，经 ``mjc_coords`` 转换）。
     """
-    import math
     import mujoco
     import numpy as np
 
@@ -726,8 +709,7 @@ def _resolve_cloth_from_model(
     """
     场景/资产解析完整流程：识别布片 + 补位姿 + 补掩码资产 + 合并 cloth + 解析资产 + 未 discovered 兜底。
 
-    统一收在编排器（原分散在 build_p2_session_from_mjcf 与 ProcessOrcaGym.adapt_config_for_orcagym 两处，
-    且 identify/enrich/merge 重复执行）。返回 (合并 cloth 后的 config, scene_assets)。
+    统一收在编排器（避免 identify/enrich/merge 多处重复）。返回 (合并 cloth 后的 config, scene_assets)。
     """
     cfg = copy.deepcopy(config)
     level = str((cfg.get("orcagym") or {}).get("level") or "").strip()
@@ -979,71 +961,13 @@ def _resolve_bodies_from_model(model: Any, config: dict[str, Any]) -> dict[str, 
 
 def _ensure_level_scene_config(level: str, cloth_data_dir: Path | None = None) -> None:
     """解析关卡后自动同步本机 scene_levels（失败不阻断联调）。"""
-    domain_dir = SOFTBODY_DOMAIN_DIR
-    if str(domain_dir) not in sys.path:
-        sys.path.insert(0, str(domain_dir))
+    ensure_import_path(SOFTBODY_DOMAIN_DIR)
     try:
 
         if ensure_level_scene_config(level, cloth_data_dir=cloth_data_dir):
             logger.debug("cloth scene config synced for level=%s", level)
     except Exception as exc:
         logger.debug("cloth scene auto-sync skipped: %s", exc)
-
-
-def build_p2_session_from_mjcf(
-    mjcf_path: Path,
-    config_path: Path,
-    *,
-    session_timestamp: str | None = None,
-    level: str | None = None,
-    cloth_data_dir: Path | None = None,
-    log_dir: Path | None = None,
-) -> tuple[dict, dict, Path]:
-    """
-    从 Studio MJCF 扫描布片位姿（含 Entity3 旋转）并写出 XPBD session JSON。
-
-    流程：``mj_forward`` → ``adapt_config_for_orcagym``（含 ``enrich_cloth_discovery_pose``）
-    → ``build_xpbd_session_config`` → ``cloth_sim_session_*.json``。
-    Studio 中旋转布料后须重新 Play 生成 MJCF，再调用本函数刷新 session。
-
-    返回 ``(xpbd_session, adapted_config, session_path)``。
-    """
-    import mujoco
-
-    if str(SOFTBODY_DIR) not in sys.path:
-        sys.path.insert(0, str(SOFTBODY_DIR))
-
-    base_cfg = load_cloth_config(config_path, cloth_data_dir=cloth_data_dir)
-    if level:
-        base_cfg = apply_runtime_orcagym_level(base_cfg, level)
-    model = mujoco.MjModel.from_xml_path(str(mjcf_path.resolve()))
-    data = mujoco.MjData(model)
-    mujoco.mj_forward(model, data)
-
-    base_cfg, scene_assets = _resolve_cloth_from_model(model, data, base_cfg, cloth_data_dir=cloth_data_dir)
-    base_cfg = _resolve_bodies_from_model(model, base_cfg)
-    adapted = adapt_config_for_orcagym(model, base_cfg, data=data)
-    xpbd_session = build_xpbd_session_config(base_cfg, adapted, cloth_data_dir=cloth_data_dir)
-    xpbd_session.setdefault("mujoco", {})["model_path"] = str(mjcf_path.resolve())
-    try:
-        from .ProcessOrcaGym import (  # noqa: WPS433
-            apply_tele_layout_to_session,
-            scan_tele_layout_from_model,
-        )
-
-        tele = scan_tele_layout_from_model(model)
-        xpbd_session = apply_tele_layout_to_session(xpbd_session, tele)
-    except (ImportError, RuntimeError, KeyError, ValueError) as exc:
-        logger.warning("tele_layout scan skipped: %s", exc)
-    ts = session_timestamp or datetime.now().strftime("view_%Y%m%d_%H%M%S")
-    session_path = write_xpbd_runtime_session_config(
-        xpbd_session,
-        session_timestamp=ts,
-        source_config_path=config_path,
-        source_mjcf_path=mjcf_path,
-        log_dir=log_dir,
-    )
-    return xpbd_session, adapted, session_path
 
 
 def body_track_position_packet_body_only(cfg: dict[str, Any]) -> bool:
@@ -1413,7 +1337,7 @@ def _connect_cloth_bridge(
     cloth_data_dir: Path | None = None,
     orcalink_port: int,
 ) -> bool:
-    _ensure_domain_import_path()
+    ensure_import_path(SOFTBODY_DIR)
     from domain.body_map import load_body_map_ordered  # noqa: WPS433
 
     model, data = get_mujoco_model_data(env)
@@ -1461,9 +1385,6 @@ def _connect_cloth_bridge(
 
 
 def _pids_on_tcp_port(port: int) -> list[int]:
-    import re
-    import subprocess
-
     try:
         out = subprocess.run(["ss", "-tlnp"], capture_output=True, text=True, check=False)
     except FileNotFoundError:
@@ -1501,8 +1422,6 @@ def _kill_stale_cloth_processes(orcalink_port: int, pico_port: int) -> None:
 
 
 def _wait_port(port: int, label: str, max_sec: int) -> bool:
-    import socket
-
     logger.info(f"等待 {label} localhost:{port} (最多 {max_sec}s)...")
     waited = 0
     while waited < max_sec:
@@ -2425,11 +2344,6 @@ def apply_runtime_cloth_overrides(
     return out
 
 
-def apply_runtime_orcagym_level(config: dict[str, Any], level: str) -> dict[str, Any]:
-    """将运行时关卡名写入 ``orcagym.level``（深拷贝，不改原 dict）。"""
-    return apply_runtime_cloth_overrides(config, level=level)
-
-
 def resolve_cloth_level(level: str | None = None, cloth_data_dir: Path | None = None) -> str:
     """委托 ``ProcessStudio.resolve_cloth_level_with_studio``，并自动同步本机关卡配置。"""
     from .ProcessStudio import resolve_cloth_level_with_studio
@@ -2458,7 +2372,7 @@ def _start_cloth_coupling(
     2. XPBD dual_gripper_cross_mjc（可选 auto_start，须先于 MuJoCo 凑齐 expected_clients）
     3. ClothOrcaLinkBridge 连接并等待 session_ready
     """
-    _ensure_domain_import_path()
+    ensure_import_path(SOFTBODY_DIR)
 
     cfg = copy.deepcopy(config)
     orcalink_port = require_orcalink_port(cfg.get("orcalink", {}))
@@ -2688,16 +2602,10 @@ def Start(params: P23cParams) -> int:
     _wait_port(params.orcagym_port, "OrcaGym", params.wait_sec)
     _wait_port(params.pbd_grpc_port, "PBDRender", params.wait_sec)
 
-    # ── 7. 同步 XPBD session ──
+    # ── 7. 检查 MJCF 就绪 ──
     if mjcf is None or not mjcf.is_file():
         logger.error(f"MJCF not found; Studio Play {level} first")
         return 2
-    ts = f"p23c_{time.strftime('%Y%m%d_%H%M%S')}"
-    _, _, session_path = build_p2_session_from_mjcf(
-        mjcf, Path(config_path), session_timestamp=ts, level=level, cloth_data_dir=cloth_data_dir,
-        log_dir=params.log_dir,
-    )
-    export_xpbd_scene_for_session(session_path, cloth_data_dir=cloth_data_dir)
 
     # ── 8. 组装 → 建 env → 挂耦合 ──
     agent_conf, data_storage, default_joint_values, obs_callback = _assemble_agent(
