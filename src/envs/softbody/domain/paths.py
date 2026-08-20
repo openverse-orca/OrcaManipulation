@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# src/envs/softbody/base/paths.py -> parent=base, parent.parent=softbody, parent.parent.parent=envs, parent.parent.parent.parent=src
+# src/envs/softbody/domain/paths.py -> parent=domain, parent.parent=softbody, parent.parent.parent=envs, parent.parent.parent.parent=src
 PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent.parent.parent
 
 # 仓库根（src → OrcaManipulation → 上级仓库）

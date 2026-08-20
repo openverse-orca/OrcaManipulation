@@ -29,7 +29,7 @@ from .ProcessOrcaGym import sync_gripper_mocap_from_bodies
 from .ProcessOrcaLink import OrcaLinkPoseRemapper, resolve_pose_remap, start_orcalink_if_configured
 from .ProcessXPBD import start_xpbd_if_configured
 
-from .base.paths import (
+from .domain.paths import (
     ORCA_REPO_ROOT,
     SOFTBODY_DIR,
     SOFTBODY_DOMAIN_DIR,
@@ -61,134 +61,6 @@ def _ensure_domain_import_path() -> None:
         sys.path.insert(0, root)
 
 
-@dataclass
-class ClothCouplingContext:
-    """单次布料耦合会话状态。"""
-
-    config: Dict[str, Any]
-    config_path: Path
-    env: OrcaGymLocalEnv
-    process_manager: ProcessManager = field(default_factory=ProcessManager)
-    session_timestamp: str = ""
-    bridge: Any = None
-    macro_frame: int = 0
-
-
-@dataclass
-class ClothCouplingHandle:
-    """
-    布料耦合句柄：每宏步向 OrcaLink 发布 POSITION，sync 模式下等待 XPBD FORCE。
-
-    接口与 FluidCouplingHandle 一致，可挂到 DataCollectionManager.set_fluid_coupling()。
-    """
-
-    config: Dict[str, Any]
-    ctx: ClothCouplingContext
-    enabled: bool = True
-    _grip_trigger_provider: Callable[[], tuple[float, float]] | None = field(
-        default=None, repr=False
-    )
-    _grip_trigger_path: Path | None = field(default=None, repr=False)
-
-    def set_grip_trigger_provider(
-        self,
-        provider: Callable[[], tuple[float, float]],
-        trigger_path: Path | str,
-    ) -> None:
-        """
-        PICO 实时模式：每宏步将左右 ``triggerValue`` 写入 ``trigger_path``，
-        供 XPBD ``MJC_PBD_DG_TRAJ=pico`` 读取。
-        """
-        self._grip_trigger_provider = provider
-        self._grip_trigger_path = Path(trigger_path)
-
-    def _sync_grip_triggers_to_xpbd(self) -> None:
-        if self._grip_trigger_provider is None or self._grip_trigger_path is None:
-            return
-        try:
-            left, right = self._grip_trigger_provider()
-            write_grip_triggers(self._grip_trigger_path, left, right)
-        except Exception as exc:
-            logger.warning("写入 grip_triggers 失败: %s", exc)
-
-    def _base_env(self):
-        base = self.ctx.env
-        if hasattr(base, "unwrapped"):
-            base = base.unwrapped
-        return base
-
-    def _sync_bridge_physics(self) -> bool:
-        """
-        将 ``ClothOrcaLinkBridge`` 的 model/data 对齐到当前 ``gym._mjData``。
-
-        ``init_env()`` 重建仿真后旧 ``MjData`` 不再被 ``mj_step`` 更新；检测到换新实例时
-        重跑 ``pose_remap.calibrate()``，使 OrcaLink 发包与 openloong 掌/指位姿一致。
-        """
-        bridge = self.ctx.bridge
-        if bridge is None:
-            return False
-        model, data = get_mujoco_model_data(self._base_env())
-        changed = bridge.bind_mujoco(model, data)
-        if changed:
-            remapper = getattr(bridge, "_pose_remapper", None)
-            if remapper is not None and getattr(remapper, "enabled", False):
-                remapper.calibrate(model, data, bridge.body_entries)
-            logger.info("cloth: MuJoCo 句柄已刷新（MjData 实例已更换，已重校 pose_remap）")
-        return changed
-
-    def on_physics_reinitialized(self) -> None:
-        """
-        ``SceneManager.publish_scene`` → ``init_env()`` 之后调用。
-
-        重置宏步计数，并绑定新建 ``MjData``，避免 XPBD 收到恒定位姿包。
-        """
-        self.ctx.macro_frame = 0
-        self._sync_bridge_physics()
-
-    def step(self) -> bool:
-        """
-        在 env.step 之前调用：mj_forward → 发布宏步 POSITION →（sync）等待 FORCE。
-
-        返回 False 时跳过本帧 env.step（发布失败或 sync 超时）。
-        """
-        if not self.enabled or self.ctx.bridge is None:
-            return True
-
-        base = self._base_env()
-        self._sync_bridge_physics()
-        model, data = get_mujoco_model_data(base)
-        sync_gripper_mocap_from_bodies(base, model, data, self.config)
-        base.mj_forward()
-        self._sync_grip_triggers_to_xpbd()
-
-        bridge = self.ctx.bridge
-        if bridge.should_pause():
-            deadline = time.perf_counter() + 120.0
-            while bridge.should_pause():
-                if time.perf_counter() > deadline:
-                    logger.error("sync 窗口等待超时 mf=%s", self.ctx.macro_frame)
-                    return False
-                time.sleep(0.002)
-
-        mf = self.ctx.macro_frame
-        ok = bridge.publish_anchor_macro_frame(mf)
-        if ok:
-            self.ctx.macro_frame += 1
-            return True
-
-        logger.error("cloth OrcaLink publish/wait 失败 macro_frame=%s", mf)
-        return False
-
-    def cleanup(self) -> None:
-        if self.ctx.bridge is not None:
-            try:
-                self.ctx.bridge.close()
-            except Exception as exc:
-                logger.warning("bridge close: %s", exc)
-            self.ctx.bridge = None
-        self.ctx.process_manager.cleanup_all()
-
-
 def _deep_merge(base: dict, overlay: dict) -> dict:
     """递归合并 overlay 到 base（dict 深合并，其它类型覆盖）。"""
     out = copy.deepcopy(base)
@@ -205,23 +77,6 @@ def _deep_merge(base: dict, overlay: dict) -> dict:
 def _load_cloth_json_file(path: Path) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
-
-
-def load_cloth_config(config_path: str | Path, cloth_data_dir: Path | None = None) -> Dict[str, Any]:
-    """
-    加载 cloth_sim JSON；若含 \"extends\" 则递归加载基配置再深合并。
-
-    extends 路径相对数据目录。
-    """
-    path = Path(config_path).expanduser().resolve()
-    raw = _load_cloth_json_file(path)
-    extends = raw.get("extends")
-    if not extends:
-        return raw
-    data_dir = resolve_cloth_data_dir(cloth_data_dir)
-    base_path = (data_dir / str(extends)).resolve()
-    base = load_cloth_config(base_path, cloth_data_dir=cloth_data_dir)
-    return _deep_merge(base, raw)
 
 
 def require_orcalink_port(orcalink_cfg: dict[str, Any]) -> int:
@@ -1122,32 +977,6 @@ def _resolve_bodies_from_model(model: Any, config: dict[str, Any]) -> dict[str, 
     return out
 
 
-def apply_runtime_cloth_overrides(
-    config: dict[str, Any],
-    *,
-    level: str | None = None,
-    mjc_agent_prefix: str | None = None,
-) -> dict[str, Any]:
-    """
-    将运行时关卡名、MuJoCo 机器人前缀写入配置（深拷贝）。
-
-    关卡与机器人型号不写进 ``Config.json``，由 CLI / 环境变量注入。
-    """
-    out = copy.deepcopy(config)
-    og = out.setdefault("orcagym", {})
-    if level and str(level).strip():
-        og["level"] = str(level).strip()
-    prefix = (mjc_agent_prefix or "").strip()
-    if prefix:
-        og["mjc_agent_prefix"] = prefix
-    return out
-
-
-def apply_runtime_orcagym_level(config: dict[str, Any], level: str) -> dict[str, Any]:
-    """将运行时关卡名写入 ``orcagym.level``（深拷贝，不改原 dict）。"""
-    return apply_runtime_cloth_overrides(config, level=level)
-
-
 def _ensure_level_scene_config(level: str, cloth_data_dir: Path | None = None) -> None:
     """解析关卡后自动同步本机 scene_levels（失败不阻断联调）。"""
     domain_dir = SOFTBODY_DOMAIN_DIR
@@ -1159,15 +988,6 @@ def _ensure_level_scene_config(level: str, cloth_data_dir: Path | None = None) -
             logger.debug("cloth scene config synced for level=%s", level)
     except Exception as exc:
         logger.debug("cloth scene auto-sync skipped: %s", exc)
-
-
-def resolve_cloth_level(level: str | None = None, cloth_data_dir: Path | None = None) -> str:
-    """委托 ``ProcessStudio.resolve_cloth_level_with_studio``，并自动同步本机关卡配置。"""
-    from .ProcessStudio import resolve_cloth_level_with_studio
-
-    resolved = resolve_cloth_level_with_studio(level)
-    _ensure_level_scene_config(resolved, cloth_data_dir=cloth_data_dir)
-    return resolved
 
 
 def build_p2_session_from_mjcf(
@@ -1640,130 +1460,6 @@ def _connect_cloth_bridge(
     return True
 
 
-def start_cloth_coupling(
-    env: OrcaGymLocalEnv,
-    config: Dict[str, Any],
-    *,
-    config_path: Optional[str | Path] = None,
-    log_dir: Optional[str | Path] = None,
-    auto_start_orcalink: Optional[bool] = None,
-    auto_start_xpbd: Optional[bool] = None,
-    cpu_affinity: Optional[str] = None,
-    cloth_data_dir: Path | None = None,
-) -> ClothCouplingHandle:
-    """
-    在已有 OrcaGym 环境上启动 OrcaLink / XPBD，并连接布料发布桥。
-
-    典型顺序（与 MjcPBD 双进程一致）：
-    1. OrcaLink Server（可选 auto_start）
-    2. XPBD dual_gripper_cross_mjc（可选 auto_start，须先于 MuJoCo 凑齐 expected_clients）
-    3. ClothOrcaLinkBridge 连接并等待 session_ready
-    """
-    _ensure_domain_import_path()
-
-    cfg = copy.deepcopy(config)
-    orcalink_port = require_orcalink_port(cfg.get("orcalink", {}))
-    path = Path(config_path or default_cloth_config_path(cloth_data_dir=cloth_data_dir)).resolve()
-    base_cfg = load_cloth_config(path, cloth_data_dir=cloth_data_dir)
-
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    if auto_start_orcalink is not None:
-        cfg.setdefault("orcalink", {})["auto_start"] = bool(auto_start_orcalink)
-    if auto_start_xpbd is not None:
-        cfg.setdefault("xpbd", {})["auto_start"] = bool(auto_start_xpbd)
-
-    og = cfg.setdefault("orcagym", {})
-    resolved_level = resolve_cloth_level(str(og.get("level") or "").strip() or None, cloth_data_dir=cloth_data_dir)
-    og["level"] = resolved_level
-
-    ctx = ClothCouplingContext(config=cfg, config_path=path, env=env, session_timestamp=ts)
-
-    model, data = get_mujoco_model_data(env)
-    base_env = env.unwrapped if hasattr(env, "unwrapped") else env
-    base_env.mj_forward()
-
-    from .ProcessStudio import run_masked_vtk_prefab_check_at_startup
-
-    cfg, scene_assets = _resolve_cloth_from_model(model, data, cfg, cloth_data_dir=cloth_data_dir)
-    if not run_masked_vtk_prefab_check_at_startup(cfg, scene_assets=scene_assets):
-        import logging
-        logging.getLogger(__name__).warning(
-            "掩码 VTK 预制检查未通过（将继续运行，仅 VTK 加载不受影响）。"
-            "跳过: CLOTH_SKIP_MASKED_PREFAB_CHECK=1"
-        )
-
-    cfg = _resolve_bodies_from_model(model, cfg)
-    adapted = adapt_config_for_orcagym(model, cfg, data=data)
-    xpbd_session_cfg = build_xpbd_session_config(base_cfg, adapted, cloth_data_dir=cloth_data_dir)
-    mjcf_path = get_mujoco_xml_path(env)
-    xpbd_session_cfg.setdefault("mujoco", {})["model_path"] = str(mjcf_path)
-    session_path = write_xpbd_runtime_session_config(
-        xpbd_session_cfg,
-        session_timestamp=ts,
-        source_config_path=path,
-        source_mjcf_path=mjcf_path,
-        log_dir=log_dir,
-    )
-    ctx.config = adapted
-    ctx.config_path = session_path
-    run_log_dir = session_path.parent
-
-    discover_only = bool((xpbd_session_cfg.get("xpbd") or {}).get("cloth_discover_only", True))
-    if not discover_only:
-        try:
-            scene_path = export_xpbd_scene_for_session(session_path, cloth_data_dir=cloth_data_dir)
-            logger.info("XPBD scene exported: %s", scene_path)
-        except Exception as exc:
-            ctx.process_manager.cleanup_all()
-            raise RuntimeError(f"XPBD 场景导出失败: {exc}") from exc
-
-    logger.info("=" * 60)
-    logger.info("布料 MjcPBD 耦合挂载（OrcaGym → OrcaLink → XPBD → Studio）")
-    logger.info("config: %s", path)
-    logger.info("XPBD MJC_PBD_CONFIG: %s", session_path)
-    cloth_blk = xpbd_session_cfg.get("cloth") or {}
-    if cloth_blk.get("discovered"):
-        logger.info(
-            "cloth discovered: mesh=%s asset_dir=%s center_yup=%s quat_wxyz_yup=%s",
-            cloth_blk.get("mesh"),
-            cloth_blk.get("asset_dir"),
-            cloth_blk.get("center_yup"),
-            cloth_blk.get("quat_wxyz_yup"),
-        )
-    logger.info("=" * 60)
-
-    start_orcalink_if_configured(
-        cfg,
-        process_manager=ctx.process_manager,
-        log_dir=run_log_dir,
-        session_timestamp=ts,
-        force_restart=True,
-        orcalink_port=orcalink_port,
-    )
-    xpbd_dg_traj = str((adapted.get("xpbd") or {}).get("dg_traj", "")).strip()
-    if xpbd_dg_traj == "pico":
-        trigger_path = run_log_dir / "grip_triggers.txt"
-        os.environ["MJC_PBD_GRIP_TRIGGER_PATH"] = str(trigger_path)
-        logger.info("PICO grip triggers → %s (MJC_PBD_DG_TRAJ=pico)", trigger_path)
-    start_xpbd_if_configured(
-        adapted,
-        config_path=session_path,
-        process_manager=ctx.process_manager,
-        log_dir=run_log_dir,
-        session_timestamp=ts,
-        cpu_affinity=cpu_affinity,
-        cloth_data_dir=cloth_data_dir,
-    )
-
-    if not _connect_cloth_bridge(env, cfg, ctx, adapted=adapted, cloth_data_dir=cloth_data_dir, orcalink_port=orcalink_port):
-        ctx.process_manager.cleanup_all()
-        raise RuntimeError("布料 OrcaLink 桥接初始化失败")
-
-    handle = ClothCouplingHandle(config=adapted, ctx=ctx, enabled=True)
-    return handle
-
-
 def _pids_on_tcp_port(port: int) -> list[int]:
     import re
     import subprocess
@@ -1820,46 +1516,6 @@ def _wait_port(port: int, label: str, max_sec: int) -> bool:
         waited += 2
     logger.info(f"超时：{label} :{port} 未监听")
     return False
-
-
-@dataclass
-class P23cParams:
-    """P23c 联调运行时参数（RunSim 组装，run_p23c 消费）。"""
-
-    repo_root: Path
-    base_dir: Path
-    log_dir: Path
-    level: str | None
-    agent: str
-    mjc_prefix: str
-    config_path: str
-    task_config: str | None = None
-    cloth_data_dir: Path | None = None
-    orcagym_port: int = 50051
-    pbd_grpc_port: int = 50263
-    orcalink_port: int = 50361
-    pico_port: int = 8001
-    wait_sec: int = 180
-    kill_stale: bool = True
-    auto_start_studio: bool = False
-    collect_data: bool = False
-    cloth_auto_start_orcalink: bool = False
-    cloth_auto_start_xpbd: bool = False
-    xpbd_ui: bool = True
-    cloth_sync_studio_vis: bool = True
-    cloth_no_realtime: bool = False
-    mujoco_viewer: bool = False
-    gripper_trace: bool = False
-    pico_delta_trace: bool = False
-    frame_skip: int = 20
-    time_step: float = 0.001
-    max_macro_frames: int | None = None
-    max_sec: int = 120
-    xpbd_auto_build: bool = True
-    xpbd_build_target: str = ""
-    agent_user_set: bool = False
-    config_explicit: bool = False
-    bench_json: str = ""
 
 
 def _assemble_agent(
@@ -2036,7 +1692,7 @@ def _mount_cloth(
     agent: str,
     mjc_prefix: str | None,
 ) -> None:
-    """挂布料耦合：load config + apply overrides + start_cloth_coupling + 读 Pico 扳机。"""
+    """挂布料耦合：load config + apply overrides + _start_cloth_coupling + 读 Pico 扳机。"""
     cloth_data_dir = params.cloth_data_dir
     cloth_cfg_path = params.config_path
     if not cloth_cfg_path:
@@ -2062,7 +1718,7 @@ def _mount_cloth(
             f"cloth frame_skip={mj_fs} 与 frame_skip={params.frame_skip} 不一致；建议对齐 dual_gripper_cross_full"
         )
 
-    cloth_handle = start_cloth_coupling(
+    cloth_handle = _start_cloth_coupling(
         env,
         cloth_config,
         config_path=cloth_cfg_path,
@@ -2082,159 +1738,6 @@ def _mount_cloth(
 
     cloth_handle.set_grip_trigger_provider(_read_pico_triggers, trigger_path)
     data_collection_manager.set_skip_render(True)
-
-
-def run_p23c(params: P23cParams) -> int:
-    """P23c 完整编排：准备 → 组装 → 建 env → 挂耦合 → 装配 → 跑循环。"""
-    from .base.paths import resolve_cloth_config_path
-    from .ProcessOrcaGym import scan_tele_layout_from_mjcf
-    from .ProcessStudio import ensure_ready, find_latest_studio_mjcf_path
-    from .ProcessXPBD import cleanup, prepare
-
-    # 下游环境变量
-    os.environ["PYTHONPATH"] = (
-        f"{params.repo_root / 'OrcaGym'}:"
-        f"{params.repo_root / 'OrcaManipulation' / 'src'}:"
-        + os.environ.get("PYTHONPATH", "")
-    )
-    os.environ["PBD_GRPC_ADDRESS"] = (
-        os.environ.get("PBD_GRPC_ADDRESS", "").strip() or f"localhost:{params.pbd_grpc_port}"
-    )
-    os.environ["XPBD_UI"] = "1" if params.xpbd_ui else "0"
-    os.environ.setdefault("PBDX_FORCE_GS_ONLY", "1")
-    os.environ.setdefault("PBDX_SOLVER", "gs")
-
-    # 关卡 / 配置解析
-    cloth_data_dir = params.cloth_data_dir
-    level = resolve_cloth_level(params.level, cloth_data_dir=cloth_data_dir)
-    config_path = params.config_path
-    if not config_path:
-        config_path = str(resolve_cloth_config_path(level=level, agent=params.agent, cloth_data_dir=cloth_data_dir))
-    agent = params.agent
-    mjc_prefix = params.mjc_prefix
-
-    # MJCF 扫描：检测 agent / mjc_prefix
-    mjcf = find_latest_studio_mjcf_path()
-    if mjcf is not None and mjcf.is_file():
-        try:
-            layout = scan_tele_layout_from_mjcf(mjcf)
-            detected_agent = getattr(layout, "tele_agent_name", "") or ""
-            detected_prefix = getattr(layout, "mjc_agent_prefix", "") or ""
-        except Exception:
-            detected_agent = detected_prefix = ""
-        if not params.agent_user_set:
-            if detected_agent and detected_agent != agent:
-                logger.info(f"MJCF 扫描 tele_agent={detected_agent}（覆盖默认 openloong）")
-                agent, mjc_prefix = detected_agent, detected_prefix
-                if not params.config_explicit:
-                    config_path = str(resolve_cloth_config_path(level=level, agent=agent, cloth_data_dir=cloth_data_dir))
-        elif detected_prefix and detected_prefix != mjc_prefix:
-            mjc_prefix = detected_prefix
-
-    os.environ["LEVEL"] = level or ""
-    os.environ["AGENT"] = agent
-    os.environ["MJC_PREFIX"] = mjc_prefix
-    os.environ["CFG"] = config_path
-
-    if params.cloth_sync_studio_vis:
-        os.environ["CLOTH_SYNC_STUDIO_VIS"] = "1"
-        os.environ.setdefault("CLOTH_STUDIO_VIS_STRIDE", "1")
-    if params.xpbd_ui:
-        os.environ.pop("MJC_PBD_NO_UI", None)
-        os.environ.setdefault("DISPLAY", ":0")
-    else:
-        os.environ["MJC_PBD_NO_UI"] = "1"
-
-    # XPBD 二进制（清旧 + 准备）
-    if params.xpbd_auto_build:
-        # 默认 target/version 从 Config.json 读（单一来源）；环境变量 / 参数可覆盖
-        _cfg = load_cloth_config(config_path, cloth_data_dir=cloth_data_dir)
-        default_target = str(_cfg.get("xpbd_default_target") or "").strip()
-        default_version = str(_cfg.get("xpbd_default_version") or "").strip()
-        target = params.xpbd_build_target or default_target
-        os.environ["XPBD_BUILD_TARGET"] = target
-        os.environ.setdefault("ORCA_XPBD_VERSION", default_version)
-        cleanup(target)
-        if prepare(target) != 0:
-            logger.error("XPBD 准备失败")
-            return 1
-
-    # 进程 / 端口就绪
-    if params.kill_stale:
-        _kill_stale_cloth_processes(params.orcalink_port, params.pico_port)
-    else:
-        logger.info("KILL_STALE=0：跳过陈旧进程清理")
-    ensure_ready(params.auto_start_studio)
-    _wait_port(params.orcagym_port, "OrcaGym", params.wait_sec)
-    _wait_port(params.pbd_grpc_port, "PBDRender", params.wait_sec)
-
-    # 同步 XPBD session
-    if mjcf is None or not mjcf.is_file():
-        logger.error(f"MJCF not found; Studio Play {level} first")
-        return 2
-    ts = f"p23c_{time.strftime('%Y%m%d_%H%M%S')}"
-    _, _, session_path = build_p2_session_from_mjcf(
-        mjcf, Path(config_path), session_timestamp=ts, level=level, cloth_data_dir=cloth_data_dir,
-        log_dir=params.log_dir,
-    )
-    export_xpbd_scene_for_session(session_path, cloth_data_dir=cloth_data_dir)
-
-    # 组装 → 建 env → 挂耦合
-    agent_conf, data_storage, default_joint_values, obs_callback = _assemble_agent(
-        agent, level, params.collect_data, params.base_dir
-    )
-    data_collection_manager, env, pico_joystick, pico_joystick_device, scene_manager, config = _build_env(
-        params, agent_conf, data_storage, default_joint_values, obs_callback
-    )
-    _mount_cloth(params, env, data_collection_manager, pico_joystick, level, agent, mjc_prefix)
-
-    # 遥操装配 + 任务 + 跑循环
-    if params.bench_json:
-        data_collection_manager.enable_bench(params.bench_json)
-
-    setup_teleop_controllers(agent, data_collection_manager, env, agent_conf, pico_joystick_device)
-
-    from scene.scene_config_util import create_task, should_use_empty_task
-
-    data_collection_manager.set_task(create_task(env, config, params.task_config))
-    from controllers import controllers
-
-    controllers.add_task_status_pico_controller(
-        data_collection_manager, env, pico_joystick_device, agent_conf.base_body,
-    )
-
-    data_collection_manager.save_video = params.collect_data
-    if params.cloth_no_realtime:
-        data_collection_manager.set_realtime_sync(False)
-
-    if os.environ.get("CLOTH_CAMERA_MONITOR", "").strip().lower() in ("1", "true", "yes"):
-        for port in (7080, 7081, 7090, 7091):
-            data_collection_manager.add_monitor_port(port)
-
-    if params.pico_delta_trace:
-        from .ProcessPico import attach_pico_mjc_delta_tracer
-
-        delta_csv = params.log_dir / "pico_mjc_delta_trace.csv"
-        palm_l = palm_r = None
-        if agent == "g1_omnipicker":
-            palm_l, palm_r = "arm_l_end_link", "arm_r_end_link"
-        attach_pico_mjc_delta_tracer(
-            data_collection_manager,
-            env,
-            pico_joystick,
-            agent_conf.base_body,
-            agent_conf.l_arm,
-            agent_conf.r_arm,
-            delta_csv,
-            arm_controllers=data_collection_manager.controllers,
-            palm_l_body=palm_l,
-            palm_r_body=palm_r,
-        )
-
-    data_collection_manager.run(
-        max_episodes=1 if (params.max_macro_frames is not None or params.max_sec is not None) else None
-    )
-    return 0
 
 
 def setup_teleop_controllers(
@@ -2749,3 +2252,506 @@ def sync_all_level_configs(
     if synced:
         save_generated_levels_document(merged, template=template)
     return synced, skipped
+
+
+# ---------------------------------------------------------------------------
+# 对外主函数（public entry points，被 envs.softbody / RunCollection.py 调用）
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ClothCouplingContext:
+    """单次布料耦合会话状态。"""
+
+    config: Dict[str, Any]
+    config_path: Path
+    env: OrcaGymLocalEnv
+    process_manager: ProcessManager = field(default_factory=ProcessManager)
+    session_timestamp: str = ""
+    bridge: Any = None
+    macro_frame: int = 0
+
+
+@dataclass
+class ClothCouplingHandle:
+    """
+    布料耦合句柄：每宏步向 OrcaLink 发布 POSITION，sync 模式下等待 XPBD FORCE。
+
+    接口与 FluidCouplingHandle 一致，可挂到 DataCollectionManager.set_fluid_coupling()。
+    """
+
+    config: Dict[str, Any]
+    ctx: ClothCouplingContext
+    enabled: bool = True
+    _grip_trigger_provider: Callable[[], tuple[float, float]] | None = field(
+        default=None, repr=False
+    )
+    _grip_trigger_path: Path | None = field(default=None, repr=False)
+
+    def set_grip_trigger_provider(
+        self,
+        provider: Callable[[], tuple[float, float]],
+        trigger_path: Path | str,
+    ) -> None:
+        """
+        PICO 实时模式：每宏步将左右 ``triggerValue`` 写入 ``trigger_path``，
+        供 XPBD ``MJC_PBD_DG_TRAJ=pico`` 读取。
+        """
+        self._grip_trigger_provider = provider
+        self._grip_trigger_path = Path(trigger_path)
+
+    def _sync_grip_triggers_to_xpbd(self) -> None:
+        if self._grip_trigger_provider is None or self._grip_trigger_path is None:
+            return
+        try:
+            left, right = self._grip_trigger_provider()
+            write_grip_triggers(self._grip_trigger_path, left, right)
+        except Exception as exc:
+            logger.warning("写入 grip_triggers 失败: %s", exc)
+
+    def _base_env(self):
+        base = self.ctx.env
+        if hasattr(base, "unwrapped"):
+            base = base.unwrapped
+        return base
+
+    def _sync_bridge_physics(self) -> bool:
+        """
+        将 ``ClothOrcaLinkBridge`` 的 model/data 对齐到当前 ``gym._mjData``。
+
+        ``init_env()`` 重建仿真后旧 ``MjData`` 不再被 ``mj_step`` 更新；检测到换新实例时
+        重跑 ``pose_remap.calibrate()``，使 OrcaLink 发包与 openloong 掌/指位姿一致。
+        """
+        bridge = self.ctx.bridge
+        if bridge is None:
+            return False
+        model, data = get_mujoco_model_data(self._base_env())
+        changed = bridge.bind_mujoco(model, data)
+        if changed:
+            remapper = getattr(bridge, "_pose_remapper", None)
+            if remapper is not None and getattr(remapper, "enabled", False):
+                remapper.calibrate(model, data, bridge.body_entries)
+            logger.info("cloth: MuJoCo 句柄已刷新（MjData 实例已更换，已重校 pose_remap）")
+        return changed
+
+    def on_physics_reinitialized(self) -> None:
+        """
+        ``SceneManager.publish_scene`` → ``init_env()`` 之后调用。
+
+        重置宏步计数，并绑定新建 ``MjData``，避免 XPBD 收到恒定位姿包。
+        """
+        self.ctx.macro_frame = 0
+        self._sync_bridge_physics()
+
+    def step(self) -> bool:
+        """
+        在 env.step 之前调用：mj_forward → 发布宏步 POSITION →（sync）等待 FORCE。
+
+        返回 False 时跳过本帧 env.step（发布失败或 sync 超时）。
+        """
+        if not self.enabled or self.ctx.bridge is None:
+            return True
+
+        base = self._base_env()
+        self._sync_bridge_physics()
+        model, data = get_mujoco_model_data(base)
+        sync_gripper_mocap_from_bodies(base, model, data, self.config)
+        base.mj_forward()
+        self._sync_grip_triggers_to_xpbd()
+
+        bridge = self.ctx.bridge
+        if bridge.should_pause():
+            deadline = time.perf_counter() + 120.0
+            while bridge.should_pause():
+                if time.perf_counter() > deadline:
+                    logger.error("sync 窗口等待超时 mf=%s", self.ctx.macro_frame)
+                    return False
+                time.sleep(0.002)
+
+        mf = self.ctx.macro_frame
+        ok = bridge.publish_anchor_macro_frame(mf)
+        if ok:
+            self.ctx.macro_frame += 1
+            return True
+
+        logger.error("cloth OrcaLink publish/wait 失败 macro_frame=%s", mf)
+        return False
+
+    def cleanup(self) -> None:
+        if self.ctx.bridge is not None:
+            try:
+                self.ctx.bridge.close()
+            except Exception as exc:
+                logger.warning("bridge close: %s", exc)
+            self.ctx.bridge = None
+        self.ctx.process_manager.cleanup_all()
+
+
+def load_cloth_config(config_path: str | Path, cloth_data_dir: Path | None = None) -> Dict[str, Any]:
+    """
+    加载 cloth_sim JSON；若含 \"extends\" 则递归加载基配置再深合并。
+
+    extends 路径相对数据目录。
+    """
+    path = Path(config_path).expanduser().resolve()
+    raw = _load_cloth_json_file(path)
+    extends = raw.get("extends")
+    if not extends:
+        return raw
+    data_dir = resolve_cloth_data_dir(cloth_data_dir)
+    base_path = (data_dir / str(extends)).resolve()
+    base = load_cloth_config(base_path, cloth_data_dir=cloth_data_dir)
+    return _deep_merge(base, raw)
+
+
+def apply_runtime_cloth_overrides(
+    config: dict[str, Any],
+    *,
+    level: str | None = None,
+    mjc_agent_prefix: str | None = None,
+) -> dict[str, Any]:
+    """
+    将运行时关卡名、MuJoCo 机器人前缀写入配置（深拷贝）。
+
+    关卡与机器人型号不写进 ``Config.json``，由 CLI / 环境变量注入。
+    """
+    out = copy.deepcopy(config)
+    og = out.setdefault("orcagym", {})
+    if level and str(level).strip():
+        og["level"] = str(level).strip()
+    prefix = (mjc_agent_prefix or "").strip()
+    if prefix:
+        og["mjc_agent_prefix"] = prefix
+    return out
+
+
+def apply_runtime_orcagym_level(config: dict[str, Any], level: str) -> dict[str, Any]:
+    """将运行时关卡名写入 ``orcagym.level``（深拷贝，不改原 dict）。"""
+    return apply_runtime_cloth_overrides(config, level=level)
+
+
+def resolve_cloth_level(level: str | None = None, cloth_data_dir: Path | None = None) -> str:
+    """委托 ``ProcessStudio.resolve_cloth_level_with_studio``，并自动同步本机关卡配置。"""
+    from .ProcessStudio import resolve_cloth_level_with_studio
+
+    resolved = resolve_cloth_level_with_studio(level)
+    _ensure_level_scene_config(resolved, cloth_data_dir=cloth_data_dir)
+    return resolved
+
+
+def _start_cloth_coupling(
+    env: OrcaGymLocalEnv,
+    config: Dict[str, Any],
+    *,
+    config_path: Optional[str | Path] = None,
+    log_dir: Optional[str | Path] = None,
+    auto_start_orcalink: Optional[bool] = None,
+    auto_start_xpbd: Optional[bool] = None,
+    cpu_affinity: Optional[str] = None,
+    cloth_data_dir: Path | None = None,
+) -> ClothCouplingHandle:
+    """
+    在已有 OrcaGym 环境上启动 OrcaLink / XPBD，并连接布料发布桥。
+
+    典型顺序（与 MjcPBD 双进程一致）：
+    1. OrcaLink Server（可选 auto_start）
+    2. XPBD dual_gripper_cross_mjc（可选 auto_start，须先于 MuJoCo 凑齐 expected_clients）
+    3. ClothOrcaLinkBridge 连接并等待 session_ready
+    """
+    _ensure_domain_import_path()
+
+    cfg = copy.deepcopy(config)
+    orcalink_port = require_orcalink_port(cfg.get("orcalink", {}))
+    path = Path(config_path or default_cloth_config_path(cloth_data_dir=cloth_data_dir)).resolve()
+    base_cfg = load_cloth_config(path, cloth_data_dir=cloth_data_dir)
+
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    if auto_start_orcalink is not None:
+        cfg.setdefault("orcalink", {})["auto_start"] = bool(auto_start_orcalink)
+    if auto_start_xpbd is not None:
+        cfg.setdefault("xpbd", {})["auto_start"] = bool(auto_start_xpbd)
+
+    og = cfg.setdefault("orcagym", {})
+    resolved_level = resolve_cloth_level(str(og.get("level") or "").strip() or None, cloth_data_dir=cloth_data_dir)
+    og["level"] = resolved_level
+
+    ctx = ClothCouplingContext(config=cfg, config_path=path, env=env, session_timestamp=ts)
+
+    model, data = get_mujoco_model_data(env)
+    base_env = env.unwrapped if hasattr(env, "unwrapped") else env
+    base_env.mj_forward()
+
+    from .ProcessStudio import run_masked_vtk_prefab_check_at_startup
+
+    cfg, scene_assets = _resolve_cloth_from_model(model, data, cfg, cloth_data_dir=cloth_data_dir)
+    if not run_masked_vtk_prefab_check_at_startup(cfg, scene_assets=scene_assets):
+        import logging
+        logging.getLogger(__name__).warning(
+            "掩码 VTK 预制检查未通过（将继续运行，仅 VTK 加载不受影响）。"
+            "跳过: CLOTH_SKIP_MASKED_PREFAB_CHECK=1"
+        )
+
+    cfg = _resolve_bodies_from_model(model, cfg)
+    adapted = adapt_config_for_orcagym(model, cfg, data=data)
+    xpbd_session_cfg = build_xpbd_session_config(base_cfg, adapted, cloth_data_dir=cloth_data_dir)
+    mjcf_path = get_mujoco_xml_path(env)
+    xpbd_session_cfg.setdefault("mujoco", {})["model_path"] = str(mjcf_path)
+    session_path = write_xpbd_runtime_session_config(
+        xpbd_session_cfg,
+        session_timestamp=ts,
+        source_config_path=path,
+        source_mjcf_path=mjcf_path,
+        log_dir=log_dir,
+    )
+    ctx.config = adapted
+    ctx.config_path = session_path
+    run_log_dir = session_path.parent
+
+    discover_only = bool((xpbd_session_cfg.get("xpbd") or {}).get("cloth_discover_only", True))
+    if not discover_only:
+        try:
+            scene_path = export_xpbd_scene_for_session(session_path, cloth_data_dir=cloth_data_dir)
+            logger.info("XPBD scene exported: %s", scene_path)
+        except Exception as exc:
+            ctx.process_manager.cleanup_all()
+            raise RuntimeError(f"XPBD 场景导出失败: {exc}") from exc
+
+    logger.info("=" * 60)
+    logger.info("布料 MjcPBD 耦合挂载（OrcaGym → OrcaLink → XPBD → Studio）")
+    logger.info("config: %s", path)
+    logger.info("XPBD MJC_PBD_CONFIG: %s", session_path)
+    cloth_blk = xpbd_session_cfg.get("cloth") or {}
+    if cloth_blk.get("discovered"):
+        logger.info(
+            "cloth discovered: mesh=%s asset_dir=%s center_yup=%s quat_wxyz_yup=%s",
+            cloth_blk.get("mesh"),
+            cloth_blk.get("asset_dir"),
+            cloth_blk.get("center_yup"),
+            cloth_blk.get("quat_wxyz_yup"),
+        )
+    logger.info("=" * 60)
+
+    start_orcalink_if_configured(
+        cfg,
+        process_manager=ctx.process_manager,
+        log_dir=run_log_dir,
+        session_timestamp=ts,
+        force_restart=True,
+        orcalink_port=orcalink_port,
+    )
+    xpbd_dg_traj = str((adapted.get("xpbd") or {}).get("dg_traj", "")).strip()
+    if xpbd_dg_traj == "pico":
+        trigger_path = run_log_dir / "grip_triggers.txt"
+        os.environ["MJC_PBD_GRIP_TRIGGER_PATH"] = str(trigger_path)
+        logger.info("PICO grip triggers → %s (MJC_PBD_DG_TRAJ=pico)", trigger_path)
+    start_xpbd_if_configured(
+        adapted,
+        config_path=session_path,
+        process_manager=ctx.process_manager,
+        log_dir=run_log_dir,
+        session_timestamp=ts,
+        cpu_affinity=cpu_affinity,
+        cloth_data_dir=cloth_data_dir,
+    )
+
+    if not _connect_cloth_bridge(env, cfg, ctx, adapted=adapted, cloth_data_dir=cloth_data_dir, orcalink_port=orcalink_port):
+        ctx.process_manager.cleanup_all()
+        raise RuntimeError("布料 OrcaLink 桥接初始化失败")
+
+    handle = ClothCouplingHandle(config=adapted, ctx=ctx, enabled=True)
+    return handle
+
+
+@dataclass
+class P23cParams:
+    """P23c 联调运行时参数（RunSim 组装，Start 消费）。"""
+
+    repo_root: Path
+    base_dir: Path
+    log_dir: Path
+    level: str | None
+    agent: str
+    mjc_prefix: str
+    config_path: str
+    task_config: str | None = None
+    cloth_data_dir: Path | None = None
+    orcagym_port: int = 50051
+    pbd_grpc_port: int = 50263
+    orcalink_port: int = 50361
+    pico_port: int = 8001
+    wait_sec: int = 180
+    kill_stale: bool = True
+    auto_start_studio: bool = False
+    collect_data: bool = False
+    cloth_auto_start_orcalink: bool = False
+    cloth_auto_start_xpbd: bool = False
+    xpbd_ui: bool = True
+    cloth_sync_studio_vis: bool = True
+    cloth_no_realtime: bool = False
+    mujoco_viewer: bool = False
+    gripper_trace: bool = False
+    pico_delta_trace: bool = False
+    frame_skip: int = 20
+    time_step: float = 0.001
+    max_macro_frames: int | None = None
+    max_sec: int = 120
+    xpbd_auto_build: bool = True
+    xpbd_build_target: str = ""
+    agent_user_set: bool = False
+    config_explicit: bool = False
+    bench_json: str = ""
+
+
+def Start(params: P23cParams) -> int:
+    """softbody 统一对外入口：P23c 完整编排（准备 → 组装 → 建 env → 挂耦合 → 装配 → 跑循环）。"""
+    from .domain.paths import resolve_cloth_config_path
+    from .ProcessOrcaGym import scan_tele_layout_from_mjcf
+    from .ProcessStudio import ensure_ready, find_latest_studio_mjcf_path
+    from .ProcessXPBD import cleanup, prepare
+
+    # ── 1. 下游环境变量 ──
+    os.environ["PYTHONPATH"] = (
+        f"{params.repo_root / 'OrcaGym'}:"
+        f"{params.repo_root / 'OrcaManipulation' / 'src'}:"
+        + os.environ.get("PYTHONPATH", "")
+    )
+    os.environ["PBD_GRPC_ADDRESS"] = (
+        os.environ.get("PBD_GRPC_ADDRESS", "").strip() or f"localhost:{params.pbd_grpc_port}"
+    )
+    os.environ["XPBD_UI"] = "1" if params.xpbd_ui else "0"
+    os.environ.setdefault("PBDX_FORCE_GS_ONLY", "1")
+    os.environ.setdefault("PBDX_SOLVER", "gs")
+
+    # ── 2. 关卡 / 配置解析 ──
+    cloth_data_dir = params.cloth_data_dir
+    level = resolve_cloth_level(params.level, cloth_data_dir=cloth_data_dir)
+    config_path = params.config_path
+    if not config_path:
+        config_path = str(resolve_cloth_config_path(level=level, agent=params.agent, cloth_data_dir=cloth_data_dir))
+    agent = params.agent
+    mjc_prefix = params.mjc_prefix
+
+    # ── 3. MJCF 扫描（检测 agent / mjc_prefix）──
+    mjcf = find_latest_studio_mjcf_path()
+    if mjcf is not None and mjcf.is_file():
+        try:
+            layout = scan_tele_layout_from_mjcf(mjcf)
+            detected_agent = getattr(layout, "tele_agent_name", "") or ""
+            detected_prefix = getattr(layout, "mjc_agent_prefix", "") or ""
+        except Exception:
+            detected_agent = detected_prefix = ""
+        if not params.agent_user_set:
+            if detected_agent and detected_agent != agent:
+                logger.info(f"MJCF 扫描 tele_agent={detected_agent}（覆盖默认 openloong）")
+                agent, mjc_prefix = detected_agent, detected_prefix
+                if not params.config_explicit:
+                    config_path = str(resolve_cloth_config_path(level=level, agent=agent, cloth_data_dir=cloth_data_dir))
+        elif detected_prefix and detected_prefix != mjc_prefix:
+            mjc_prefix = detected_prefix
+
+    # ── 4. 写运行时环境变量（LEVEL / AGENT / MJC_PREFIX / CFG / UI）──
+    os.environ["LEVEL"] = level or ""
+    os.environ["AGENT"] = agent
+    os.environ["MJC_PREFIX"] = mjc_prefix
+    os.environ["CFG"] = config_path
+
+    if params.cloth_sync_studio_vis:
+        os.environ["CLOTH_SYNC_STUDIO_VIS"] = "1"
+        os.environ.setdefault("CLOTH_STUDIO_VIS_STRIDE", "1")
+    if params.xpbd_ui:
+        os.environ.pop("MJC_PBD_NO_UI", None)
+        os.environ.setdefault("DISPLAY", ":0")
+    else:
+        os.environ["MJC_PBD_NO_UI"] = "1"
+
+    # ── 5. XPBD 二进制准备（清旧 + 构建）──
+    if params.xpbd_auto_build:
+        # 默认 target/version 从 Config.json 读（单一来源）；环境变量 / 参数可覆盖
+        _cfg = load_cloth_config(config_path, cloth_data_dir=cloth_data_dir)
+        default_target = str(_cfg.get("xpbd_default_target") or "").strip()
+        default_version = str(_cfg.get("xpbd_default_version") or "").strip()
+        target = params.xpbd_build_target or default_target
+        os.environ["XPBD_BUILD_TARGET"] = target
+        os.environ.setdefault("ORCA_XPBD_VERSION", default_version)
+        cleanup(target)
+        if prepare(target) != 0:
+            logger.error("XPBD 准备失败")
+            return 1
+
+    # ── 6. 进程 / 端口就绪 ──
+    if params.kill_stale:
+        _kill_stale_cloth_processes(params.orcalink_port, params.pico_port)
+    else:
+        logger.info("KILL_STALE=0：跳过陈旧进程清理")
+    ensure_ready(params.auto_start_studio)
+    _wait_port(params.orcagym_port, "OrcaGym", params.wait_sec)
+    _wait_port(params.pbd_grpc_port, "PBDRender", params.wait_sec)
+
+    # ── 7. 同步 XPBD session ──
+    if mjcf is None or not mjcf.is_file():
+        logger.error(f"MJCF not found; Studio Play {level} first")
+        return 2
+    ts = f"p23c_{time.strftime('%Y%m%d_%H%M%S')}"
+    _, _, session_path = build_p2_session_from_mjcf(
+        mjcf, Path(config_path), session_timestamp=ts, level=level, cloth_data_dir=cloth_data_dir,
+        log_dir=params.log_dir,
+    )
+    export_xpbd_scene_for_session(session_path, cloth_data_dir=cloth_data_dir)
+
+    # ── 8. 组装 → 建 env → 挂耦合 ──
+    agent_conf, data_storage, default_joint_values, obs_callback = _assemble_agent(
+        agent, level, params.collect_data, params.base_dir
+    )
+    data_collection_manager, env, pico_joystick, pico_joystick_device, scene_manager, config = _build_env(
+        params, agent_conf, data_storage, default_joint_values, obs_callback
+    )
+    _mount_cloth(params, env, data_collection_manager, pico_joystick, level, agent, mjc_prefix)
+
+    # ── 9. 遥操装配 + 任务 + 跑循环 ──
+    if params.bench_json:
+        data_collection_manager.enable_bench(params.bench_json)
+
+    setup_teleop_controllers(agent, data_collection_manager, env, agent_conf, pico_joystick_device)
+
+    from scene.scene_config_util import create_task, should_use_empty_task
+
+    data_collection_manager.set_task(create_task(env, config, params.task_config))
+    from controllers import controllers
+
+    controllers.add_task_status_pico_controller(
+        data_collection_manager, env, pico_joystick_device, agent_conf.base_body,
+    )
+
+    data_collection_manager.save_video = params.collect_data
+    if params.cloth_no_realtime:
+        data_collection_manager.set_realtime_sync(False)
+
+    if os.environ.get("CLOTH_CAMERA_MONITOR", "").strip().lower() in ("1", "true", "yes"):
+        for port in (7080, 7081, 7090, 7091):
+            data_collection_manager.add_monitor_port(port)
+
+    if params.pico_delta_trace:
+        from .ProcessPico import attach_pico_mjc_delta_tracer
+
+        delta_csv = params.log_dir / "pico_mjc_delta_trace.csv"
+        palm_l = palm_r = None
+        if agent == "g1_omnipicker":
+            palm_l, palm_r = "arm_l_end_link", "arm_r_end_link"
+        attach_pico_mjc_delta_tracer(
+            data_collection_manager,
+            env,
+            pico_joystick,
+            agent_conf.base_body,
+            agent_conf.l_arm,
+            agent_conf.r_arm,
+            delta_csv,
+            arm_controllers=data_collection_manager.controllers,
+            palm_l_body=palm_l,
+            palm_r_body=palm_r,
+        )
+
+    data_collection_manager.run(
+        max_episodes=1 if (params.max_macro_frames is not None or params.max_sec is not None) else None
+    )
+    return 0

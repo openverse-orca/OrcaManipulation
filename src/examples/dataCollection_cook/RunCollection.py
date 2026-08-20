@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""布料三进程联调启动入口：组装参数 → 调用编排器 run_p23c。
+"""布料三进程联调启动入口：组装参数 → 调用编排器 Start。
 
-编排逻辑在 envs.softbody.attach_coupling.run_p23c 中。本文件从 Config.json 的 run 段读运行时默认值，
+编排逻辑在 envs.softbody.Start 中。本文件从 Config.json 的 run 段读运行时默认值，
 环境变量可覆盖（用于临时切换关卡/采集等，无需改 Config.json）。
 """
 from __future__ import annotations
@@ -59,7 +59,7 @@ def _env(name: str, key: str, default: str = "") -> str:
     return v or default
 
 
-def _env_flag(name: str, key: str, default: bool = True) -> bool:
+def _env_flag(name: str, key: str, default: bool = False) -> bool:
     """布尔开关：env 优先 → Config.json run 段 → 硬编码默认。"""
     raw = os.environ.get(name)
     if raw is not None:
@@ -80,39 +80,39 @@ def main() -> int:
         if v:
             os.environ[env_name] = v
 
-    from envs.softbody.attach_coupling import P23cParams, run_p23c
+    from envs.softbody import P23cParams, Start
 
-    return run_p23c(
+    return Start(
         P23cParams(
             repo_root=REPO_ROOT,
             base_dir=TELE_DIR,
             log_dir=TELE_DIR / "logs",
             cloth_data_dir=TELE_DIR,
             level=_env("LEVEL", "level") or os.environ.get("ORCA_LEVEL_NAME", "").strip() or None,
-            agent=_env("AGENT", "agent", "openloong"),
-            mjc_prefix=_env("MJC_PREFIX", "mjc_prefix", ""),
+            agent=_env("AGENT", "agent"),
+            mjc_prefix=_env("MJC_PREFIX", "mjc_prefix"),
             config_path=(os.environ.get("CFG") or os.environ.get("CLOTH_CONFIG") or "").strip(),
-            orcagym_port=int(_env("ORCAGYM_PORT", "orcagym_port", "50051")),
-            pbd_grpc_port=int(_env("PBD_GRPC_PORT", "pbd_grpc_port", "50263")),
-            orcalink_port=int(_env("ORCALINK_PORT", "orcalink_port", "50361")),
-            pico_port=int(_env("PICO_PORT", "pico_port", "8001")),
-            wait_sec=int(_env("WAIT_SEC", "wait_sec", "180")),
-            kill_stale=_env("KILL_STALE", "kill_stale", "1") == "1"
-            and not _env_flag("SKIP_STALE_KILL", "skip_stale_kill", False),
-            auto_start_studio=_env_flag("AUTO_START_STUDIO", "auto_start_studio", False),
-            collect_data=_env_flag("COLLECT_DATA", "collect_data", False),
-            xpbd_ui=_env_flag("XPBD_UI", "xpbd_ui", True),
-            cloth_sync_studio_vis=_env_flag("CLOTH_SYNC_STUDIO_VIS", "cloth_sync_studio_vis", True),
-            cloth_no_realtime=_env_flag("CLOTH_NO_REALTIME", "cloth_no_realtime", False),
+            orcagym_port=int(_env("ORCAGYM_PORT", "orcagym_port")),
+            pbd_grpc_port=int(_env("PBD_GRPC_PORT", "pbd_grpc_port")),
+            orcalink_port=int(_env("ORCALINK_PORT", "orcalink_port")),
+            pico_port=int(_env("PICO_PORT", "pico_port")),
+            wait_sec=int(_env("WAIT_SEC", "wait_sec")),
+            kill_stale=_env("KILL_STALE", "kill_stale") == "1"
+            and not _env_flag("SKIP_STALE_KILL", "skip_stale_kill"),
+            auto_start_studio=_env_flag("AUTO_START_STUDIO", "auto_start_studio"),
+            collect_data=_env_flag("COLLECT_DATA", "collect_data"),
+            xpbd_ui=_env_flag("XPBD_UI", "xpbd_ui"),
+            cloth_sync_studio_vis=_env_flag("CLOTH_SYNC_STUDIO_VIS", "cloth_sync_studio_vis"),
+            cloth_no_realtime=_env_flag("CLOTH_NO_REALTIME", "cloth_no_realtime"),
             max_macro_frames=int(_env("MAX_MACRO_FRAMES", "max_macro_frames"))
             if _env("MAX_MACRO_FRAMES", "max_macro_frames") else None,
-            max_sec=int(_env("MAX_SEC", "max_sec", "120")),
-            xpbd_auto_build=_env_flag("XPBD_AUTO_BUILD", "xpbd_auto_build", True),
-            xpbd_build_target=_env("XPBD_BUILD_TARGET", "xpbd_build_target", ""),
+            max_sec=int(_env("MAX_SEC", "max_sec")),
+            xpbd_auto_build=_env_flag("XPBD_AUTO_BUILD", "xpbd_auto_build"),
+            xpbd_build_target=_env("XPBD_BUILD_TARGET", "xpbd_build_target"),
             agent_user_set=bool(os.environ.get("AGENT", "").strip()),
             config_explicit=bool(os.environ.get("CFG") or os.environ.get("CLOTH_CONFIG")),
-            mujoco_viewer=_env("MUJOCO_VIEWER", "mujoco_viewer", _env("GUI", "gui", "0")) == "1",
-            bench_json=_env("BENCH_JSON", "bench_json", ""),
+            mujoco_viewer=_env("MUJOCO_VIEWER", "mujoco_viewer", _env("GUI", "gui")) == "1",
+            bench_json=_env("BENCH_JSON", "bench_json"),
         )
     )
 

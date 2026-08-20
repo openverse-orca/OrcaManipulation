@@ -18,7 +18,7 @@ from typing import Any
 
 import mujoco
 
-from .base.paths import companion_paths_for_stem
+from .domain.paths import companion_paths_for_stem
 from .base.masked_vtk import normalize_vtk_asset_name
 
 logger = logging.getLogger(__name__)

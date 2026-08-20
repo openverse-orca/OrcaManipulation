@@ -16,7 +16,7 @@ import mujoco
 import numpy as np
 
 from .base.process_utils import ProcessManager, _subprocess_preexec
-from .base.paths import ORCA_REPO_ROOT
+from .domain.paths import ORCA_REPO_ROOT
 
 logger = logging.getLogger(__name__)
 

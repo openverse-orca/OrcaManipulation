@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional
 
 from ..cpu_affinity import wrap_cmd_with_taskset
 from .base.process_utils import ProcessManager, _subprocess_preexec
-from .base.paths import XPBD_ROOT, resolve_cloth_data_dir
+from .domain.paths import XPBD_ROOT, resolve_cloth_data_dir
 
 logger = logging.getLogger(__name__)
 

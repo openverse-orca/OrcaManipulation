@@ -296,6 +296,19 @@
     "max_macro_frames": 20000,
     "max_sec": 120,
     "pbd_grpc_sbt_rotation": "zup_yflip",
-    "mjc_pbd_cloth_scale": 0.05
+    "mjc_pbd_cloth_scale": 0.05,
+    "orcagym_port": 50051,
+    "pbd_grpc_port": 50263,
+    "orcalink_port": 50361,
+    "pico_port": 8001,
+    "wait_sec": 180,
+    "kill_stale": "1",
+    "skip_stale_kill": false,
+    "auto_start_studio": false,
+    "xpbd_auto_build": true,
+    "xpbd_build_target": "",
+    "mujoco_viewer": "0",
+    "gui": "0",
+    "bench_json": ""
   }
 }
