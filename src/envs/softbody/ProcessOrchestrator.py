@@ -2564,7 +2564,17 @@ def Start(params: P23cParams) -> int:
         elif detected_prefix and detected_prefix != mjc_prefix:
             mjc_prefix = detected_prefix
 
-    # ── 4. 写运行时环境变量（LEVEL / AGENT / MJC_PREFIX / CFG / UI）──
+    # ── 4. 检查 MJCF 就绪 ──
+    if mjcf is None or not mjcf.is_file():
+        logger.error(f"MJCF not found; Studio Play {level} first")
+        return 2
+
+    # ── 5. Studio 就绪（确保运行 + 等 gRPC 端口）──
+    ensure_ready(params.auto_start_studio)
+    _wait_port(params.orcagym_port, "OrcaGym", params.wait_sec)
+    _wait_port(params.pbd_grpc_port, "PBDRender", params.wait_sec)
+
+    # ── 6. 写运行时环境变量（LEVEL / AGENT / MJC_PREFIX / CFG / UI）──
     os.environ["LEVEL"] = level or ""
     os.environ["AGENT"] = agent
     os.environ["MJC_PREFIX"] = mjc_prefix
@@ -2579,7 +2589,7 @@ def Start(params: P23cParams) -> int:
     else:
         os.environ["MJC_PBD_NO_UI"] = "1"
 
-    # ── 5. XPBD 二进制准备（清旧 + 构建）──
+    # ── 7. XPBD 二进制准备（清旧 + 构建）──
     if params.xpbd_auto_build:
         # 默认 target/version 从 Config.json 读（单一来源）；环境变量 / 参数可覆盖
         _cfg = load_cloth_config(config_path, cloth_data_dir=cloth_data_dir)
@@ -2593,21 +2603,13 @@ def Start(params: P23cParams) -> int:
             logger.error("XPBD 准备失败")
             return 1
 
-    # ── 6. 进程 / 端口就绪 ──
+    # ── 8. 进程清理 ──
     if params.kill_stale:
         _kill_stale_cloth_processes(params.orcalink_port, params.pico_port)
     else:
         logger.info("KILL_STALE=0：跳过陈旧进程清理")
-    ensure_ready(params.auto_start_studio)
-    _wait_port(params.orcagym_port, "OrcaGym", params.wait_sec)
-    _wait_port(params.pbd_grpc_port, "PBDRender", params.wait_sec)
 
-    # ── 7. 检查 MJCF 就绪 ──
-    if mjcf is None or not mjcf.is_file():
-        logger.error(f"MJCF not found; Studio Play {level} first")
-        return 2
-
-    # ── 8. 组装 → 建 env → 挂耦合 ──
+    # ── 9. 组装 → 建 env → 挂耦合 ──
     agent_conf, data_storage, default_joint_values, obs_callback = _assemble_agent(
         agent, level, params.collect_data, params.base_dir
     )
@@ -2616,7 +2618,7 @@ def Start(params: P23cParams) -> int:
     )
     _mount_cloth(params, env, data_collection_manager, pico_joystick, level, agent, mjc_prefix)
 
-    # ── 9. 遥操装配 + 任务 + 跑循环 ──
+    # ── 10. 遥操装配 + 任务 + 跑循环 ──
     if params.bench_json:
         data_collection_manager.enable_bench(params.bench_json)
 
