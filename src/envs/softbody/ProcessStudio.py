@@ -20,6 +20,7 @@ import mujoco
 
 from .domain.paths import companion_paths_for_stem
 from .base.masked_vtk import normalize_vtk_asset_name
+from .base.process_utils import wait_port
 
 logger = logging.getLogger(__name__)
 
@@ -28,19 +29,29 @@ logger = logging.getLogger(__name__)
 # 0) 确保 Studio 就绪（ensure_ready）
 # ---------------------------------------------------------------------------
 
-def ensure_ready(auto_start_studio: bool = False) -> None:
-    """确保 Studio（OrcaEditor）已就绪：AUTO_START_STUDIO=1 时启动，否则仅检查进程。"""
+def ensure_ready(
+    *,
+    orcagym_port: int = 50051,
+    pbd_grpc_port: int = 50263,
+    max_sec: int = 180,
+) -> bool:
+    """确保 Studio 完整就绪：检查 OrcaEditor 进程 → 等 OrcaGym/PBDRender gRPC 端口。"""
     run_sh = Path(__file__).resolve().parent.parent.parent.parent.parent / "XPBD" / "Cloth_robot" / "run_cloth_studio.sh"
-    if auto_start_studio:
-        print("[ProcessStudio] AUTO_START_STUDIO=1：启动 Studio...", flush=True)
-        subprocess.run(["bash", str(run_sh)], check=False)
-        return
+    # 1. 检查进程
     try:
         out = subprocess.run(["pgrep", "-x", "OrcaEditor"], capture_output=True, text=True, check=False)
     except FileNotFoundError:
         out = None
     if out is None or out.returncode != 0:
         print(f"[ProcessStudio] WARN: OrcaEditor 未运行；请先: bash {run_sh}", flush=True)
+    # 2. 等端口
+    if not wait_port(orcagym_port, "OrcaGym", max_sec):
+        logger.error("Studio 就绪失败：OrcaGym :%d 端口等待超时（%ds）", orcagym_port, max_sec)
+        return False
+    if not wait_port(pbd_grpc_port, "PBDRender", max_sec):
+        logger.error("Studio 就绪失败：PBDRender :%d 端口等待超时（%ds）", pbd_grpc_port, max_sec)
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------

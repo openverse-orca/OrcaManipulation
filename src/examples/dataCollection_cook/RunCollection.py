@@ -99,7 +99,6 @@ def main() -> int:
             wait_sec=int(_env("WAIT_SEC", "wait_sec")),
             kill_stale=_env("KILL_STALE", "kill_stale") == "1"
             and not _env_flag("SKIP_STALE_KILL", "skip_stale_kill"),
-            auto_start_studio=_env_flag("AUTO_START_STUDIO", "auto_start_studio"),
             collect_data=_env_flag("COLLECT_DATA", "collect_data"),
             xpbd_ui=_env_flag("XPBD_UI", "xpbd_ui"),
             cloth_sync_studio_vis=_env_flag("CLOTH_SYNC_STUDIO_VIS", "cloth_sync_studio_vis"),

@@ -119,7 +119,6 @@ python3 RunCollection.py
 | `wait_sec` | `180` | 等端口就绪超时（秒） |
 | `kill_stale` | `"1"` | 是否清理陈旧联调进程（`"1"`/`"0"`） |
 | `skip_stale_kill` | `false` | 是否跳过陈旧进程清理 |
-| `auto_start_studio` | `false` | 是否自动拉起 Studio |
 | `xpbd_auto_build` | `true` | 是否自动准备 XPBD 二进制 |
 | `xpbd_build_target` | `""` | XPBD target 二进制名；空则用顶层 `xpbd_default_target` |
 | `mujoco_viewer` | `"0"` | 是否打开 MuJoCo 原生 viewer（`"1"`/`"0"`） |

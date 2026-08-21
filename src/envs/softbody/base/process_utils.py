@@ -2,12 +2,31 @@
 import logging
 import os
 import signal
+import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+def wait_port(port: int, label: str, max_sec: int) -> bool:
+    """等待 localhost:{port} 的 TCP 端口就绪；连通返回 True，超时返回 False。"""
+    logger.info(f"等待 {label} localhost:{port} (最多 {max_sec}s)...")
+    waited = 0
+    while waited < max_sec:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1):
+                logger.info(f"OK {label} :{port}")
+                return True
+        except OSError:
+            pass
+        time.sleep(2)
+        waited += 2
+    logger.info(f"超时：{label} :{port} 未监听")
+    return False
 
 
 def _subprocess_preexec() -> None:

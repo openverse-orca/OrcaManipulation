@@ -8,7 +8,6 @@ import logging
 import math
 import os
 import re
-import socket
 import subprocess
 import sys
 import time
@@ -22,16 +21,11 @@ from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
 from .base.filesystem import ensure_import_path
 from .base.process_utils import ProcessManager
 
-from .ProcessOrcaGym import (
-    adapt_config_for_orcagym,
-    get_mujoco_model_data,
-    get_mujoco_xml_path,
-    validate_orcagym_body_map,
-)
-from .ProcessPico import write_grip_triggers
-from .ProcessOrcaGym import sync_gripper_mocap_from_bodies
-from .ProcessOrcaLink import OrcaLinkPoseRemapper, resolve_pose_remap, start_orcalink_if_configured
-from .ProcessXPBD import start_xpbd_if_configured
+from . import ProcessOrcaGym
+from . import ProcessOrcaLink
+from . import ProcessPico
+from . import ProcessStudio
+from . import ProcessXPBD
 
 from .domain.paths import (
     ORCA_REPO_ROOT,
@@ -54,6 +48,33 @@ if TYPE_CHECKING:
     from domain.body_map import BodyMapEntry
 
 logger = logging.getLogger(__name__)
+
+_TOTAL_STEPS = 10
+
+
+def _log_step(step: int, total: int, title: str, *details: str) -> None:
+    """用框醒目打印执行步骤：框内显示 [step/total] title，可带多行 detail。"""
+    logger.info("=" * 64)
+    logger.info("│ [%d/%d] %s", step, total, title)
+    for d in details:
+        logger.info("│ %s", d)
+    logger.info("=" * 64)
+
+
+def _log_runtime_env() -> None:
+    """输出运行时环境：Python 路径、conda 环境名、Python 版本、orca_gym 加载路径。"""
+    import sys as _sys
+
+    import orca_gym as _orca_gym
+
+    logger.info("=" * 64)
+    logger.info("│ 运行时环境")
+    logger.info("│   Python      : %s", _sys.executable)
+    logger.info("│   conda env   : %s", os.environ.get("CONDA_DEFAULT_ENV") or "(非 conda)")
+    logger.info("│   Python 版本 : %s", _sys.version.split()[0])
+    logger.info("│   orca_gym    : %s", getattr(_orca_gym, "__file__", "<unknown>"))
+    logger.info("=" * 64)
+
 
 _XPBD_DEBUG_LOG = ORCA_REPO_ROOT / "XPBD" / "MjcPBD_orcalink" / "debug_log"
 CLOTH_SCENE_ASSETS_BASENAME = "Config.json"
@@ -1340,13 +1361,13 @@ def _connect_cloth_bridge(
     ensure_import_path(SOFTBODY_DIR)
     from domain.body_map import load_body_map_ordered  # noqa: WPS433
 
-    model, data = get_mujoco_model_data(env)
+    model, data = ProcessOrcaGym.get_mujoco_model_data(env)
     if adapted is None:
         config, _ = _resolve_cloth_from_model(model, data, config, cloth_data_dir=cloth_data_dir)
         config = _resolve_bodies_from_model(model, config)
-        adapted = adapt_config_for_orcagym(model, config, data=data)
+        adapted = ProcessOrcaGym.adapt_config_for_orcagym(model, config, data=data)
     publish_entries = load_body_map_ordered(model, adapted)
-    errs = validate_orcagym_body_map(model, publish_entries)
+    errs = ProcessOrcaGym.validate_orcagym_body_map(model, publish_entries)
     if errs:
         for e in errs:
             logger.error("body_map: %s", e)
@@ -1355,15 +1376,15 @@ def _connect_cloth_bridge(
         logger.error("无 OrcaLink 发布刚体；请检查 orcagym_rigid_body_map")
         return False
 
-    remap_params = resolve_pose_remap(adapted)
-    remapper = OrcaLinkPoseRemapper(
+    remap_params = ProcessOrcaLink.resolve_pose_remap(adapted)
+    remapper = ProcessOrcaLink.OrcaLinkPoseRemapper(
         remap_params["ref_yup"],
         enabled=remap_params["enabled"],
         logical_names=remap_params["logical_names"],
     )
     base_env = env.unwrapped if hasattr(env, "unwrapped") else env
     base_env.mj_forward()
-    sync_gripper_mocap_from_bodies(base_env, model, data, adapted)
+    ProcessOrcaGym.sync_gripper_mocap_from_bodies(base_env, model, data, adapted)
     base_env.mj_forward()
     remapper.calibrate(model, data, publish_entries)
 
@@ -1398,7 +1419,6 @@ def _pids_on_tcp_port(port: int) -> list[int]:
 
 
 def _kill_stale_cloth_processes(orcalink_port: int, pico_port: int) -> None:
-    from .ProcessXPBD import kill_pids_gracefully
 
     orca_pids = _pids_on_tcp_port(orcalink_port)
     pico_pids = _pids_on_tcp_port(pico_port)
@@ -1408,8 +1428,8 @@ def _kill_stale_cloth_processes(orcalink_port: int, pico_port: int) -> None:
         return
 
     logger.info(f"清理陈旧 cloth 联调进程（OrcaLink :{orcalink_port}、Pico :{pico_port}）...")
-    kill_pids_gracefully(f"orcalink(:{orcalink_port})", _pids_on_tcp_port(orcalink_port))
-    kill_pids_gracefully(f"Pico(:{pico_port})", _pids_on_tcp_port(pico_port))
+    ProcessXPBD.kill_pids_gracefully(f"orcalink(:{orcalink_port})", _pids_on_tcp_port(orcalink_port))
+    ProcessXPBD.kill_pids_gracefully(f"Pico(:{pico_port})", _pids_on_tcp_port(pico_port))
 
     time.sleep(1)
     if _pids_on_tcp_port(orcalink_port) or _pids_on_tcp_port(pico_port):
@@ -1419,22 +1439,6 @@ def _kill_stale_cloth_processes(orcalink_port: int, pico_port: int) -> None:
         )
     else:
         logger.info(f"陈旧进程已清理，:{orcalink_port} / :{pico_port} 已释放")
-
-
-def _wait_port(port: int, label: str, max_sec: int) -> bool:
-    logger.info(f"等待 {label} localhost:{port} (最多 {max_sec}s)...")
-    waited = 0
-    while waited < max_sec:
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=1):
-                logger.info(f"OK {label} :{port}")
-                return True
-        except OSError:
-            pass
-        time.sleep(2)
-        waited += 2
-    logger.info(f"超时：{label} :{port} 未监听")
-    return False
 
 
 def _assemble_agent(
@@ -1522,6 +1526,8 @@ def _build_env(
     from scene.scene_manager import SceneManager
     from scene.scene_config_util import load_scene_config
 
+    # Pico 前置：adb reverse（无条件，失败抛 RuntimeError）
+    ProcessPico.ensure_pico_adb_reverse(params.pico_port)
     pico_joystick = PicoJoystick()
     pico_joystick_device = PicoJoystickDevice(pico_joystick)
 
@@ -1672,10 +1678,9 @@ def setup_teleop_controllers(
 
     # 1) openloong P_arm 双控断开 / OSC 执行器
     if agent_name == "openloong":
-        from .ProcessOrcaGym import setup_openloong_dual_arm_osc_actuators
 
         def _bind_osc_actuators() -> None:
-            setup_openloong_dual_arm_osc_actuators(env, agent_conf.l_arm, agent_conf.r_arm)
+            ProcessOrcaGym.setup_openloong_dual_arm_osc_actuators(env, agent_conf.l_arm, agent_conf.r_arm)
 
         _bind_osc_actuators()
         data_collection_manager.add_physics_reinit_callback(_bind_osc_actuators)
@@ -2011,13 +2016,6 @@ def build_level_entry_from_scan(level: str, cfg: dict[str, Any] | None = None) -
     无 ``EditorMjXpbdClothSheet`` 且无掩码资产时返回 ``None``。
     """
     cfg = cfg or load_template_config()
-    from .ProcessStudio import (  # noqa: WPS433
-        extract_cloth_entity_with_xpbd_sheet,
-        extract_cloth_sheet_mesh_asset_hint,
-        extract_prefab_vtk_asset_path,
-        _discover_masked_stems_in_asset_dir,
-        _stem_from_vtk_asset_path,
-    )
     prefab_path = resolve_level_prefab_path(level, cfg)
     asset_dir = level_assets_dir(level, cfg)
     prefab_text = ""
@@ -2026,16 +2024,16 @@ def build_level_entry_from_scan(level: str, cfg: dict[str, Any] | None = None) -
 
     if prefab_path is not None:
         prefab_text = prefab_path.read_text(encoding="utf-8", errors="replace")
-        cloth_entity = extract_cloth_entity_with_xpbd_sheet(prefab_text)
-        vtk_asset_path = str(extract_prefab_vtk_asset_path(prefab_text) or "").strip()
+        cloth_entity = ProcessStudio.extract_cloth_entity_with_xpbd_sheet(prefab_text)
+        vtk_asset_path = str(ProcessStudio.extract_prefab_vtk_asset_path(prefab_text) or "").strip()
 
-    masked_stems = _discover_masked_stems_in_asset_dir(asset_dir, cfg)
+    masked_stems = ProcessStudio._discover_masked_stems_in_asset_dir(asset_dir, cfg)
     if cloth_entity is None and not masked_stems and not vtk_asset_path:
         return None
 
     procedural = not vtk_asset_path
     if procedural:
-        mesh_hint = extract_cloth_sheet_mesh_asset_hint(prefab_text) if prefab_text else None
+        mesh_hint = ProcessStudio.extract_cloth_sheet_mesh_asset_hint(prefab_text) if prefab_text else None
         entry: dict[str, Any] = {
             "cloth_mode": "procedural",
             "prefabs": [
@@ -2049,7 +2047,7 @@ def build_level_entry_from_scan(level: str, cfg: dict[str, Any] | None = None) -
         }
         return entry
 
-    stem = _stem_from_vtk_asset_path(vtk_asset_path)
+    stem = ProcessStudio._stem_from_vtk_asset_path(vtk_asset_path)
     if stem and stem not in masked_stems:
         masked_stems.insert(0, stem)
     if not masked_stems and stem:
@@ -2060,7 +2058,7 @@ def build_level_entry_from_scan(level: str, cfg: dict[str, Any] | None = None) -
     primary_stem = stem or masked_stems[0]
     vtk_expected = vtk_asset_path or qualified_vtk_asset_path(level, primary_stem)
     mesh_hint = (
-        extract_cloth_sheet_mesh_asset_hint(prefab_text)
+        ProcessStudio.extract_cloth_sheet_mesh_asset_hint(prefab_text)
         if prefab_text
         else asset_catalog_hint(level, f"{primary_stem}.fbx.azmodel", cfg)
     )
@@ -2224,7 +2222,7 @@ class ClothCouplingHandle:
             return
         try:
             left, right = self._grip_trigger_provider()
-            write_grip_triggers(self._grip_trigger_path, left, right)
+            ProcessPico.write_grip_triggers(self._grip_trigger_path, left, right)
         except Exception as exc:
             logger.warning("写入 grip_triggers 失败: %s", exc)
 
@@ -2244,7 +2242,7 @@ class ClothCouplingHandle:
         bridge = self.ctx.bridge
         if bridge is None:
             return False
-        model, data = get_mujoco_model_data(self._base_env())
+        model, data = ProcessOrcaGym.get_mujoco_model_data(self._base_env())
         changed = bridge.bind_mujoco(model, data)
         if changed:
             remapper = getattr(bridge, "_pose_remapper", None)
@@ -2273,8 +2271,8 @@ class ClothCouplingHandle:
 
         base = self._base_env()
         self._sync_bridge_physics()
-        model, data = get_mujoco_model_data(base)
-        sync_gripper_mocap_from_bodies(base, model, data, self.config)
+        model, data = ProcessOrcaGym.get_mujoco_model_data(base)
+        ProcessOrcaGym.sync_gripper_mocap_from_bodies(base, model, data, self.config)
         base.mj_forward()
         self._sync_grip_triggers_to_xpbd()
 
@@ -2346,9 +2344,7 @@ def apply_runtime_cloth_overrides(
 
 def resolve_cloth_level(level: str | None = None, cloth_data_dir: Path | None = None) -> str:
     """委托 ``ProcessStudio.resolve_cloth_level_with_studio``，并自动同步本机关卡配置。"""
-    from .ProcessStudio import resolve_cloth_level_with_studio
-
-    resolved = resolve_cloth_level_with_studio(level)
+    resolved = ProcessStudio.resolve_cloth_level_with_studio(level)
     _ensure_level_scene_config(resolved, cloth_data_dir=cloth_data_dir)
     return resolved
 
@@ -2392,14 +2388,12 @@ def _start_cloth_coupling(
 
     ctx = ClothCouplingContext(config=cfg, config_path=path, env=env, session_timestamp=ts)
 
-    model, data = get_mujoco_model_data(env)
+    model, data = ProcessOrcaGym.get_mujoco_model_data(env)
     base_env = env.unwrapped if hasattr(env, "unwrapped") else env
     base_env.mj_forward()
 
-    from .ProcessStudio import run_masked_vtk_prefab_check_at_startup
-
     cfg, scene_assets = _resolve_cloth_from_model(model, data, cfg, cloth_data_dir=cloth_data_dir)
-    if not run_masked_vtk_prefab_check_at_startup(cfg, scene_assets=scene_assets):
+    if not ProcessStudio.run_masked_vtk_prefab_check_at_startup(cfg, scene_assets=scene_assets):
         import logging
         logging.getLogger(__name__).warning(
             "掩码 VTK 预制检查未通过（将继续运行，仅 VTK 加载不受影响）。"
@@ -2407,9 +2401,9 @@ def _start_cloth_coupling(
         )
 
     cfg = _resolve_bodies_from_model(model, cfg)
-    adapted = adapt_config_for_orcagym(model, cfg, data=data)
+    adapted = ProcessOrcaGym.adapt_config_for_orcagym(model, cfg, data=data)
     xpbd_session_cfg = build_xpbd_session_config(base_cfg, adapted, cloth_data_dir=cloth_data_dir)
-    mjcf_path = get_mujoco_xml_path(env)
+    mjcf_path = ProcessOrcaGym.get_mujoco_xml_path(env)
     xpbd_session_cfg.setdefault("mujoco", {})["model_path"] = str(mjcf_path)
     session_path = write_xpbd_runtime_session_config(
         xpbd_session_cfg,
@@ -2446,7 +2440,7 @@ def _start_cloth_coupling(
         )
     logger.info("=" * 60)
 
-    start_orcalink_if_configured(
+    ProcessOrcaLink.start_orcalink_if_configured(
         cfg,
         process_manager=ctx.process_manager,
         log_dir=run_log_dir,
@@ -2459,7 +2453,7 @@ def _start_cloth_coupling(
         trigger_path = run_log_dir / "grip_triggers.txt"
         os.environ["MJC_PBD_GRIP_TRIGGER_PATH"] = str(trigger_path)
         logger.info("PICO grip triggers → %s (MJC_PBD_DG_TRAJ=pico)", trigger_path)
-    start_xpbd_if_configured(
+    ProcessXPBD.start_xpbd_if_configured(
         adapted,
         config_path=session_path,
         process_manager=ctx.process_manager,
@@ -2496,7 +2490,6 @@ class P23cParams:
     pico_port: int = 8001
     wait_sec: int = 180
     kill_stale: bool = True
-    auto_start_studio: bool = False
     collect_data: bool = False
     cloth_auto_start_orcalink: bool = False
     cloth_auto_start_xpbd: bool = False
@@ -2520,11 +2513,11 @@ class P23cParams:
 def Start(params: P23cParams) -> int:
     """softbody 统一对外入口：P23c 完整编排（准备 → 组装 → 建 env → 挂耦合 → 装配 → 跑循环）。"""
     from .domain.paths import resolve_cloth_config_path
-    from .ProcessOrcaGym import scan_tele_layout_from_mjcf
-    from .ProcessStudio import ensure_ready, find_latest_studio_mjcf_path
-    from .ProcessXPBD import cleanup, prepare
+
+    _log_runtime_env()
 
     # ── 1. 下游环境变量 ──
+    _log_step(1, _TOTAL_STEPS, "下游环境变量")
     os.environ["PYTHONPATH"] = (
         f"{params.repo_root / 'OrcaGym'}:"
         f"{params.repo_root / 'OrcaManipulation' / 'src'}:"
@@ -2534,10 +2527,19 @@ def Start(params: P23cParams) -> int:
         os.environ.get("PBD_GRPC_ADDRESS", "").strip() or f"localhost:{params.pbd_grpc_port}"
     )
     os.environ["XPBD_UI"] = "1" if params.xpbd_ui else "0"
-    os.environ.setdefault("PBDX_FORCE_GS_ONLY", "1")
-    os.environ.setdefault("PBDX_SOLVER", "gs")
 
-    # ── 2. 关卡 / 配置解析 ──
+    # ── 2. 引擎（Studio） 就绪（检查进程 + 等 gRPC 端口）──
+    _log_step(2, _TOTAL_STEPS, "引擎（Studio）就绪")
+    ready = ProcessStudio.ensure_ready(
+        orcagym_port=params.orcagym_port,
+        pbd_grpc_port=params.pbd_grpc_port,
+        max_sec=params.wait_sec,
+    )
+    if not ready:
+        return 4
+
+    # ── 3. 关卡 / 配置解析 ──
+    _log_step(3, _TOTAL_STEPS, "关卡 / 配置解析")
     cloth_data_dir = params.cloth_data_dir
     level = resolve_cloth_level(params.level, cloth_data_dir=cloth_data_dir)
     config_path = params.config_path
@@ -2546,11 +2548,12 @@ def Start(params: P23cParams) -> int:
     agent = params.agent
     mjc_prefix = params.mjc_prefix
 
-    # ── 3. MJCF 扫描（检测 agent / mjc_prefix）──
-    mjcf = find_latest_studio_mjcf_path()
+    # ── 4. MJCF 扫描（检测 agent / mjc_prefix）──
+    _log_step(4, _TOTAL_STEPS, "MJCF 扫描（检测 agent / mjc_prefix）")
+    mjcf = ProcessStudio.find_latest_studio_mjcf_path()
     if mjcf is not None and mjcf.is_file():
         try:
-            layout = scan_tele_layout_from_mjcf(mjcf)
+            layout = ProcessOrcaGym.scan_tele_layout_from_mjcf(mjcf)
             detected_agent = getattr(layout, "tele_agent_name", "") or ""
             detected_prefix = getattr(layout, "mjc_agent_prefix", "") or ""
         except Exception:
@@ -2564,17 +2567,14 @@ def Start(params: P23cParams) -> int:
         elif detected_prefix and detected_prefix != mjc_prefix:
             mjc_prefix = detected_prefix
 
-    # ── 4. 检查 MJCF 就绪 ──
+    # ── 5. 检查 MJCF 就绪 ──
+    _log_step(5, _TOTAL_STEPS, "检查 MJCF 就绪")
     if mjcf is None or not mjcf.is_file():
         logger.error(f"MJCF not found; Studio Play {level} first")
         return 2
 
-    # ── 5. Studio 就绪（确保运行 + 等 gRPC 端口）──
-    ensure_ready(params.auto_start_studio)
-    _wait_port(params.orcagym_port, "OrcaGym", params.wait_sec)
-    _wait_port(params.pbd_grpc_port, "PBDRender", params.wait_sec)
-
     # ── 6. 写运行时环境变量（LEVEL / AGENT / MJC_PREFIX / CFG / UI）──
+    _log_step(6, _TOTAL_STEPS, "写运行时环境变量")
     os.environ["LEVEL"] = level or ""
     os.environ["AGENT"] = agent
     os.environ["MJC_PREFIX"] = mjc_prefix
@@ -2590,6 +2590,7 @@ def Start(params: P23cParams) -> int:
         os.environ["MJC_PBD_NO_UI"] = "1"
 
     # ── 7. XPBD 二进制准备（清旧 + 构建）──
+    _log_step(7, _TOTAL_STEPS, "XPBD 二进制准备")
     if params.xpbd_auto_build:
         # 默认 target/version 从 Config.json 读（单一来源）；环境变量 / 参数可覆盖
         _cfg = load_cloth_config(config_path, cloth_data_dir=cloth_data_dir)
@@ -2598,27 +2599,34 @@ def Start(params: P23cParams) -> int:
         target = params.xpbd_build_target or default_target
         os.environ["XPBD_BUILD_TARGET"] = target
         os.environ.setdefault("ORCA_XPBD_VERSION", default_version)
-        cleanup(target)
-        if prepare(target) != 0:
+        ProcessXPBD.cleanup(target)
+        if ProcessXPBD.prepare(target) != 0:
             logger.error("XPBD 准备失败")
             return 1
 
     # ── 8. 进程清理 ──
+    _log_step(8, _TOTAL_STEPS, "进程清理")
     if params.kill_stale:
         _kill_stale_cloth_processes(params.orcalink_port, params.pico_port)
     else:
         logger.info("KILL_STALE=0：跳过陈旧进程清理")
 
     # ── 9. 组装 → 建 env → 挂耦合 ──
+    _log_step(9, _TOTAL_STEPS, "组装 → 建 env → 挂耦合")
     agent_conf, data_storage, default_joint_values, obs_callback = _assemble_agent(
         agent, level, params.collect_data, params.base_dir
     )
-    data_collection_manager, env, pico_joystick, pico_joystick_device, scene_manager, config = _build_env(
-        params, agent_conf, data_storage, default_joint_values, obs_callback
-    )
+    try:
+        data_collection_manager, env, pico_joystick, pico_joystick_device, scene_manager, config = _build_env(
+            params, agent_conf, data_storage, default_joint_values, obs_callback
+        )
+    except RuntimeError as exc:
+        logger.error(str(exc))
+        return 3
     _mount_cloth(params, env, data_collection_manager, pico_joystick, level, agent, mjc_prefix)
 
     # ── 10. 遥操装配 + 任务 + 跑循环 ──
+    _log_step(10, _TOTAL_STEPS, "遥操装配 + 任务 + 跑循环")
     if params.bench_json:
         data_collection_manager.enable_bench(params.bench_json)
 
@@ -2642,13 +2650,12 @@ def Start(params: P23cParams) -> int:
             data_collection_manager.add_monitor_port(port)
 
     if params.pico_delta_trace:
-        from .ProcessPico import attach_pico_mjc_delta_tracer
 
         delta_csv = params.log_dir / "pico_mjc_delta_trace.csv"
         palm_l = palm_r = None
         if agent == "g1_omnipicker":
             palm_l, palm_r = "arm_l_end_link", "arm_r_end_link"
-        attach_pico_mjc_delta_tracer(
+        ProcessPico.attach_pico_mjc_delta_tracer(
             data_collection_manager,
             env,
             pico_joystick,

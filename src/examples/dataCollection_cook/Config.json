@@ -304,7 +304,6 @@
     "wait_sec": 180,
     "kill_stale": "1",
     "skip_stale_kill": false,
-    "auto_start_studio": false,
     "xpbd_auto_build": true,
     "xpbd_build_target": "",
     "mujoco_viewer": "0",

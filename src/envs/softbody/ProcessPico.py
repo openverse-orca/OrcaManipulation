@@ -1,12 +1,14 @@
 """PICO 输入设备相关：扳机值同步（→ XPBD 文件）+ 位姿对比诊断（→ CSV）。
 
 合并自原 grip_trigger_sync.py 与 pico_mjc_delta_trace.py。
-对外接口：write_grip_triggers / attach_pico_mjc_delta_tracer。
+对外接口：ensure_pico_adb_reverse / write_grip_triggers / attach_pico_mjc_delta_tracer。
 """
 from __future__ import annotations
 
 import csv
 import math
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +24,31 @@ from orca_gym.log.orca_log import OrcaLog
 orca_logger = OrcaLog.get_instance()
 
 _MIN_DELTA_MM = 0.05
+
+
+# ---------------------------------------------------------------------------
+# 0) adb reverse 端口转发（Pico 前置）
+# ---------------------------------------------------------------------------
+
+
+def ensure_pico_adb_reverse(port: int) -> None:
+    """Pico 前置：adb reverse 把设备 localhost:{port} 转发到宿主机 {port}。
+
+    找不到 adb 或执行失败即抛错退出。
+    """
+    adb = shutil.which("adb")
+    if adb is None:
+        raise RuntimeError("未找到 adb，无法设置 Pico 端口转发（请先安装 adb 并连接 Pico 设备）")
+    result = subprocess.run(
+        [adb, "reverse", f"tcp:{port}", f"tcp:{port}"],
+        capture_output=True, text=True, timeout=10,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"adb reverse tcp:{port} 失败（returncode={result.returncode}）："
+            f"{result.stderr.strip() or result.stdout.strip()}"
+        )
+    orca_logger.info(f"Pico adb reverse 已设置 tcp:{port} -> tcp:{port}")
 
 
 # ---------------------------------------------------------------------------
