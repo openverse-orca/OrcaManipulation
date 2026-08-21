@@ -1,9 +1,21 @@
 # dataCollection_cook 三进程联调依赖
 #
-# 顶层 requirements.txt 已包含 orca-gym / numba / gymnasium / av / opencv-python
-# / h5py 等通用依赖，这里直接引用避免重复声明。
+# 顶层 requirements.txt 提供通用依赖（numba / gymnasium / h5py / matplotlib 等），
+# 此处通过 -r 引用；下面显式固定三进程联调的版本，保证多机环境一致。
 -r ../../../requirements.txt
 
-# 已发布的 orca 包（版本由 Release-OrcaManipulation.py 依据 Config-Release.json 同步）
-orca-xpbd==26.8.1.9
+# orca 各包（三进程联调固定版本）
+orca-gym==26.7.1.7
+orca-lab==26.7.1.7
 orca-link==26.8.1.9
+orca-xpbd==26.8.1.9
+
+# 视觉 / 相机
+av==18.1.0
+opencv-python==5.0.0.93
+
+# XPBD GPU 物理
+warp==1.0.4
+
+# 网络通信（OrcaGym 手柄/相机 websocket）
+websockets==17.0
