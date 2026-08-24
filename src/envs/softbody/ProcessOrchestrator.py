@@ -143,7 +143,7 @@ def build_xpbd_session_config(base_cfg: dict[str, Any], adapted_cfg: dict[str, A
     _base_dir = _assets_folder or str(cloth.get("asset_dir") or "").strip()
     _mesh = str(cloth.get("mesh") or "").strip()
     if _base_dir and _mesh and not _mesh.startswith("/"):
-        cloth["mesh_abs_path"] = str(Path(_base_dir) / _mesh)
+        cloth["mesh_abs_path"] = str((Path(_base_dir).expanduser() / _mesh).resolve())
     return out
 
 
