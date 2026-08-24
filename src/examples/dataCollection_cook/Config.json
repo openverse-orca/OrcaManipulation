@@ -287,7 +287,7 @@
     "scan_levels_glob": "{studio_project_rel}/Levels/*"
   },
   "xpbd_default_target": "dual_gripper_g1_cook2",
-  "xpbd_default_version": "26.8.1.10",
+  "xpbd_default_version": "26.8.1.11",
   "run": {
     "level": "Life_Kitchen_01_with_utree",
     "agent": "g1_omnipicker",
