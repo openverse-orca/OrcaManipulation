@@ -8,35 +8,6 @@
   "orcastudio": {
     "assets_folder": "/opt/PriWaic/Development/OrcaStudio_2409/Assets/Life_Kitchen_01"
   },
-  "xpbd": {
-    "enabled": true,
-    "auto_start": true,
-    "executable": "dual_gripper_g1_cook2",
-    "config_path": "cloth_sim_config.dual_gripper_cross_full.json",
-    "substep_dt": 0.000625,
-    "substeps": 32,
-    "macro_dt": 0.02,
-    "orcalink": {
-      "client_name": "xpbd_pbd",
-      "coupling_mode": "force_position",
-      "flow_control_window_size": 10,
-      "speed_ratio_threshold": 2.0
-    },
-    "args": [
-      "--config",
-      "{config_path}"
-    ],
-    "startup_delay": 5,
-    "cloth_discover_only": false,
-    "disable_base_phys": true,
-    "force_gs_solver": true,
-    "auto_build": true,
-    "dg_traj": "cloth_robot",
-    "show_ui": true,
-    "overlay_mjc": true,
-    "comment_force_gs": "R-PHYS-4：联调暂用 GS，避免 Jacobi 粒子–刚体盒接触失效",
-    "try_connect_sec": 30
-  },
   "orcalink": {
     "enabled": true,
     "host": "localhost",
@@ -141,6 +112,35 @@
     "gripper_collider_layer_group": 1,
     "cloth_collision_exclude_logical": "",
     "comment": "ClothRobot：场景刚体为布-刚代理盒；刚-刚碰撞在 MuJoCo，XPBD 用 Layer_1_No1 禁刚-刚"
+  },
+  "xpbd": {
+    "enabled": true,
+    "auto_start": true,
+    "executable": "dual_gripper_g1_cook2",
+    "config_path": "cloth_sim_config.dual_gripper_cross_full.json",
+    "substep_dt": 0.000625,
+    "substeps": 32,
+    "macro_dt": 0.02,
+    "orcalink": {
+      "client_name": "xpbd_pbd",
+      "coupling_mode": "force_position",
+      "flow_control_window_size": 10,
+      "speed_ratio_threshold": 2.0
+    },
+    "args": [
+      "--config",
+      "{config_path}"
+    ],
+    "startup_delay": 5,
+    "cloth_discover_only": false,
+    "disable_base_phys": true,
+    "force_gs_solver": true,
+    "auto_build": true,
+    "dg_traj": "cloth_robot",
+    "show_ui": true,
+    "overlay_mjc": true,
+    "comment_force_gs": "R-PHYS-4：联调暂用 GS，避免 Jacobi 粒子–刚体盒接触失效",
+    "try_connect_sec": 30
   },
   "frame_count": {
     "mujoco_substeps_per_macro_frame": 20,
