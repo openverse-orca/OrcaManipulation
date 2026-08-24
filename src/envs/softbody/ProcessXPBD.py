@@ -158,6 +158,22 @@ def prepare(target: str | None = None) -> int:
     return 0
 
 
+def ensure_prepared(target: str, version: str) -> bool:
+    """清理旧 XPBD 进程 + 确保 orca-xpbd 已安装（供编排器 step 7 调用，类似 ProcessStudio.ensure_prepared）。
+
+    Args:
+        target: XPBD 可执行 target 名（如 dual_gripper_g1_cook2）。
+        version: 期望的 orca-xpbd 版本。
+
+    Returns:
+        是否准备成功（prepare == 0）。
+    """
+    os.environ["XPBD_BUILD_TARGET"] = target
+    os.environ.setdefault("ORCA_XPBD_VERSION", version)
+    cleanup(target)
+    return prepare(target) == 0
+
+
 # ---------------------------------------------------------------------------
 # 3) 启动进程（start）
 # ---------------------------------------------------------------------------

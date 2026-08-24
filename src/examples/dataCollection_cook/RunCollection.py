@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """布料三进程联调启动入口：组装参数 → 调用编排器 Start。
 
-编排逻辑在 envs.softbody.Start 中。本文件从 Config.json 的 run 段读运行时默认值，
-环境变量可覆盖（用于临时切换关卡/采集等，无需改 Config.json）。
+编排逻辑在 envs.softbody.Start 中。本文件从 Config.json 读运行时默认值：多数参数在
+run 段，level/agent/mjc_prefix（关卡/机器人身份）在 orcastudio 段；run 段参数可用环境变量覆盖。
 """
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout, format="[P2.3c] %(message)s")
@@ -34,20 +35,29 @@ for _p in (
         sys.path.insert(0, _p)
 
 
-def _load_run_config() -> dict:
-    """加载 Config.json 的 run 段（运行时默认值）。"""
+# 本次运行日志目录（精确到秒），主进程日志与 orcalink/xpbd 子进程日志共用
+RUN_LOG_DIR = TELE_DIR / "logs" / datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+RUN_LOG_DIR.mkdir(parents=True, exist_ok=True)
+_FILE_HANDLER = logging.FileHandler(RUN_LOG_DIR / "p23c.log", encoding="utf-8")
+_FILE_HANDLER.setFormatter(logging.Formatter("[P2.3c] %(message)s"))
+logging.getLogger().addHandler(_FILE_HANDLER)
+
+
+def _load_config() -> dict:
+    """加载整个 Config.json。"""
     path = TELE_DIR / "Config.json"
     if not path.is_file():
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        run = data.get("run") or {}
-        return run if isinstance(run, dict) else {}
+        return data if isinstance(data, dict) else {}
     except (json.JSONDecodeError, OSError):
         return {}
 
 
-RUN = _load_run_config()
+CONFIG = _load_config()
+RUN = CONFIG.get("run") if isinstance(CONFIG.get("run"), dict) else {}
+ORCASTUDIO = CONFIG.get("orcastudio") if isinstance(CONFIG.get("orcastudio"), dict) else {}
 
 
 def _env(name: str, key: str, default: str = "") -> str:
@@ -86,12 +96,12 @@ def main() -> int:
         P23cParams(
             repo_root=REPO_ROOT,
             base_dir=TELE_DIR,
-            log_dir=TELE_DIR / "logs",
+            log_dir=RUN_LOG_DIR,
             cloth_data_dir=TELE_DIR,
-            level=_env("LEVEL", "level") or os.environ.get("ORCA_LEVEL_NAME", "").strip() or None,
-            agent=_env("AGENT", "agent"),
-            mjc_prefix=_env("MJC_PREFIX", "mjc_prefix"),
-            config_path=(os.environ.get("CFG") or os.environ.get("CLOTH_CONFIG") or "").strip(),
+            level=str(RUN.get("level") or "").strip() or None,
+            agent=str(RUN.get("agent") or "").strip(),
+            mjc_prefix=str(RUN.get("mjc_prefix") or "").strip(),
+            config_path=os.environ.get("CFG", "").strip() or str(TELE_DIR / "Config.json"),
             orcagym_port=int(_env("ORCAGYM_PORT", "orcagym_port")),
             pbd_grpc_port=int(_env("PBD_GRPC_PORT", "pbd_grpc_port")),
             orcalink_port=int(_env("ORCALINK_PORT", "orcalink_port")),
@@ -108,8 +118,6 @@ def main() -> int:
             max_sec=int(_env("MAX_SEC", "max_sec")),
             xpbd_auto_build=_env_flag("XPBD_AUTO_BUILD", "xpbd_auto_build"),
             xpbd_build_target=_env("XPBD_BUILD_TARGET", "xpbd_build_target"),
-            agent_user_set=bool(os.environ.get("AGENT", "").strip()),
-            config_explicit=bool(os.environ.get("CFG") or os.environ.get("CLOTH_CONFIG")),
             mujoco_viewer=_env("MUJOCO_VIEWER", "mujoco_viewer", _env("GUI", "gui")) == "1",
             bench_json=_env("BENCH_JSON", "bench_json"),
         )

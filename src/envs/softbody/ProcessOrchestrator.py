@@ -31,7 +31,6 @@ from .domain.paths import (
     ORCA_REPO_ROOT,
     SOFTBODY_DIR,
     SOFTBODY_DOMAIN_DIR,
-    default_cloth_config_path,
     level_lower_for_hint,
     qualified_vtk_asset_path,
     resolve_cloth_data_dir,
@@ -52,13 +51,16 @@ logger = logging.getLogger(__name__)
 _TOTAL_STEPS = 10
 
 
-def _log_step(step: int, total: int, title: str, *details: str) -> None:
-    """用框醒目打印执行步骤：框内显示 [step/total] title，可带多行 detail。"""
-    logger.info("=" * 64)
-    logger.info("│ [%d/%d] %s", step, total, title)
-    for d in details:
-        logger.info("│ %s", d)
-    logger.info("=" * 64)
+def _log_step(step: int, total: int, title: str, ok: bool | None = None, reason: str = "") -> None:
+    """单行步骤日志：ok 决定结果状态。
+    ok=None → 开始 ▶；ok=True → 结束 ✅；ok=False → 失败 ❌ + reason。"""
+    if ok is None:
+        logger.info("━" * 48)
+        logger.info("▶ [%d/%d] %s", step, total, title)
+    elif ok:
+        logger.info("✅ [%d/%d] %s", step, total, title)
+    else:
+        logger.error("❌ [%d/%d] %s 失败：%s", step, total, title, reason)
 
 
 def _log_runtime_env() -> None:
@@ -156,13 +158,12 @@ def write_xpbd_runtime_session_config(
     log_dir: Path | None = None,
 ) -> Path:
     """
-    将运行时 effective config 写入 ``<log_dir>/<run_dir>/cloth_sim_session_{ts}.json``，供 XPBD 子进程加载。
+    将运行时 effective config 写入 ``<log_dir>/cloth_sim_session_{ts}.json``，供 XPBD 子进程加载。
 
-    ``run_dir`` 为本次运行开始时间（年-月-日-时-分-秒）。
+    ``log_dir`` 为本次运行日志目录（由调用方统一创建，主进程日志与子进程日志共用）。
     """
     base_dir = Path(log_dir).expanduser().resolve() if log_dir else Path.cwd()
-    run_dir = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    session_dir = base_dir / run_dir
+    session_dir = base_dir
     session_dir.mkdir(parents=True, exist_ok=True)
     session_path = (session_dir / f"cloth_sim_session_{session_timestamp}.json").resolve()
     payload = copy.deepcopy(config)
@@ -1626,8 +1627,6 @@ def _mount_cloth(
     """挂布料耦合：load config + apply overrides + _start_cloth_coupling + 读 Pico 扳机。"""
     cloth_data_dir = params.cloth_data_dir
     cloth_cfg_path = params.config_path
-    if not cloth_cfg_path:
-        cloth_cfg_path = str(default_cloth_config_path(cloth_data_dir=cloth_data_dir))
     cloth_config = load_cloth_config(cloth_cfg_path, cloth_data_dir=cloth_data_dir)
     cloth_config = apply_runtime_cloth_overrides(
         cloth_config,
@@ -2348,13 +2347,6 @@ def apply_runtime_cloth_overrides(
     return out
 
 
-def resolve_cloth_level(level: str | None = None, cloth_data_dir: Path | None = None) -> str:
-    """委托 ``ProcessStudio.resolve_cloth_level_with_studio``，并自动同步本机关卡配置。"""
-    resolved = ProcessStudio.resolve_cloth_level_with_studio(level)
-    _ensure_level_scene_config(resolved, cloth_data_dir=cloth_data_dir)
-    return resolved
-
-
 def _start_cloth_coupling(
     env: OrcaGymLocalEnv,
     config: Dict[str, Any],
@@ -2378,7 +2370,7 @@ def _start_cloth_coupling(
 
     cfg = copy.deepcopy(config)
     orcalink_port = require_orcalink_port(cfg.get("orcalink", {}))
-    path = Path(config_path or default_cloth_config_path(cloth_data_dir=cloth_data_dir)).resolve()
+    path = Path(config_path).resolve()
     base_cfg = load_cloth_config(path, cloth_data_dir=cloth_data_dir)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -2389,7 +2381,9 @@ def _start_cloth_coupling(
         cfg.setdefault("xpbd", {})["auto_start"] = bool(auto_start_xpbd)
 
     og = cfg.setdefault("orcagym", {})
-    resolved_level = resolve_cloth_level(str(og.get("level") or "").strip() or None, cloth_data_dir=cloth_data_dir)
+    resolved_level = str(og.get("level") or "").strip()
+    if not resolved_level:
+        raise RuntimeError("orcagym.level 未设置（已关闭关卡兜底）；请在上游显式指定 level")
     og["level"] = resolved_level
 
     ctx = ClothCouplingContext(config=cfg, config_path=path, env=env, session_timestamp=ts)
@@ -2511,15 +2505,11 @@ class P23cParams:
     max_sec: int = 120
     xpbd_auto_build: bool = True
     xpbd_build_target: str = ""
-    agent_user_set: bool = False
-    config_explicit: bool = False
     bench_json: str = ""
 
 
 def Start(params: P23cParams) -> int:
     """softbody 统一对外入口：P23c 完整编排（准备 → 组装 → 建 env → 挂耦合 → 装配 → 跑循环）。"""
-    from .domain.paths import resolve_cloth_config_path
-
     _log_runtime_env()
 
     # ── 1. 下游环境变量 ──
@@ -2533,26 +2523,34 @@ def Start(params: P23cParams) -> int:
         os.environ.get("PBD_GRPC_ADDRESS", "").strip() or f"localhost:{params.pbd_grpc_port}"
     )
     os.environ["XPBD_UI"] = "1" if params.xpbd_ui else "0"
+    _log_step(1, _TOTAL_STEPS, "下游环境变量", ok=True)
 
     # ── 2. 引擎（Studio） 就绪（检查进程 + 等 gRPC 端口）──
     _log_step(2, _TOTAL_STEPS, "引擎（Studio）就绪")
-    ready = ProcessStudio.ensure_ready(
+    ready = ProcessStudio.ensure_prepared(
         orcagym_port=params.orcagym_port,
         pbd_grpc_port=params.pbd_grpc_port,
         max_sec=params.wait_sec,
     )
     if not ready:
+        _log_step(2, _TOTAL_STEPS, "引擎（Studio）就绪", ok=False, reason="OrcaGym/PBDRender gRPC 端口等待超时")
         return 4
+    _log_step(2, _TOTAL_STEPS, "引擎（Studio）就绪", ok=True)
 
-    # ── 3. 关卡 / 配置解析 ──
+    # ── 3. 关卡 / 配置解析（无兜底：缺失即报错退出）──
     _log_step(3, _TOTAL_STEPS, "关卡 / 配置解析")
     cloth_data_dir = params.cloth_data_dir
-    level = resolve_cloth_level(params.level, cloth_data_dir=cloth_data_dir)
-    config_path = params.config_path
+    level = str(params.level or "").strip()
+    if not level:
+        _log_step(3, _TOTAL_STEPS, "关卡 / 配置解析", ok=False, reason="未指定关卡名（请在 Config.json 的 orcastudio.level 配置）")
+        return 5
+    config_path = str(params.config_path or "").strip()
     if not config_path:
-        config_path = str(resolve_cloth_config_path(level=level, agent=params.agent, cloth_data_dir=cloth_data_dir))
+        _log_step(3, _TOTAL_STEPS, "关卡 / 配置解析", ok=False, reason="未指定布料配置 CFG（请通过 --cfg / CFG 显式传入）")
+        return 6
     agent = params.agent
     mjc_prefix = params.mjc_prefix
+    _log_step(3, _TOTAL_STEPS, "关卡 / 配置解析", ok=True)
 
     # ── 4. MJCF 扫描（检测 agent / mjc_prefix）──
     _log_step(4, _TOTAL_STEPS, "MJCF 扫描（检测 agent / mjc_prefix）")
@@ -2564,20 +2562,19 @@ def Start(params: P23cParams) -> int:
             detected_prefix = getattr(layout, "mjc_agent_prefix", "") or ""
         except Exception:
             detected_agent = detected_prefix = ""
-        if not params.agent_user_set:
-            if detected_agent and detected_agent != agent:
-                logger.info(f"MJCF 扫描 tele_agent={detected_agent}（覆盖默认 openloong）")
-                agent, mjc_prefix = detected_agent, detected_prefix
-                if not params.config_explicit:
-                    config_path = str(resolve_cloth_config_path(level=level, agent=agent, cloth_data_dir=cloth_data_dir))
+        if detected_agent and detected_agent != agent:
+            logger.info(f"MJCF 扫描 tele_agent={detected_agent}（覆盖 agent/mjc_prefix）")
+            agent, mjc_prefix = detected_agent, detected_prefix
         elif detected_prefix and detected_prefix != mjc_prefix:
             mjc_prefix = detected_prefix
+    _log_step(4, _TOTAL_STEPS, "MJCF 扫描（检测 agent / mjc_prefix）", ok=True)
 
     # ── 5. 检查 MJCF 就绪 ──
     _log_step(5, _TOTAL_STEPS, "检查 MJCF 就绪")
     if mjcf is None or not mjcf.is_file():
-        logger.error(f"MJCF not found; Studio Play {level} first")
+        _log_step(5, _TOTAL_STEPS, "检查 MJCF 就绪", ok=False, reason=f"MJCF 未找到；请先在 Studio Play {level}")
         return 2
+    _log_step(5, _TOTAL_STEPS, "检查 MJCF 就绪", ok=True)
 
     # ── 6. 写运行时环境变量（LEVEL / AGENT / MJC_PREFIX / CFG / UI）──
     _log_step(6, _TOTAL_STEPS, "写运行时环境变量")
@@ -2594,6 +2591,7 @@ def Start(params: P23cParams) -> int:
         os.environ.setdefault("DISPLAY", ":0")
     else:
         os.environ["MJC_PBD_NO_UI"] = "1"
+    _log_step(6, _TOTAL_STEPS, "写运行时环境变量", ok=True)
 
     # ── 7. XPBD 二进制准备（清旧 + 构建）──
     _log_step(7, _TOTAL_STEPS, "XPBD 二进制准备")
@@ -2603,12 +2601,10 @@ def Start(params: P23cParams) -> int:
         default_target = str(_cfg.get("xpbd_default_target") or "").strip()
         default_version = str(_cfg.get("xpbd_default_version") or "").strip()
         target = params.xpbd_build_target or default_target
-        os.environ["XPBD_BUILD_TARGET"] = target
-        os.environ.setdefault("ORCA_XPBD_VERSION", default_version)
-        ProcessXPBD.cleanup(target)
-        if ProcessXPBD.prepare(target) != 0:
-            logger.error("XPBD 准备失败")
+        if not ProcessXPBD.ensure_prepared(target, default_version):
+            _log_step(7, _TOTAL_STEPS, "XPBD 二进制准备", ok=False, reason=f"XPBD 准备失败（target={target}）")
             return 1
+    _log_step(7, _TOTAL_STEPS, "XPBD 二进制准备", ok=True)
 
     # ── 8. 进程清理 ──
     _log_step(8, _TOTAL_STEPS, "进程清理")
@@ -2616,6 +2612,7 @@ def Start(params: P23cParams) -> int:
         _kill_stale_cloth_processes(params.orcalink_port, params.pico_port)
     else:
         logger.info("KILL_STALE=0：跳过陈旧进程清理")
+    _log_step(8, _TOTAL_STEPS, "进程清理", ok=True)
 
     # ── 9. 组装 → 建 env → 挂耦合 ──
     _log_step(9, _TOTAL_STEPS, "组装 → 建 env → 挂耦合")
@@ -2627,9 +2624,10 @@ def Start(params: P23cParams) -> int:
             params, agent_conf, data_storage, default_joint_values, obs_callback
         )
     except RuntimeError as exc:
-        logger.error(str(exc))
+        _log_step(9, _TOTAL_STEPS, "组装 → 建 env → 挂耦合", ok=False, reason=str(exc))
         return 3
     _mount_cloth(params, env, data_collection_manager, pico_joystick, level, agent, mjc_prefix)
+    _log_step(9, _TOTAL_STEPS, "组装 → 建 env → 挂耦合", ok=True)
 
     # ── 10. 遥操装配 + 任务 + 跑循环 ──
     _log_step(10, _TOTAL_STEPS, "遥操装配 + 任务 + 跑循环")
@@ -2677,4 +2675,5 @@ def Start(params: P23cParams) -> int:
     data_collection_manager.run(
         max_episodes=1 if (params.max_macro_frames is not None or params.max_sec is not None) else None
     )
+    _log_step(10, _TOTAL_STEPS, "遥操装配 + 任务 + 跑循环", ok=True)
     return 0
