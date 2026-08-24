@@ -5,6 +5,9 @@
     "realtime_step": 0.02,
     "max_sim_time": 67.0
   },
+  "orcastudio": {
+    "assets_folder": "/home/jlzeng/Software/2-Install-PriWaic/Development/OrcaStudio_2409/Assets/Life_Kitchen_01"
+  },
   "orcalink": {
     "enabled": true,
     "host": "localhost",
@@ -72,7 +75,7 @@
   },
   "cloth": {
     "v4_parity": true,
-    "mesh": "bunny.vtk",
+    "mesh": "croissant_Low-copy.vtk",
     "mass_kg": 0.8,
     "thickness_m": 0.015,
     "stretch_compliance": 0.15,

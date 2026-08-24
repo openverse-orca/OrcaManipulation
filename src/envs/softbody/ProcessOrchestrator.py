@@ -138,6 +138,12 @@ def build_xpbd_session_config(base_cfg: dict[str, Any], adapted_cfg: dict[str, A
         cloth["level"] = level
         if not str(cloth.get("asset_dir") or "").strip():
             cloth["asset_dir"] = str(studio_cloth_assets_dir(level, cloth_data_dir=cloth_data_dir))
+    # 给 XPBD 一个完整 mesh 绝对路径：base 目录（orcastudio.assets_folder 可覆盖 asset_dir）+ mesh
+    _assets_folder = str((base_cfg.get("orcastudio") or {}).get("assets_folder") or "").strip()
+    _base_dir = _assets_folder or str(cloth.get("asset_dir") or "").strip()
+    _mesh = str(cloth.get("mesh") or "").strip()
+    if _base_dir and _mesh and not _mesh.startswith("/"):
+        cloth["mesh_abs_path"] = str(Path(_base_dir) / _mesh)
     return out
 
 
