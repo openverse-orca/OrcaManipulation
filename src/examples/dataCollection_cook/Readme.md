@@ -127,4 +127,6 @@ python3 RunCollection.py
 
 > 顶层还有两个 XPBD 默认字段（不在 `run` 段）：`xpbd_default_target`（默认 target 二进制名）、`xpbd_default_version`（orca-xpbd pip 版本）。
 
+> 布料网格（也不在 `run` 段）：`cloth.mesh`（网格文件名，默认 `croissant_Low-copy.vtk`）+ `orcastudio.assets_folder`（资产目录，容器内路径如 `OrcaStudio_2409/Assets/Life_Kitchen_01`）。XPBD 按 `assets_folder + "/" + mesh` 加载（写进 session 的 `cloth.mesh_abs_path`）。注意 `assets_folder` 必须是 XPBD 进程所在环境能访问的绝对路径。
+
 > 如需临时覆盖而不改 Config.json，仍可用同名环境变量（如 `AGENT=openloong`），优先级：env > Config.json `run` 段。`CFG` / `CLOTH_CONFIG` 仍为仅环境变量参数（指定 config 文件路径）。

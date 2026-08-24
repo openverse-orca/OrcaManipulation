@@ -6,7 +6,7 @@
     "max_sim_time": 67.0
   },
   "orcastudio": {
-    "assets_folder": "/home/jlzeng/Software/2-Install-PriWaic/Development/OrcaStudio_2409/Assets/Life_Kitchen_01"
+    "assets_folder": "/opt/PriWaic/Development/OrcaStudio_2409/Assets/Life_Kitchen_01"
   },
   "orcalink": {
     "enabled": true,
