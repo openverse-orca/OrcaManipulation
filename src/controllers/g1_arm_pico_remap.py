@@ -16,8 +16,8 @@ from orca_gym.environment import OrcaGymLocalEnv
 G1_L_ARM_ROTATION_OFFSET = np.array([np.pi / 2, 0, 0])
 G1_R_ARM_ROTATION_OFFSET = np.array([-3 * np.pi / 2, 0, 0])
 G1_ARM_POSITION_REMAP = [0, 2, 1]
-G1_L_ARM_POSITION_FLIP = np.array([1.0, 1.0, -1.0])
-G1_R_ARM_POSITION_FLIP = np.array([1.0, 1.0, -1.0])
+G1_L_ARM_POSITION_FLIP = np.array([1.0, 1.0, 1.0])
+G1_R_ARM_POSITION_FLIP = np.array([1.0, 1.0, 1.0])
 
 
 def make_g1_rotated_transform_callback(
