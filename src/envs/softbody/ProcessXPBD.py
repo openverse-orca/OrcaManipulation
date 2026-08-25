@@ -444,8 +444,25 @@ def start_xpbd_if_configured(
     for arg in xpbd_cfg.get("args", []):
         args.append(str(arg).replace("{config_path}", str(mjc_pbd_config)))
 
+    # gdb 定位模式（XPBD_UNDER_GDB=1）：崩溃时自动打印 backtrace 到日志。
+    under_gdb = os.environ.get("XPBD_UNDER_GDB", "").strip().lower() in ("1", "true", "yes")
+    base_cmd = (["gdb", "-batch",
+                 "-ex", "run",
+                 "-ex", "p check->d",
+                 "-ex", "p check->n",
+                 "-ex", "p diff_c",
+                 "-ex", "p check->r1",
+                 "-ex", "p check->r2",
+                 "-ex", "p b1->is_particle",
+                 "-ex", "p b2->is_particle",
+                 "-ex", "p static_friction",
+                 "-ex", "p dynamic_friction",
+                 "-ex", "bt",
+                 "--args", str(exe)]
+                if under_gdb else ["stdbuf", "-oL", "-eL", str(exe)])
+
     # C 端 stdout 重定向到文件时为全缓冲；stdbuf 保证联调日志实时可见。
-    cmd = wrap_cmd_with_taskset(["stdbuf", "-oL", "-eL", str(exe)] + args, cpu_affinity)
+    cmd = wrap_cmd_with_taskset(base_cmd + args, cpu_affinity)
     if cpu_affinity:
         logger.info("📌 XPBD CPU 亲和性: 核心 %s", cpu_affinity)
     logger.info("启动 XPBD: %s", " ".join(cmd))
