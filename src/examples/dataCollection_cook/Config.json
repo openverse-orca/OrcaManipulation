@@ -137,6 +137,7 @@
     "disable_base_phys": true,
     "force_gs_solver": true,
     "auto_build": true,
+    "debug_bin_path": "",
     "dg_traj": "cloth_robot",
     "show_ui": true,
     "overlay_mjc": true,

@@ -139,12 +139,19 @@ def _ensure_orca_xpbd_installed(version: str) -> str:
     return str(getattr(orcaxpbd_client, "__version__", version)).strip() or version
 
 
-def prepare(target: str | None = None) -> int:
-    """确保 orca-xpbd 包已安装（含 XPBD 可执行文件）；返回 0 成功。"""
+def prepare(target: str | None = None, *, debug_bin_path: str = "") -> int:
+    """确保 orca-xpbd 包已安装（含 XPBD 可执行文件）；返回 0 成功。
+
+    debug_bin_path 非空（debug 模式）时跳过 pip 安装，直接用本地编译二进制。
+    """
     target = (target or os.environ.get("XPBD_BUILD_TARGET", "")).strip()
-    version = os.environ.get("ORCA_XPBD_VERSION", "").strip()
+    debug_bin = (debug_bin_path or os.environ.get("XPBD_DEBUG_BIN_PATH", "")).strip()
     if not target:
         raise RuntimeError("缺少 XPBD target（XPBD_BUILD_TARGET 未设置）")
+    if debug_bin:
+        print(f"[ProcessXPBD] debug 模式：跳过 orca-xpbd pip 安装（本地二进制 {debug_bin}）", flush=True)
+        return 0
+    version = os.environ.get("ORCA_XPBD_VERSION", "").strip()
     if not version:
         raise RuntimeError("缺少 orca-xpbd 版本（ORCA_XPBD_VERSION 未设置）")
     print(f"[ProcessXPBD] 确保 orca-xpbd 已安装（{target}）...", flush=True)
@@ -158,12 +165,13 @@ def prepare(target: str | None = None) -> int:
     return 0
 
 
-def ensure_prepared(target: str, version: str) -> bool:
+def ensure_prepared(target: str, version: str, *, debug_bin_path: str = "") -> bool:
     """清理旧 XPBD 进程 + 确保 orca-xpbd 已安装（供编排器 step 7 调用，类似 ProcessStudio.ensure_prepared）。
 
     Args:
         target: XPBD 可执行 target 名（如 dual_gripper_g1_cook2）。
         version: 期望的 orca-xpbd 版本。
+        debug_bin_path: debug 模式指定的本地编译二进制路径；非空时跳过 pip 安装。
 
     Returns:
         是否准备成功（prepare == 0）。
@@ -171,7 +179,7 @@ def ensure_prepared(target: str, version: str) -> bool:
     os.environ["XPBD_BUILD_TARGET"] = target
     os.environ.setdefault("ORCA_XPBD_VERSION", version)
     cleanup(target)
-    return prepare(target) == 0
+    return prepare(target, debug_bin_path=debug_bin_path) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +225,33 @@ def _resolve_xpbd_executable_from_pip(target: str) -> Optional[Path]:
         return None
     logger.info("XPBD 使用 pip 包二进制: %s", path)
     return path
+
+
+def _resolve_debug_bin_path(xpbd_cfg: Dict[str, Any]) -> Optional[Path]:
+    """debug 模式：xpbd.debug_bin_path（或环境变量 XPBD_DEBUG_BIN_PATH）指向本地编译的
+    XPBD 二进制时，直接返回其绝对路径，跳过 pip 包解析与「发布」流程。
+
+    相对路径按 ``XPBD_ROOT/build/`` 解析（build.sh 的 BUILD_DIR=build，产物名即 target 名）。
+    未配置、文件不存在或不可执行时返回 None（回落到 pip 包解析）。
+    """
+    raw = os.environ.get("XPBD_DEBUG_BIN_PATH", "").strip()
+    if not raw:
+        raw = str(xpbd_cfg.get("debug_bin_path", "")).strip()
+    if not raw:
+        return None
+    p = Path(raw).expanduser()
+    if p.is_absolute():
+        p = p.resolve()
+    else:
+        p = (XPBD_ROOT / "build" / p).resolve()
+    if not p.is_file():
+        logger.warning("XPBD debug 二进制不存在，回落到 pip 包: %s", p)
+        return None
+    if not os.access(p, os.X_OK):
+        logger.warning("XPBD debug 二进制不可执行，回落到 pip 包: %s", p)
+        return None
+    logger.info("XPBD debug 模式使用本地编译二进制: %s", p)
+    return p
 
 
 def _resolve_mjc_pbd_config(config: Dict[str, Any], config_path: Path, cloth_data_dir: Path | None = None) -> Path:
@@ -275,13 +310,12 @@ def start_xpbd_if_configured(
         return False
 
     target = str(xpbd_cfg.get("executable", "dual_gripper_cross_mjc"))
-    pip_exe = _resolve_xpbd_executable_from_pip(target)
-    if pip_exe is None:
+    exe = _resolve_debug_bin_path(xpbd_cfg) or _resolve_xpbd_executable_from_pip(target)
+    if exe is None:
         raise FileNotFoundError(
-            f"XPBD 二进制不可用: {target!r}（pip 包 orcaxpbd_client 未安装或未含该 target）"
+            f"XPBD 二进制不可用: {target!r}（pip 包 orcaxpbd_client 未安装或未含该 target；"
+            f"或设置 xpbd.debug_bin_path / XPBD_DEBUG_BIN_PATH 指向本地编译的二进制）"
         )
-
-    exe = pip_exe
     mjc_pbd_config = _resolve_mjc_pbd_config(config, config_path, cloth_data_dir=cloth_data_dir)
 
     env = os.environ.copy()

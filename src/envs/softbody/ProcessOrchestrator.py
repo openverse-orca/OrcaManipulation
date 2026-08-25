@@ -2601,7 +2601,8 @@ def Start(params: P23cParams) -> int:
         default_target = str(_cfg.get("xpbd_default_target") or "").strip()
         default_version = str(_cfg.get("xpbd_default_version") or "").strip()
         target = params.xpbd_build_target or default_target
-        if not ProcessXPBD.ensure_prepared(target, default_version):
+        debug_bin_path = str((_cfg.get("xpbd") or {}).get("debug_bin_path") or "").strip()
+        if not ProcessXPBD.ensure_prepared(target, default_version, debug_bin_path=debug_bin_path):
             _log_step(7, _TOTAL_STEPS, "XPBD 二进制准备", ok=False, reason=f"XPBD 准备失败（target={target}）")
             return 1
     _log_step(7, _TOTAL_STEPS, "XPBD 二进制准备", ok=True)
