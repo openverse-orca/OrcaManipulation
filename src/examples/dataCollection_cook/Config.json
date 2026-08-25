@@ -76,6 +76,7 @@
   "cloth": {
     "v4_parity": true,
     "mesh": "croissant_Low-copy.vtk",
+    "finger_idle_collision": true,
     "mass_kg": 0.8,
     "thickness_m": 0.015,
     "stretch_compliance": 0.15,
