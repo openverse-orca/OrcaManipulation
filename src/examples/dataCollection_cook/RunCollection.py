@@ -43,14 +43,34 @@ _FILE_HANDLER.setFormatter(logging.Formatter("[P2.3c] %(message)s"))
 logging.getLogger().addHandler(_FILE_HANDLER)
 
 
+def _deep_merge(base: dict, overlay: dict) -> dict:
+    """递归合并 overlay 到 base（dict 深合并，其它类型覆盖）。"""
+    out = dict(base)
+    for key, val in overlay.items():
+        if isinstance(val, dict) and isinstance(out.get(key), dict):
+            out[key] = _deep_merge(out[key], val)
+        else:
+            out[key] = val
+    return out
+
+
 def _load_config() -> dict:
-    """加载整个 Config.json。"""
+    """加载 Config.json，并按 agent_file 引用合并机器人参数文件。"""
     path = TELE_DIR / "Config.json"
     if not path.is_file():
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            return {}
+        agent_file = data.get("agent_file")
+        if agent_file:
+            agent_path = (path.parent / str(agent_file)).resolve()
+            if agent_path.is_file():
+                agent_data = json.loads(agent_path.read_text(encoding="utf-8"))
+                if isinstance(agent_data, dict):
+                    data = _deep_merge(data, agent_data)
+        return data
     except (json.JSONDecodeError, OSError):
         return {}
 
@@ -104,7 +124,10 @@ def main() -> int:
             config_path=os.environ.get("CFG", "").strip() or str(TELE_DIR / "Config.json"),
             orcagym_port=int(_env("ORCAGYM_PORT", "orcagym_port")),
             pbd_grpc_port=int(_env("PBD_GRPC_PORT", "pbd_grpc_port")),
-            orcalink_port=int(_env("ORCALINK_PORT", "orcalink_port")),
+            orcalink_port=int(
+                os.environ.get("ORCALINK_PORT", "").strip()
+                or str((CONFIG.get("orcalink") or {}).get("port", 50361))
+            ),
             pico_port=int(_env("PICO_PORT", "pico_port")),
             wait_sec=int(_env("WAIT_SEC", "wait_sec")),
             kill_stale=_env("KILL_STALE", "kill_stale") == "1"

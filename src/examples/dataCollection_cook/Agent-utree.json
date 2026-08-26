@@ -1,0 +1,204 @@
+{
+  "description": "G1 Omnipicker 机器人参数（关节/夹爪/body 匹配）。由 Config.json 的 agent_file 引用，深合并进主配置。",
+  "run": {
+    "agent": "g1_omnipicker",
+    "mjc_prefix": "g1_cook2_usda"
+  },
+  "orcagym": {
+    "mjc_agent_prefix": "g1_cook2_usda",
+    "rigid_body_map_key": "orcagym_rigid_body_map",
+    "sync_mocap_from_gripper": {
+      "enabled": false,
+      "pairs": [
+        {
+          "mocap_body": "openloong_gripper_2f85_fix_base_usda_leftHandMocap",
+          "palm_body": "openloong_gripper_2f85_fix_base_usda_zbll_base_link"
+        },
+        {
+          "mocap_body": "openloong_gripper_2f85_fix_base_usda_rightHandMocap",
+          "palm_body": "openloong_gripper_2f85_fix_base_usda_zbr_base_link"
+        }
+      ],
+      "comment": "G1 MJCF 无 leftHandMocap；手臂 OSC 走 ee site，不启 palm→mocap 同步"
+    }
+  },
+  "robot": {
+    "base_body": "torso_link_rev_1_0",
+    "motors_group": 0,
+    "positions_group": 2,
+    "l_arm": {
+      "joint_names": [
+        "left_shoulder_pitch_joint",
+        "left_shoulder_roll_joint",
+        "left_shoulder_yaw_joint",
+        "left_elbow_joint",
+        "left_wrist_roll_joint",
+        "left_wrist_pitch_joint",
+        "left_wrist_yaw_joint"
+      ],
+      "neutral_joint_values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "motors_names": [
+        "left_shoulder_pitch_joint_mctrl",
+        "left_shoulder_roll_joint_mctrl",
+        "left_shoulder_yaw_joint_mctrl",
+        "left_elbow_joint_mctrl",
+        "left_wrist_roll_joint_mctrl",
+        "left_wrist_pitch_joint_mctrl",
+        "left_wrist_yaw_joint_mctrl"
+      ],
+      "motors_init_ctrl": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "motors_ranges": [
+        [-60, 60],
+        [-60, 60],
+        [-60, 60],
+        [-60, 60],
+        [-30, 30],
+        [-30, 30],
+        [-30, 30]
+      ],
+      "ee_site_name": "left_palm"
+    },
+    "r_arm": {
+      "joint_names": [
+        "right_shoulder_pitch_joint",
+        "right_shoulder_roll_joint",
+        "right_shoulder_yaw_joint",
+        "right_elbow_joint",
+        "right_wrist_roll_joint",
+        "right_wrist_pitch_joint",
+        "right_wrist_yaw_joint"
+      ],
+      "neutral_joint_values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "motors_names": [
+        "right_shoulder_pitch_joint_mctrl",
+        "right_shoulder_roll_joint_mctrl",
+        "right_shoulder_yaw_joint_mctrl",
+        "right_elbow_joint_mctrl",
+        "right_wrist_roll_joint_mctrl",
+        "right_wrist_pitch_joint_mctrl",
+        "right_wrist_yaw_joint_mctrl"
+      ],
+      "motors_init_ctrl": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "motors_ranges": [
+        [-60, 60],
+        [-60, 60],
+        [-60, 60],
+        [-60, 60],
+        [-30, 30],
+        [-30, 30],
+        [-30, 30]
+      ],
+      "ee_site_name": "right_palm"
+    },
+    "gripper_l": {
+      "joint_names": [
+        "left_hand_thumb_0_joint",
+        "left_hand_thumb_1_joint",
+        "left_hand_thumb_2_joint",
+        "left_hand_middle_0_joint",
+        "left_hand_middle_1_joint",
+        "left_hand_index_0_joint",
+        "left_hand_index_1_joint"
+      ],
+      "actuator_names": [
+        "left_hand_thumb_0_joint",
+        "left_hand_thumb_1_joint",
+        "left_hand_thumb_2_joint",
+        "left_hand_middle_0_joint",
+        "left_hand_middle_1_joint",
+        "left_hand_index_0_joint",
+        "left_hand_index_1_joint"
+      ],
+      "actuator_ranges": [
+        [-1.0, 2],
+        [-1.0, 2],
+        [-1.0, 2],
+        [-1.0, 2],
+        [-1.0, 2],
+        [-1.0, 2],
+        [-1.0, 2]
+      ],
+      "init_ctrl": [0.4, -0.5, -0.8, -0.7, -0.7, -0.7, -0.7]
+    },
+    "gripper_r": {
+      "joint_names": [
+        "right_hand_thumb_0_joint",
+        "right_hand_thumb_1_joint",
+        "right_hand_thumb_2_joint",
+        "right_hand_middle_0_joint",
+        "right_hand_middle_1_joint",
+        "right_hand_index_0_joint",
+        "right_hand_index_1_joint"
+      ],
+      "actuator_names": [
+        "right_hand_thumb_0_joint",
+        "right_hand_thumb_1_joint",
+        "right_hand_thumb_2_joint",
+        "right_hand_middle_0_joint",
+        "right_hand_middle_1_joint",
+        "right_hand_index_0_joint",
+        "right_hand_index_1_joint"
+      ],
+      "actuator_ranges": [
+        [-1.0, 2],
+        [-1.0, 2],
+        [-1.0, 2],
+        [-1.0, 2],
+        [-1.0, 2],
+        [-1.0, 2],
+        [-1.0, 2]
+      ],
+      "init_ctrl": [-0.4, 0.5, 0.8, 0.7, 0.7, 0.7, 0.7]
+    }
+  },
+  "grip_bind": {
+    "left": {
+      "palm_legacy": "gripper_l_palm",
+      "palm_suffix": "wrist_yaw_link",
+      "finger1_legacy": "gripper_l_finger1",
+      "finger1_suffix": "hand_index_0_link",
+      "finger2_legacy": "gripper_l_finger2",
+      "finger2_suffix": "hand_middle_0_link"
+    },
+    "right": {
+      "palm_legacy": "gripper_r_palm",
+      "palm_suffix": "wrist_yaw_link",
+      "finger1_legacy": "gripper_r_finger1",
+      "finger1_suffix": "hand_index_0_link",
+      "finger2_legacy": "gripper_r_finger2",
+      "finger2_suffix": "hand_middle_0_link"
+    }
+  },
+  "xpbd_auto_discover": {
+    "bodies": true,
+    "cloth": true,
+    "default_follow_mode": "kinematic",
+    "body_track_scan_only": false,
+    "comment_body_track": "仅 _XPBD_TRACK_GEOM；G1/openloong 通用，勿写死子串白名单",
+    "body_include_geom_suffixes": [],
+    "body_include_substrings": [
+      "hand_thumb",
+      "hand_index",
+      "hand_middle",
+      "wrist_yaw",
+      "wrist_roll",
+      "Cube"
+    ],
+    "comment": "G1 Cook 手指 body 名匹配；排除 OpenLoong 2F85 夹爪名兜底",
+    "body_exclude_substrings": [
+      "gripper_l_inner_link4",
+      "gripper_l_outer_link4",
+      "gripper_r_inner_link4",
+      "gripper_r_outer_link4",
+      "arm_l_end_link",
+      "arm_r_end_link"
+    ]
+  },
+  "orcagym_rigid_body_map": [
+    {
+      "mjc_body_name": "g1_omnipicker_usda_robot_holder1",
+      "follow_mode": "kinematic",
+      "orcalink_publish": false
+    }
+  ]
+}

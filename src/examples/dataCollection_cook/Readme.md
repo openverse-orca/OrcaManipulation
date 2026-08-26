@@ -12,6 +12,9 @@
   - [2.4 运行三进程联调](#运行三进程联调)
     - [2.4.1 完整命令](#完整命令)
     - [2.4.2 运行参数（Config.json run 段）](#运行参数configjson-run-段)
+- [3. 机器人参数（Agent-utree.json）](#机器人参数agent-utreejson)
+  - [3.1 Agent-utree.json 结构](#agent-utreejson-结构)
+  - [3.2 新增一个机器人](#新增一个机器人)
 
 ---
 
@@ -20,7 +23,8 @@
 | 文件 | 说明 |
 |------|------|
 | `RunCollection.py` | 三进程联调入口（组装 `P23cParams` → 调 `envs.softbody.Start`） |
-| `Config.json` | **单配置**：布料 sim + 场景资产路径规则 + XPBD target/版本（`xpbd_default_target` / `xpbd_default_version`） |
+| `Config.json` | **场景/任务配置**：布料 sim + 场景资产路径规则 + XPBD target/版本；通过 `agent_file` 引用机器人参数 |
+| `Agent-utree.json` | **机器人配置**：关节/夹爪/body 匹配（`robot` / `grip_bind` / `xpbd_auto_discover` / `orcagym_rigid_body_map` / `run.agent` / `run.mjc_prefix` 等） |
 | `requirements.txt` | 本示例依赖声明（固定 orca-xpbd / orca-link 版本） |
 | `logs/` | 运行时日志输出（session config / tele / orcalink / xpbd） |
 
@@ -102,8 +106,8 @@ python3 RunCollection.py
 | 参数 | 默认值 | 说明 |
 |---|---|---|
 | `level` | `Life_Kitchen_01_with_utree` | 关卡名 |
-| `agent` | `g1_omnipicker` | 机器人种类：`openloong` / `g1_omnipicker` / `tiangong2` |
-| `mjc_prefix` | `g1_cook2_usda` | MuJoCo agent 前缀（MJCF body 前缀） |
+| `agent` | `g1_omnipicker` | 机器人种类（**在 `Agent-utree.json` 的 `run` 段**）：`openloong` / `g1_omnipicker` / `tiangong2` |
+| `mjc_prefix` | `g1_cook2_usda` | MuJoCo agent 前缀（**在 `Agent-utree.json` 的 `run` 段**） |
 | `collect_data` | `false` | 是否采集数据集 / HDF5 |
 | `xpbd_ui` | `true` | 是否显示 XPBD OpenGL 窗口 |
 | `cloth_sync_studio_vis` | `true` | 是否推送 qpos 到 Studio 视口 |
@@ -130,3 +134,32 @@ python3 RunCollection.py
 > 布料网格（也不在 `run` 段）：`cloth.mesh`（网格文件名，默认 `croissant_Low-copy.vtk`）+ `orcastudio.assets_folder`（资产目录，容器内路径如 `OrcaStudio_2409/Assets/Life_Kitchen_01`）。XPBD 按 `assets_folder + "/" + mesh` 加载（写进 session 的 `cloth.mesh_abs_path`）。注意 `assets_folder` 必须是 XPBD 进程所在环境能访问的绝对路径。
 
 > 如需临时覆盖而不改 Config.json，仍可用同名环境变量（如 `AGENT=openloong`），优先级：env > Config.json `run` 段。`CFG` / `CLOTH_CONFIG` 仍为仅环境变量参数（指定 config 文件路径）。
+
+---
+
+## 3. 机器人参数（Agent-utree.json）
+
+机器人相关参数已从 `Config.json` 抽离到 `Agent-utree.json`，由 `Config.json` 的 `agent_file` 字段引用：
+
+```json
+{ "agent_file": "Agent-utree.json" }
+```
+
+加载时（`RunCollection._load_config` 与 `envs.softbody.load_cloth_config`）会把 `Agent-utree.json` 深合并进 `Config.json`；两者字段不相交，合并后等价于原来的单配置。
+
+### 3.1 Agent-utree.json 结构
+
+| 段 | 内容 |
+|---|---|
+| `run.agent` / `run.mjc_prefix` | 机器人型号 + MuJoCo body 前缀 |
+| `orcagym` | `mjc_agent_prefix` / `rigid_body_map_key` / `sync_mocap_from_gripper` |
+| `robot` | 关节/夹爪/执行器配置（`l_arm` / `r_arm` / `gripper_l` / `gripper_r` / `base_body` / `motors_group` / `positions_group`），对应原 `conf/*_conf.py` |
+| `grip_bind` | 左右掌/指 body 名匹配（legacy + suffix） |
+| `xpbd_auto_discover` | body 匹配白名单 / 黑名单 / follow_mode |
+| `orcagym_rigid_body_map` | robot holder 刚体表 |
+
+### 3.2 新增一个机器人
+
+1. 新建 `Agent_<robot>.json`，按上表填好该机器人的关节/夹爪/body 匹配。
+2. 在 `Config.json` 里把 `agent_file` 指向它（或按机器人名切换）。
+3. 若 `robot` 段已在 Agent-utree.json 提供，`_assemble_agent` 会优先用它（无需再写 `conf/*_conf.py`）；`data_storage` / `obs_callback` 仍按 `agent_name` 分支。

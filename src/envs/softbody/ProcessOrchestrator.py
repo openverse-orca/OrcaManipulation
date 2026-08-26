@@ -1448,13 +1448,36 @@ def _kill_stale_cloth_processes(orcalink_port: int, pico_port: int) -> None:
         logger.info(f"陈旧进程已清理，:{orcalink_port} / :{pico_port} 已释放")
 
 
+def _agent_conf_from_robot_section(robot_cfg: dict[str, Any]) -> Any:
+    """从 机器人参数文件 的 ``robot`` 段构造 agent_conf（SimpleNamespace，字段与 conf/*.py 对齐）。
+
+    仅顶层用点号访问（``agent_conf.l_arm`` 等）；嵌套的 l_arm/r_arm/gripper_* 保持 dict，
+    以便 ``arm_config["joint_names"]`` 等下标访问不变。
+    """
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        l_arm=robot_cfg["l_arm"],
+        r_arm=robot_cfg["r_arm"],
+        gripper_l=robot_cfg["gripper_l"],
+        gripper_r=robot_cfg["gripper_r"],
+        base_body=robot_cfg["base_body"],
+        motors_group=robot_cfg.get("motors_group", 0),
+        positions_group=robot_cfg.get("positions_group", 2),
+    )
+
+
 def _assemble_agent(
     agent_name: str,
     level: str,
     collect_data: bool,
     base_dir: Path,
+    robot_cfg: dict[str, Any] | None = None,
 ) -> tuple[Any, Any, dict[str, Any], Any]:
-    """组装机器人配置：加载 agent_conf + 建 data_storage + 算 default_joint_values + obs_callback。"""
+    """组装机器人配置：加载 agent_conf + 建 data_storage + 算 default_joint_values + obs_callback。
+
+    ``robot_cfg`` 为 机器人参数文件 的 ``robot`` 段（可选）；给定则优先于 conf/*.py 模块加载。
+    """
     import numpy as np
 
     default_joint_values: dict[str, Any] = {}
@@ -1492,7 +1515,10 @@ def _assemble_agent(
             )
             obs_callback = data_storage.obs_callback
     elif agent_name == "g1_omnipicker":
-        from conf import g1_omnipicker_conf as agent_conf
+        if robot_cfg:
+            agent_conf = _agent_conf_from_robot_section(robot_cfg)
+        else:
+            from conf import g1_omnipicker_conf as agent_conf
 
         # G1 尚无专用 HDF5 storage；OpenLoongDataStorage 夹爪 actuator 名与 G1 MJCF 不兼容
         data_storage = None
@@ -2311,19 +2337,31 @@ class ClothCouplingHandle:
 
 def load_cloth_config(config_path: str | Path, cloth_data_dir: Path | None = None) -> Dict[str, Any]:
     """
-    加载 cloth_sim JSON；若含 \"extends\" 则递归加载基配置再深合并。
+    加载 cloth_sim JSON；若含 \"extends\" 则递归加载基配置再深合并；
+    若含 \"agent_file\" 则加载机器人参数文件并深合并进当前配置。
 
-    extends 路径相对数据目录。
+    extends / agent_file 路径均相对数据目录。
     """
     path = Path(config_path).expanduser().resolve()
     raw = _load_cloth_json_file(path)
+
+    # 1) extends：基配置（场景/任务基座）
     extends = raw.get("extends")
-    if not extends:
-        return raw
-    data_dir = resolve_cloth_data_dir(cloth_data_dir)
-    base_path = (data_dir / str(extends)).resolve()
-    base = load_cloth_config(base_path, cloth_data_dir=cloth_data_dir)
-    return _deep_merge(base, raw)
+    if extends:
+        data_dir = resolve_cloth_data_dir(cloth_data_dir)
+        base_path = (data_dir / str(extends)).resolve()
+        raw = _deep_merge(load_cloth_config(base_path, cloth_data_dir=cloth_data_dir), raw)
+
+    # 2) agent_file：机器人参数（关节/夹爪/body 匹配），合并进当前配置
+    agent_file = raw.get("agent_file")
+    if agent_file:
+        data_dir = resolve_cloth_data_dir(cloth_data_dir)
+        agent_path = (data_dir / str(agent_file)).resolve()
+        agent_cfg = load_cloth_config(agent_path, cloth_data_dir=cloth_data_dir)
+        raw = _deep_merge(raw, agent_cfg)
+        raw.pop("agent_file", None)
+
+    return raw
 
 
 def apply_runtime_cloth_overrides(
@@ -2617,8 +2655,10 @@ def Start(params: P23cParams) -> int:
 
     # ── 9. 组装 → 建 env → 挂耦合 ──
     _log_step(9, _TOTAL_STEPS, "组装 → 建 env → 挂耦合")
+    _cloth_cfg = load_cloth_config(config_path, cloth_data_dir=cloth_data_dir)
     agent_conf, data_storage, default_joint_values, obs_callback = _assemble_agent(
-        agent, level, params.collect_data, params.base_dir
+        agent, level, params.collect_data, params.base_dir,
+        robot_cfg=_cloth_cfg.get("robot"),
     )
     try:
         data_collection_manager, env, pico_joystick, pico_joystick_device, scene_manager, config = _build_env(

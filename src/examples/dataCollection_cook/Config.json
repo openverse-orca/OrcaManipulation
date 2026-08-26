@@ -1,8 +1,6 @@
 {
-  "description": "G1 Cook 布料联调（继承 NursingHome + g1_omnipicker，仅覆盖手部 body 匹配）",
-  "scene_id": "dual_gripper_cross_full",
+  "agent_file": "Agent-utree.json",
   "simulation": {
-    "realtime_step": 0.02,
     "max_sim_time": 67.0
   },
   "orcastudio": {
@@ -83,14 +81,15 @@
     "shear_compliance": 0.005,
     "bend_compliance": 200000.0,
     "grip_side": "both",
-    "lock_radius_m": 0.05,
+    "lock_radius_m": 10.0,
+    "max_lock_approach_m": 100.0,
     "cloth_nx": 31,
     "cloth_ny": 16,
     "cloth_spacing_m": 0.04,
     "particle_friction": 0.2,
     "finger_close_ratio": 0.5,
     "comment_physics": "与 dg_cloth_init / phys_world_add_sheet 默认一致：stretch 0.05 shear 0.005 mass 0.4 thickness=spacing×0.5 lock 0.06；bend 3000 增强弯折（compliance 越大越易弯）；particle_friction 经 xpbd_process→PARTICLE_FRICTION（C 端默认 0.2）",
-    "comment_grip": "G1 Omnipicker：finger_close_ratio 0.75（pinch 阈值约 50.5mm）；lock_radius_m 0.05m（指尖中点球内锁粒）。经 xpbd_process → DG_FINGER_CLOSE_RATIO / lock_radius"
+    "comment_grip": "G1 Omnipicker：finger_close_ratio 0.75（pinch 阈值约 50.5mm）；lock_radius_m 0.05m（指尖中点球内锁粒）。经 xpbd_process → DG_FINGER_CLOSE_RATIO / DG_LOCK_RADIUS_M / DG_MAX_LOCK_APPROACH_M。当前 lock_radius_m=10.0、max_lock_approach_m=100.0 为「合拢即锁、不管距离」的视觉规避试验值（锁全部粒子→面包僵直跟手）"
   },
   "particle_render": {
     "enabled": true,
@@ -144,11 +143,6 @@
     "comment_force_gs": "R-PHYS-4：联调暂用 GS，避免 Jacobi 粒子–刚体盒接触失效",
     "try_connect_sec": 30
   },
-  "frame_count": {
-    "mujoco_substeps_per_macro_frame": 20,
-    "xpbd_substeps_per_macro_frame": 32,
-    "macro_dt_sec": 0.02
-  },
   "rigid_body_map": [
     {
       "mjc_body_name": "InteractiveObjects",
@@ -187,78 +181,12 @@
     "comment": "全链路 67s；联调 --profile capture"
   },
   "orcagym": {
-    "rigid_body_map_key": "orcagym_rigid_body_map",
-    "comment": "Studio 关卡须含 gripper_l_palm 等刚体名；无 anchor SITE 时走 body-only 发包",
-    "mjc_agent_prefix": "g1_cook2_usda",
-    "sync_mocap_from_gripper": {
-      "enabled": false,
-      "pairs": [
-        {
-          "mocap_body": "openloong_gripper_2f85_fix_base_usda_leftHandMocap",
-          "palm_body": "openloong_gripper_2f85_fix_base_usda_zbll_base_link"
-        },
-        {
-          "mocap_body": "openloong_gripper_2f85_fix_base_usda_rightHandMocap",
-          "palm_body": "openloong_gripper_2f85_fix_base_usda_zbr_base_link"
-        }
-      ],
-      "comment": "G1 MJCF 无 leftHandMocap；手臂 OSC 走 ee site，不启 palm→mocap 同步"
-    },
+    "comment": "Studio 关卡须含 gripper_l_palm 等刚体名；无 anchor SITE 时走 body-only 发包（mjc_agent_prefix/rigid_body_map_key/sync_mocap_from_gripper 见 Agent-utree.json）",
     "level": "NursingHome"
   },
-  "xpbd_auto_discover": {
-    "bodies": true,
-    "cloth": true,
-    "default_follow_mode": "kinematic",
-    "body_track_scan_only": false,
-    "comment_body_track": "仅 _XPBD_TRACK_GEOM；G1/openloong 通用，勿写死子串白名单",
-    "body_include_geom_suffixes": [],
-    "body_include_substrings": [
-      "hand_thumb",
-      "hand_index",
-      "hand_middle",
-      "wrist_yaw",
-      "wrist_roll",
-      "Cube"
-    ],
-    "comment": "G1 Cook 手指 body 名匹配；排除 OpenLoong 2F85 夹爪名兜底",
-    "body_exclude_substrings": [
-      "gripper_l_inner_link4",
-      "gripper_l_outer_link4",
-      "gripper_r_inner_link4",
-      "gripper_r_outer_link4",
-      "arm_l_end_link",
-      "arm_r_end_link"
-    ]
-  },
-  "orcagym_rigid_body_map": [
-    {
-      "mjc_body_name": "g1_omnipicker_usda_robot_holder1",
-      "follow_mode": "kinematic",
-      "orcalink_publish": false
-    }
-  ],
   "cloth_robot": {
     "gripper_keyframes_json": "cloth_robot_gripper_keyframes.test20260508_RectCloth.json",
     "comment": "RectCloth 0.618×1.174 m；replay 生成仍依赖 openloong 掌名时需 REGEN 或改 scene_layout"
-  },
-  "grip_bind": {
-    "left": {
-      "palm_legacy": "gripper_l_palm",
-      "palm_suffix": "wrist_yaw_link",
-      "finger1_legacy": "gripper_l_finger1",
-      "finger1_suffix": "hand_index_0_link",
-      "finger2_legacy": "gripper_l_finger2",
-      "finger2_suffix": "hand_middle_0_link"
-    },
-    "right": {
-      "palm_legacy": "gripper_r_palm",
-      "palm_suffix": "wrist_yaw_link",
-      "finger1_legacy": "gripper_r_finger1",
-      "finger1_suffix": "hand_index_0_link",
-      "finger2_legacy": "gripper_r_finger2",
-      "finger2_suffix": "hand_middle_0_link"
-    }
   },
   "schema_version": 2,
   "path_resolution": {
@@ -274,10 +202,6 @@
     ".meta.json",
     ".fbx"
   ],
-  "optional_masked_suffixes": [
-    ".idxmap.json",
-    ".obj"
-  ],
   "generation": {
     "orcagym_config_dir": "~/.orcagym/cloth",
     "levels_basename": "scene_levels.json",
@@ -292,8 +216,6 @@
   "xpbd_default_version": "26.8.1.11",
   "run": {
     "level": "Life_Kitchen_01_with_utree",
-    "agent": "g1_omnipicker",
-    "mjc_prefix": "g1_cook2_usda",
     "collect_data": false,
     "xpbd_ui": true,
     "cloth_sync_studio_vis": true,
@@ -304,7 +226,6 @@
     "mjc_pbd_cloth_scale": 0.05,
     "orcagym_port": 50051,
     "pbd_grpc_port": 50263,
-    "orcalink_port": 50361,
     "pico_port": 8001,
     "wait_sec": 180,
     "kill_stale": "1",

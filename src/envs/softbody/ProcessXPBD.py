@@ -432,6 +432,14 @@ def start_xpbd_if_configured(
     if trigger_close_thresh is not None:
         env["DG_TRIGGER_CLOSE_THRESH"] = str(trigger_close_thresh)
         logger.info("XPBD DG_TRIGGER_CLOSE_THRESH=%s", env["DG_TRIGGER_CLOSE_THRESH"])
+    lock_radius_m = cloth_cfg.get("lock_radius_m")
+    if lock_radius_m is not None:
+        env["DG_LOCK_RADIUS_M"] = str(lock_radius_m)
+        logger.info("XPBD DG_LOCK_RADIUS_M=%s", env["DG_LOCK_RADIUS_M"])
+    max_lock_approach_m = cloth_cfg.get("max_lock_approach_m")
+    if max_lock_approach_m is not None:
+        env["DG_MAX_LOCK_APPROACH_M"] = str(max_lock_approach_m)
+        logger.info("XPBD DG_MAX_LOCK_APPROACH_M=%s", env["DG_MAX_LOCK_APPROACH_M"])
 
     particle_friction = os.environ.get("PARTICLE_FRICTION", "").strip()
     if not particle_friction:
