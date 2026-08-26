@@ -1464,6 +1464,7 @@ def _agent_conf_from_robot_section(robot_cfg: dict[str, Any]) -> Any:
         base_body=robot_cfg["base_body"],
         motors_group=robot_cfg.get("motors_group", 0),
         positions_group=robot_cfg.get("positions_group", 2),
+        grip_trigger_scale=robot_cfg.get("grip_trigger_scale", 0.5),
     )
 
 
@@ -1600,6 +1601,7 @@ def _build_env(
         frame_skip=params.frame_skip,
         time_step=params.time_step,
         mjc_agent_prefix=mjc_prefix,
+        grip_trigger_scale=getattr(agent_conf, "grip_trigger_scale", 0.5),
     )
     env = data_collection_manager.env
     env.reset()

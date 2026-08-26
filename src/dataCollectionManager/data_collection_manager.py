@@ -41,6 +41,7 @@ class DataCollectionManager:
                 task_status_controller: TaskStatusController = None,
                 scene_manager: SceneManager = None,
                 data_storage: AbstractDataStorage = None,
+                grip_trigger_scale: float = 0.5,
                 **kwargs):
         self._mjc_agent_prefix = mjc_agent_prefix
         self.device = device
@@ -53,6 +54,7 @@ class DataCollectionManager:
         self.task: AbstractTask = task
         self.task_status_controller: TaskStatusController = task_status_controller
         self.data_storage: AbstractDataStorage = data_storage
+        self._grip_trigger_scale = grip_trigger_scale
         self.ctrl = np.zeros(self.env.nu, dtype=np.float32)
         self.disable_actuator_group = []
         self._osc_substep = os.environ.get("CLOTH_OSC_SUBSTEP", "").strip().lower() in (
@@ -567,8 +569,8 @@ class DataCollectionManager:
                         continue
                     _is_left = 'left_hand_' in str(getattr(self.env.model, 'actuator_id2name', lambda x: '')(i)).lower()
                     _trig = _lv if _is_left else _rv
-                    # 扳机按下=抓握(更弯)；init_val×(1+0.5×trig)：松=基础弯 按=强弯
-                    action[i] = init_val * (1.0 + _trig * 0.5)
+                    # 扳机按下=抓握(更弯)；init_val×(1+scale×trig)：松=基础弯 按=强弯（scale 可调）
+                    action[i] = init_val * (1.0 + _trig * self._grip_trigger_scale)
             t1 = time.perf_counter()
             should_step = True
             if self._fluid_coupling is not None:

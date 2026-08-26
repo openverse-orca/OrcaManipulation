@@ -16,6 +16,7 @@
 - [3. 机器人参数（Agent-utree.json）](#机器人参数agent-utreejson)
   - [3.1 Agent-utree.json 结构](#agent-utreejson-结构)
   - [3.2 新增一个机器人](#新增一个机器人)
+  - [3.3 手指弯曲调优参数](#33-手指弯曲调优参数)
 
 ---
 
@@ -175,7 +176,7 @@ python3 RunCollection.py
 |---|---|
 | `run.agent` / `run.mjc_prefix` | 机器人型号 + MuJoCo body 前缀 |
 | `orcagym` | `mjc_agent_prefix` / `rigid_body_map_key` / `sync_mocap_from_gripper` |
-| `robot` | 关节/夹爪/执行器配置（`l_arm` / `r_arm` / `gripper_l` / `gripper_r` / `base_body` / `motors_group` / `positions_group`），对应原 `conf/*_conf.py` |
+| `robot` | 关节/夹爪/执行器配置（`l_arm` / `r_arm` / `gripper_l` / `gripper_r` / `base_body` / `motors_group` / `positions_group` / `grip_trigger_scale`），对应原 `conf/*_conf.py` |
 | `grip_bind` | 左右掌/指 body 名匹配（legacy + suffix） |
 | `xpbd_auto_discover` | body 匹配白名单 / 黑名单 / follow_mode |
 | `orcagym_rigid_body_map` | robot holder 刚体表 |
@@ -185,3 +186,22 @@ python3 RunCollection.py
 1. 新建 `Agent_<robot>.json`，按上表填好该机器人的关节/夹爪/body 匹配。
 2. 在 `Config.json` 里把 `agent_file` 指向它（或按机器人名切换）。
 3. 若 `robot` 段已在 Agent-utree.json 提供，`_assemble_agent` 会优先用它（无需再写 `conf/*_conf.py`）；`data_storage` / `obs_callback` 仍按 `agent_name` 分支。
+
+### 3.3 手指弯曲调优参数
+
+手指弯曲幅度由两个参数控制（都在 `Agent-utree.json` 的 `robot` 段），公式：
+
+```
+手指 ctrl = init_ctrl × (1 + grip_trigger_scale × 扳机值)
+```
+
+| 参数 | 默认值 | 作用 |
+|---|---|---|
+| `robot.gripper_l / gripper_r.init_ctrl` | 左 `[0.4, -0.2, 0.3, -0.3, -0.3, -0.3, -0.3]`、右取镜像 | **复位后**（扳机=0）的基础弯度；顺序 = `[thumb_0, thumb_1, thumb_2, middle_0, middle_1, index_0, index_1]` |
+| `robot.grip_trigger_scale` | `0.3` | **扣扳机**时在基础弯度上的合拢倍率 |
+
+调节方式：
+
+- **复位后太弯** → 调小 `init_ctrl` 绝对值（如 middle/index ±0.3 → ±0.2）。
+- **扣扳机太弯** → 调小 `grip_trigger_scale`（如 0.3 → 0.2）。
+- **想要更弯** → 反向调大。

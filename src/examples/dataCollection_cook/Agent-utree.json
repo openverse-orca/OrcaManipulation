@@ -26,6 +26,7 @@
     "base_body": "torso_link_rev_1_0",
     "motors_group": 0,
     "positions_group": 2,
+    "grip_trigger_scale": 0.3,
     "l_arm": {
       "joint_names": [
         "left_shoulder_pitch_joint",
@@ -118,7 +119,7 @@
         [-1.0, 2],
         [-1.0, 2]
       ],
-      "init_ctrl": [0.4, -0.5, 0.8, -0.7, -0.7, -0.7, -0.7]
+      "init_ctrl": [0.4, -0.2, 0.3, -0.3, -0.3, -0.3, -0.3]
     },
     "gripper_r": {
       "joint_names": [
@@ -148,7 +149,7 @@
         [-1.0, 2],
         [-1.0, 2]
       ],
-      "init_ctrl": [-0.4, 0.5, -0.8, 0.7, 0.7, 0.7, 0.7]
+      "init_ctrl": [-0.4, 0.2, -0.3, 0.3, 0.3, 0.3, 0.3]
     }
   },
   "grip_bind": {
