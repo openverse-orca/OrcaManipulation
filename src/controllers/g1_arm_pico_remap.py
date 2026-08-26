@@ -60,18 +60,15 @@ def add_g1_arm_osc_pico_controller(
     pos_flip: np.ndarray,
 ) -> None:
     """
-    注册 G1 单臂 OSC：Pico 事件经 remap 后写入 update_goal。
-    与 controllers.add_arm_osc_pico_controller 相同，但多一层坐标变换。
+    注册 G1 单臂 OSC：Pico 事件经 transform_event（Unity→MuJoCo）后直接写入 update_goal。
+
+    transform_event（PicoJoystickDevice）已完成坐标转换，无需再叠加 remap+旋转
+    （历史 make_g1_rotated_transform_callback 造成双重变换，见排查文档）。
     """
     ctrl_name = [env.actuator(m) for m in arm_config["motors_names"]]
     init_ctrl = {n: v for n, v in zip(ctrl_name, arm_config["motors_init_ctrl"])}
     arm_ctrl = create_arm_osc_controller(
         env, arm_config, base_body, ctrl_name, init_ctrl
     )
-    device.bind_transform_event(
-        key,
-        make_g1_rotated_transform_callback(
-            arm_ctrl.update_goal, rotvec, pos_remap, pos_flip
-        ),
-    )
+    device.bind_transform_event(key, arm_ctrl.update_goal)
     data_collection_manager.add_controller(arm_ctrl)
