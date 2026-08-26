@@ -6,6 +6,7 @@
 
 - [1. 目录结构与介绍](#目录结构与介绍)
 - [2. 运行流程](#运行流程)
+  - [2.0 前置准备 克隆 OrcaGym](#前置准备-克隆-orcagym)
   - [2.1 启动 OrcaStudio 并进入 Play](#启动-orcastudio-并进入-play)
   - [2.2 激活 conda 环境](#激活-conda-环境)
   - [2.3 安装依赖](#安装依赖)
@@ -40,6 +41,8 @@
 ## 2. 运行流程
 
 ```
+2.0 克隆 OrcaGym 到同级目录（仅一次）
+        ↓
 2.1 启动 OrcaStudio 并进入 Play（手动，仅一次）
         ↓
 2.2 激活 conda 环境
@@ -51,6 +54,25 @@
 
 > 注意：**必须先启动 Studio 并 Play**，否则 2.4 会卡在
 > 「等待 OrcaGym :50051 / PBDRender :50263」超时。
+
+### 2.0 前置准备 克隆 OrcaGym
+
+> 一次性操作。`RunCollection.py` 启动时会把 OrcaGym 加进 `sys.path`，因此 **OrcaGym 必须与 OrcaManipulation 放在同一级目录**（即 OrcaManipulation 的上一级目录下）：
+
+```
+<REPO_ROOT>/                 # OrcaManipulation 的上一级目录（如 ~/Development）
+├── OrcaGym/                 # ← 克隆到这里（同级）
+└── OrcaManipulation/
+```
+
+```bash
+cd <REPO_ROOT>                                          # OrcaManipulation 的上一级目录
+git clone git@github.com:openverse-orca/OrcaGym.git
+cd OrcaGym
+git checkout cloth_dev                                  # 切到 cloth_dev 分支
+```
+
+> `<REPO_ROOT>` 即 `RunCollection.py` 里 `Path(__file__).resolve().parents[4]` 定位的目录（`.../OrcaManipulation/src/examples/dataCollection_cook/RunCollection.py` 往上 4 层）。也可用环境变量 `REPO_ROOT` 覆盖。
 
 ### 2.1 启动 OrcaStudio 并进入 Play
 
