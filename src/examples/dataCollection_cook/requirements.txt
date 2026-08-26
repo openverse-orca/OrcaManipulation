@@ -2,6 +2,12 @@
 #
 # 顶层 requirements.txt 提供通用依赖（numba / gymnasium / h5py / matplotlib 等），
 # 此处通过 -r 引用；下面显式固定三进程联调的版本，保证多机环境一致。
+#
+# orca-* 包（orca-gym / orca-lab / orca-link / orca-xpbd）发布在 test.pypi.org，
+# 非官方 PyPI；必须加 test 源，否则 pip 找不到这些包。官方源仍作为主源。
+--index-url https://pypi.org/simple/
+--extra-index-url https://test.pypi.org/simple/
+
 -r ../../../requirements.txt
 
 # orca 各包（三进程联调固定版本）

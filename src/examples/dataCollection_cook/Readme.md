@@ -99,13 +99,10 @@ conda activate <你的环境名>
 ### 2.3 安装依赖
 
 ```bash
-pip install -r src/examples/dataCollection_cook/requirements.txt \
-    --index-url https://pypi.org/simple/ \
-    --extra-index-url https://test.pypi.org/simple/
+pip install -r src/examples/dataCollection_cook/requirements.txt
 ```
 
-`requirements.txt` 固定两个发布包版本（`orca-xpbd` / `orca-link`），
-XPBD target/版本号与 `Config.json` 的 `xpbd_default_target` / `xpbd_default_version` 一致。
+`requirements.txt` 已内置两个源（官方 PyPI 主源 + test PyPI 次源，`orca-*` 包发布在 test.pypi.org），并固定版本号（`orca-xpbd` / `orca-link`），与 `Config.json` 的 `xpbd_default_target` / `xpbd_default_version` 一致。
 
 ### 2.4 运行三进程联调
 

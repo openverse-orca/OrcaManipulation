@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 # 常量
 # ---------------------------------------------------------------------------
 
-TEST_PYPI_INDEX = "https://test.pypi.org/simple/"
-PYPI_EXTRA = "https://pypi.org/simple/"
+PYPI_INDEX = "https://pypi.org/simple/"              # 官方主源（通用依赖）
+TEST_PYPI_EXTRA = "https://test.pypi.org/simple/"    # orca-* 包的 test 源
 
 
 # ---------------------------------------------------------------------------
@@ -122,14 +122,14 @@ def _ensure_orca_xpbd_installed(version: str) -> str:
     if not env_flag("XPBD_PIP_AUTO_INSTALL", default=True):
         raise RuntimeError(
             f"orca-xpbd 版本不匹配或未安装（已装 {installed!r}，期望 {version!r}）；"
-            f"请先: pip install -i {TEST_PYPI_INDEX} --extra-index-url {PYPI_EXTRA} "
+            f"请先: pip install -i {PYPI_INDEX} --extra-index-url {TEST_PYPI_EXTRA} "
             f"orca-xpbd=={version}"
         )
 
     cmd = [
         sys.executable, "-m", "pip", "install",
         "--upgrade", "--force-reinstall",
-        "-i", TEST_PYPI_INDEX, "--extra-index-url", PYPI_EXTRA,
+        "-i", PYPI_INDEX, "--extra-index-url", TEST_PYPI_EXTRA,
         f"orca-xpbd=={version}",
     ]
     print(f"[ProcessXPBD] pip install orca-xpbd=={version}", flush=True)
