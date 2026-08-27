@@ -13,8 +13,8 @@
 # orca 各包（三进程联调固定版本）
 orca-gym==26.7.1.7
 orca-lab==26.7.1.7
-orca-link==26.8.1.13
-orca-xpbd==26.8.1.13
+orca-link==26.8.1.14
+orca-xpbd==26.8.1.14
 
 # 视觉 / 相机
 av==18.1.0
