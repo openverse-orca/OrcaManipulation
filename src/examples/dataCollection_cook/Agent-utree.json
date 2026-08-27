@@ -26,7 +26,7 @@
     "base_body": "torso_link_rev_1_0",
     "motors_group": 0,
     "positions_group": 2,
-    "grip_trigger_scale": 0.3,
+    "grip_trigger_scale": 4,
     "l_arm": {
       "joint_names": [
         "left_shoulder_pitch_joint",

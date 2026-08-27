@@ -75,21 +75,19 @@
     "v4_parity": true,
     "mesh": "croissant_Low-copy.vtk",
     "finger_idle_collision": true,
-    "mass_kg": 0.8,
-    "thickness_m": 0.015,
-    "stretch_compliance": 0.15,
-    "shear_compliance": 0.005,
-    "bend_compliance": 200000.0,
+    "mass_kg": 0.5,
+    "edge_compliance": 0.5,
+    "volume_compliance": 0.03,
+    "compliance_damping": 0.012,
+    "substeps": 16,
+    "particle_restitution": 0.0,
+    "particle_friction": 0.6,
     "grip_side": "both",
     "lock_radius_m": 0.05,
     "max_lock_approach_m": 0.25,
-    "cloth_nx": 31,
-    "cloth_ny": 16,
-    "cloth_spacing_m": 0.04,
-    "particle_friction": 0.2,
     "finger_close_ratio": 0.5,
-    "comment_physics": "与 dg_cloth_init / phys_world_add_sheet 默认一致：stretch 0.05 shear 0.005 mass 0.4 thickness=spacing×0.5 lock 0.06；bend 3000 增强弯折（compliance 越大越易弯）；particle_friction 经 xpbd_process→PARTICLE_FRICTION（C 端默认 0.2）",
-    "comment_grip": "G1 Omnipicker：finger_close_ratio 0.75（pinch 阈值约 50.5mm）；lock_radius_m 0.05m（指尖中点球内锁粒）。经 xpbd_process → DG_FINGER_CLOSE_RATIO / DG_LOCK_RADIUS_M / DG_MAX_LOCK_APPROACH_M。当前 lock_radius_m=10.0、max_lock_approach_m=100.0 为「合拢即锁、不管距离」的视觉规避试验值（锁全部粒子→面包僵直跟手）"
+    "comment_physics": "面包走四面体软体路径（经 mjc_pbd_bridge_cloth_softbody_config 读取）。目标「大形变 + 可回弹」：volume/edge_compliance 越大越软、形变越大（volume 是压扁主杠杆）；compliance_damping 越小回弹越强（0=关）；substeps 越大数值阻尼越小、回弹越强。当前 volume 0.05 是「大形变」起点，太塌就调小（0.05→0.02→0.01）。",
+    "comment_grip": "抓取锁定：lock_radius_m（锁粒半径）/ max_lock_approach_m（最大接近距离，防隔空抓取）/ finger_close_ratio（指闭合阈值）。经 xpbd_process → DG_LOCK_RADIUS_M / DG_MAX_LOCK_APPROACH_M / DG_FINGER_CLOSE_RATIO。"
   },
   "particle_render": {
     "enabled": true,
@@ -141,7 +139,10 @@
     "show_ui": true,
     "overlay_mjc": true,
     "comment_force_gs": "R-PHYS-4：联调暂用 GS，避免 Jacobi 粒子–刚体盒接触失效",
-    "try_connect_sec": 30
+    "try_connect_sec": 30,
+    "particle_sleep": false,
+    "particle_sleep_v_thresh": 0.02,
+    "velocity_damping": 0.01
   },
   "rigid_body_map": [
     {

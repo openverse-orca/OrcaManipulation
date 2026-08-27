@@ -324,6 +324,18 @@ def start_xpbd_if_configured(
     env.pop("MJC_PBD_LOCAL_PHYS_SMOKE", None)
     env["MJC_PBD_CONFIG"] = str(mjc_pbd_config)
     env["MJC_PBD_TRY_CONNECT_SEC"] = str(xpbd_cfg.get("try_connect_sec", 3))
+    particle_sleep = xpbd_cfg.get("particle_sleep")
+    if particle_sleep is not None:
+        env["PBDX_PARTICLE_SLEEP"] = "1" if bool(particle_sleep) else "0"
+        logger.info("XPBD PBDX_PARTICLE_SLEEP=%s", env["PBDX_PARTICLE_SLEEP"])
+    particle_sleep_v = xpbd_cfg.get("particle_sleep_v_thresh")
+    if particle_sleep_v is not None:
+        env["PBDX_PARTICLE_SLEEP_V"] = str(particle_sleep_v)
+        logger.info("XPBD PBDX_PARTICLE_SLEEP_V=%s", env["PBDX_PARTICLE_SLEEP_V"])
+    velocity_damping = xpbd_cfg.get("velocity_damping")
+    if velocity_damping is not None:
+        env["PBDX_VELOCITY_DAMPING"] = str(velocity_damping)
+        logger.info("XPBD PBDX_VELOCITY_DAMPING=%s", env["PBDX_VELOCITY_DAMPING"])
     sim_cfg = config.get("simulation", {})
     max_sim = float(sim_cfg.get("max_sim_time", 0) or 0)
     discover_only = bool(xpbd_cfg.get("cloth_discover_only", True))
