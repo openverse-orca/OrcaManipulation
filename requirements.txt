@@ -3,10 +3,11 @@ numba
 termcolor>=2.4.0
 pyyaml
 h5py
-av
+# PyAV 16+ 移除 av.option 模块，与 lerobot 0.6.1 不兼容；必须 <16
+av>=15.0.0,<16
 opencv-python
-# LeRobot 数据格式支持（可选，仅在 LeRobot 采集模式下需要）
-lerobot>=0.3.0
+# LeRobot 数据格式支持（数据采集必需：[dataset] extras 含 datasets/pyarrow/av 等）
+lerobot[dataset]>=0.6.1
 pyarrow>=14.0.0
 typing_extensions>=4.7.0
 gymnasium

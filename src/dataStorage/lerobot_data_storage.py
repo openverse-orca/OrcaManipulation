@@ -224,14 +224,15 @@ class LeRobotDatasetWriter:
         image_keys = _collect_image_keys(cameras_conf)
 
         if resume and Path(root).exists():
-            dataset = LeRobotDataset(
+            # lerobot>=0.6：resume 工厂方法自动创建 writer + 启动 image writer，
+            # 无需手动 start_image_writer / create_episode_buffer（旧版 0.3 的写法）。
+            dataset = LeRobotDataset.resume(
                 repo_id=repo_id,
                 root=root,
-                download_videos=False,
                 tolerance_s=0.0001,
+                streaming_encoding=True,
+                image_writer_threads=4 * len(image_keys),
             )
-            dataset.start_image_writer(0, 4 * len(image_keys))
-            dataset.episode_buffer = dataset.create_episode_buffer()
             _logger.info(
                 f"[resume] 已加载 {dataset.num_episodes} 集 / "
                 f"{dataset.num_frames} 帧 (root={root})"
@@ -277,6 +278,11 @@ class LeRobotDatasetWriter:
                 image_writer_processes=0,
                 image_writer_threads=4 * len(image_keys),
                 streaming_encoding=True,
+                # 每集 parquet 独立成文件：极小阈值让 lerobot 在新集开始时
+                # 自动 close 上一 writer（写 footer）+ 推进 file_idx，配合
+                # flush_episode 末尾的 close_writer，保证每集结束即文件完整可读，
+                # 进程崩溃不丢已采集集的数据。
+                data_files_size_in_mb=0.001,
             )
 
         return cls(dataset)
@@ -368,6 +374,16 @@ class LeRobotDatasetWriter:
         """
         ep_idx = self._next_ep_idx
         self._dataset.save_episode()
+        # 每集后立即 close parquet writer 写 footer，确保该集 parquet 文件
+        # 完整可读（不依赖 finalize）。配合 create 时的 data_files_size_in_mb
+        # 极小阈值，下一集 save_episode 时 lerobot 会推进 file_idx 写新文件，
+        # 不覆盖本集文件。进程崩溃仅丢最后一集，已采集集全部可用。
+        try:
+            writer = getattr(self._dataset, "writer", None)
+            if writer is not None:
+                writer.close_writer()
+        except Exception:
+            _logger.exception("[LeRobot] flush_episode close_writer 异常")
         self._next_ep_idx += 1
         return ep_idx
 
@@ -378,18 +394,19 @@ class LeRobotDatasetWriter:
         删除临时 MP4 + 清空内存队列 + 重置 episode_buffer。
         ``_next_ep_idx`` 不递增（下次重试同一 episode_index）。
         """
+        # lerobot>=0.6：clear_episode_buffer 委托给 writer，内部用
+        # meta.total_episodes 作 episode_index 重置 buffer。由于 discard
+        # 不递增 _next_ep_idx 且 save_episode 未执行时 meta 未更新，
+        # meta.total_episodes == _next_ep_idx 恒成立，无需手动重建 buffer。
         self._dataset.clear_episode_buffer()
-        # clear_episode_buffer 重置 buffer 时用 meta.total_episodes 作 episode_index，
-        # 若 save_episode 尚未执行，meta 落后于 _next_ep_idx，需显式修正。
-        self._dataset.episode_buffer = self._dataset.create_episode_buffer(
-            episode_index=self._next_ep_idx
-        )
 
     def stop_image_writer(self) -> None:
         """停止 AsyncImageWriter 线程池（发 None 令牌）。"""
         try:
-            if getattr(self._dataset, "image_writer", None) is not None:
-                self._dataset.stop_image_writer()
+            # lerobot>=0.6：image_writer / stop_image_writer 移到 writer 上。
+            writer = getattr(self._dataset, "writer", None)
+            if writer is not None and getattr(writer, "image_writer", None) is not None:
+                writer.stop_image_writer()
         except Exception:
             _logger.exception("[LeRobot] stop_image_writer 异常")
 
@@ -416,7 +433,11 @@ class LeRobotDatasetWriter:
         从 LeRobot ``episode_buffer["timestamp"]`` 的长度获取，反映实际
         ``add_frame`` 成功的次数（被 ``SingleFrameTask`` 丢弃的帧不计入）。
         """
-        buf = self._dataset.episode_buffer
+        # lerobot>=0.6：episode_buffer 移到 writer 上。
+        writer = getattr(self._dataset, "writer", None)
+        if writer is None:
+            return 0
+        buf = writer.episode_buffer
         if buf is None:
             return 0
         ts = buf.get("timestamp")

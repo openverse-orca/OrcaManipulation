@@ -460,11 +460,17 @@ class DataCollectionManager:
             )
 
             request_idr = self._consume_idr_request()
-            if not self._any_callback_skip_render():
-                self.env.render(self.simulate_index, request_idr=request_idr)
-            else:
-                self._notify_callbacks("on_after_render_skipped")
-                self._any_callback_push_studio_vis()
+            # task END 后跳过 render：帧采集在 _handle_task_running（render 之前）
+            # 完成，END 帧走 _handle_task_end 不采集新数据；render 的 grpc 调用
+            # （loop.run_until_complete(gym.render)）无超时，引擎繁忙（如 SVT-AV1
+            # 编码占满 CPU）时永久阻塞，事件循环内 Ctrl+C 无效，导致卡死。
+            # 跳过 END 帧 render 不影响数据完整性（parquet/视频帧均不依赖它）。
+            if not should_end:
+                if not self._any_callback_skip_render():
+                    self.env.render(self.simulate_index, request_idr=request_idr)
+                else:
+                    self._notify_callbacks("on_after_render_skipped")
+                    self._any_callback_push_studio_vis()
 
             self._notify_callbacks("on_step_end", obs, info)
 
