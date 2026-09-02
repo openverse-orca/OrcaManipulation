@@ -1,4 +1,5 @@
 import enum
+import os
 import signal
 import time
 import types
@@ -133,6 +134,7 @@ class DataCollectionManager:
         self._pending_idr_request = False
         self._mode = self.DataCollectionMode.TELECONTROL
         self._shutdown_requested = False
+        self._sigint_first_time: float = 0.0
         self._original_sigint = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, self._sigint_handler)
 
@@ -318,8 +320,15 @@ class DataCollectionManager:
         return self.ctrl
 
     def _sigint_handler(self, signum: int, frame: types.FrameType) -> None:
+        now = time.monotonic()
+        if self._shutdown_requested and (now - self._sigint_first_time) < 3.0:
+            # 第二次 Ctrl+C（3s 内）：主线程可能阻塞在 gRPC / fut.result()，
+            # 信号只设标志无法中断，直接强制退出。
+            orca_logger.warning("Force exit (second Ctrl+C within 3s).")
+            os._exit(1)
         self._shutdown_requested = True
-        orca_logger.info("Shutdown requested, finishing current operation...")
+        self._sigint_first_time = now
+        orca_logger.info("Shutdown requested, finishing current operation... (press Ctrl+C again to force exit)")
 
     def run(self, max_episodes: int | None = None):
         self._shutdown_requested = False
@@ -460,17 +469,11 @@ class DataCollectionManager:
             )
 
             request_idr = self._consume_idr_request()
-            # task END 后跳过 render：帧采集在 _handle_task_running（render 之前）
-            # 完成，END 帧走 _handle_task_end 不采集新数据；render 的 grpc 调用
-            # （loop.run_until_complete(gym.render)）无超时，引擎繁忙（如 SVT-AV1
-            # 编码占满 CPU）时永久阻塞，事件循环内 Ctrl+C 无效，导致卡死。
-            # 跳过 END 帧 render 不影响数据完整性（parquet/视频帧均不依赖它）。
-            if not should_end:
-                if not self._any_callback_skip_render():
-                    self.env.render(self.simulate_index, request_idr=request_idr)
-                else:
-                    self._notify_callbacks("on_after_render_skipped")
-                    self._any_callback_push_studio_vis()
+            if not self._any_callback_skip_render():
+                self.env.render(self.simulate_index, request_idr=request_idr)
+            else:
+                self._notify_callbacks("on_after_render_skipped")
+                self._any_callback_push_studio_vis()
 
             self._notify_callbacks("on_step_end", obs, info)
 
@@ -606,9 +609,8 @@ class DataCollectionManager:
             self._stop_data_recording()
 
         orca_logger.info("Task end")
-        task_is_success = self.task.is_success()
-        if task_is_success: 
-            self._pending_idr_request = True
+        task_is_success = self.task.is_success() 
+        self._pending_idr_request = True
         return True, task_is_success
 
     def _start_data_recording(self) -> None:
