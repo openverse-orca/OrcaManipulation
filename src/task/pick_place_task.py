@@ -16,23 +16,25 @@ class PickPlaceTask(AbstractTask):
         self.target_actor_info = None
         self.goal_name = None
         self.goal_site = None
+        self._cached_site_type = None
         
     def get_goal_site_env_name(self):
         return self.goal_name + "_" + self.goal_site
 
     @override
-    def is_success(self):
+    def is_success(self) -> bool:
         target_joint_qpos = self.env.query_joint_qpos([self.target_actor_info["joint_name"]])[self.target_actor_info["joint_name"]]
         target_pos = target_joint_qpos[:3]
-        
-        goal_site_info = self.env.query_site_pos_and_mat([self.get_goal_site_env_name()])[self.get_goal_site_env_name()]
+
+        goal_site_name = self.get_goal_site_env_name()
+        goal_site_info = self.env.query_site_pos_and_mat([goal_site_name])[goal_site_name]
         goal_site_xpos = goal_site_info['xpos']
         goal_site_xmat = goal_site_info['xmat'].reshape(3, 3)
-        goal_site_size = self.env.query_site_size([self.get_goal_site_env_name()])[self.get_goal_site_env_name()]
-        
-        site_type = self.env.gym.query_all_sites()[self.get_goal_site_env_name()]["Type"]
-        
-        if site_type == mujoco.mjtGeom.mjGEOM_BOX:
+        goal_site_size = self.env.query_site_size([goal_site_name])[goal_site_name]
+
+        site_type = self._cached_site_type
+
+        if site_type in (mujoco.mjtGeom.mjGEOM_BOX, mujoco.mjtGeom.mjGEOM_ELLIPSOID):
             half_size = goal_site_size[:3]
             half_world = np.abs(goal_site_xmat) @ half_size
             bbox_min = goal_site_xpos - half_world
@@ -41,27 +43,16 @@ class PickPlaceTask(AbstractTask):
             radius = goal_site_size[0]
             bbox_min = goal_site_xpos - radius
             bbox_max = goal_site_xpos + radius
-        elif site_type == mujoco.mjtGeom.mjGEOM_CYLINDER:
+        elif site_type in (mujoco.mjtGeom.mjGEOM_CYLINDER, mujoco.mjtGeom.mjGEOM_CAPSULE):
             radius = goal_site_size[0]
             half_height = goal_site_size[1]
             z_axis = goal_site_xmat[:, 2]
-            half_world_xy = np.ones(3) * radius
-            half_world_z = np.abs(z_axis) * half_height
-            half_world = np.maximum(half_world_xy, half_world_z)
-            bbox_min = goal_site_xpos - half_world
-            bbox_max = goal_site_xpos + half_world
-        elif site_type == mujoco.mjtGeom.mjGEOM_CAPSULE:
-            radius = goal_site_size[0]
-            half_height = goal_site_size[1]
-            z_axis = goal_site_xmat[:, 2]
-            half_world_xy = np.ones(3) * radius
-            half_world_z = np.abs(z_axis) * half_height + radius
-            half_world = np.maximum(half_world_xy, half_world_z)
-            bbox_min = goal_site_xpos - half_world
-            bbox_max = goal_site_xpos + half_world
-        elif site_type == mujoco.mjtGeom.mjGEOM_ELLIPSOID:
-            half_size = goal_site_size[:3]
-            half_world = np.abs(goal_site_xmat) @ half_size
+            # AABB 投影：垂直分量（圆盘投影）+ 轴向分量（半高投影）
+            # CAPSULE 的轴向半高含半球帽（half_height + radius）
+            axial_half = half_height + radius if site_type == mujoco.mjtGeom.mjGEOM_CAPSULE else half_height
+            perp = np.sqrt(np.maximum(0, 1 - z_axis**2)) * radius
+            par = np.abs(z_axis) * axial_half
+            half_world = perp + par
             bbox_min = goal_site_xpos - half_world
             bbox_max = goal_site_xpos + half_world
         else:
@@ -69,9 +60,8 @@ class PickPlaceTask(AbstractTask):
             radius = np.max(goal_site_size[:3])
             bbox_min = goal_site_xpos - radius
             bbox_max = goal_site_xpos + radius
-        
-        in_bbox = np.all(target_pos >= bbox_min) and np.all(target_pos <= bbox_max)
-        return in_bbox
+
+        return bool(np.all(target_pos >= bbox_min) and np.all(target_pos <= bbox_max))
 
     @override
     def get_task_description(self):
@@ -84,19 +74,23 @@ class PickPlaceTask(AbstractTask):
             self.target_actor_info = task_info.get("target_actor_info")
             self.goal_name = task_info.get("goal_name")
             self.goal_site = task_info.get("goal_site")
-            return not self.is_success()
-        
-        task_config = scene_manager.get_task_config()
-        self.check_task_config(task_config)
+        else:
+            task_config = scene_manager.get_task_config()
+            self.check_task_config(task_config)
 
-        scene_info = scene_manager.get_scene_info()
-        lens = len(scene_info)
-        target_index =  np.random.randint(0, lens - 1) if lens > 1 else 0
-        self.target_actor = list(scene_info.keys())[target_index]
-        self.target_actor_info = scene_info[self.target_actor]
+            scene_info = scene_manager.get_scene_info()
+            lens = len(scene_info)
+            target_index =  np.random.randint(0, lens - 1) if lens > 1 else 0
+            self.target_actor = list(scene_info.keys())[target_index]
+            self.target_actor_info = scene_info[self.target_actor]
 
-        self.goal_name = task_config.get("goal").get("name")
-        self.goal_site = task_config.get("goal").get("site")
+            self.goal_name = task_config.get("goal").get("name")
+            self.goal_site = task_config.get("goal").get("site")
+
+        # 缓存 site type，避免 is_success() 每帧调用 query_all_sites
+        goal_site_name = self.get_goal_site_env_name()
+        all_sites = self.env.gym.query_all_sites()
+        self._cached_site_type = all_sites[goal_site_name]["Type"]
 
         return not self.is_success()
 
