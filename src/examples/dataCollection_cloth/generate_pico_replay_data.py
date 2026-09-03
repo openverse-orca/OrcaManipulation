@@ -18,7 +18,7 @@ from scipy.spatial.transform import Rotation as R
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _ORCA_ROOT = _SCRIPT_DIR.parents[3]
-_CLOTH_3D = _ORCA_ROOT / "OrcaPlayground" / "examples" / "cloth_3d"
+_CLOTH_3D = _ORCA_ROOT / "OrcaPlayground" / "examples" / "embodied" / "cloth"
 sys.path.insert(0, str(_CLOTH_3D))
 
 from modules.dual_gripper_cross_trajectory_v4 import (  # noqa: E402

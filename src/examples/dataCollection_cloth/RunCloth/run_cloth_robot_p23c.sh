@@ -23,7 +23,7 @@
 set -euo pipefail
 
 REPO="${REPO_ROOT:-$(cd "$(dirname "$0")/../../../../.." && pwd)}"
-CLOTH_3D="${REPO}/OrcaPlayground/examples/cloth_3d"
+CLOTH_3D="${REPO}/OrcaPlayground/examples/embodied/cloth"
 TELE_DIR="${REPO}/OrcaManipulation/src/examples/dataCollection_cloth"
 ANALYZE_DIR="${TELE_DIR}/analyze"
 

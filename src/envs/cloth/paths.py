@@ -14,7 +14,9 @@ CLOTH_PACKAGE_DIR: Path = Path(__file__).resolve().parent
 
 # OrcaApr24 仓库根（src → OrcaManipulation → OrcaApr24）
 ORCA_REPO_ROOT: Path = PROJECT_ROOT.parent.parent
-CLOTH_3D_DIR: Path = ORCA_REPO_ROOT / "OrcaPlayground" / "examples" / "cloth_3d"
+CLOTH_PACKAGE_DIR: Path = ORCA_REPO_ROOT / "OrcaPlayground" / "examples" / "embodied" / "cloth"
+# 兼容旧名（cloth_dev 时期路径 examples/cloth_3d）
+CLOTH_3D_DIR: Path = CLOTH_PACKAGE_DIR
 XPBD_ROOT: Path = ORCA_REPO_ROOT / "XPBD"
 XPBD_BUILD_DIR: Path = XPBD_ROOT / "build"
 ORCALINK_CLIENT_PYTHON: Path = ORCA_REPO_ROOT / "OrcaLink" / "Client" / "Python"
@@ -150,7 +152,7 @@ def detect_studio_play_level() -> str | None:
 
 
 def _pick_config_candidate(base_name: str, *, debug: bool) -> Path | None:
-    """在 cloth_3d 下查找 ``base_name``；debug 时优先 ``.debug.json``。"""
+    """在 embodied/cloth 下查找 ``base_name``；debug 时优先 ``.debug.json``。"""
     if debug:
         dbg = CLOTH_3D_DIR / base_name.replace(".json", ".debug.json")
         if dbg.is_file():

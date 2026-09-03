@@ -100,7 +100,7 @@ Subscribe ch20 POSITION(mf)
 
 参考实现：
 
-- MuJoCo 发布：`OrcaPlayground/examples/cloth_3d/modules/cloth_orcalink_bridge.py`
+- MuJoCo 发布：`OrcaPlayground/examples/embodied/cloth/modules/cloth_orcalink_bridge.py`
 - 挂载到 OrcaGym：`OrcaManipulation/src/envs/cloth/attach_coupling.py`
 - XPBD gRPC：`XPBD/src/demos/dual_gripper_cross_mjc/dg_cloth_grpc.c`
 
@@ -256,7 +256,7 @@ python data_collection_cloth_tele.py \
   --frame-skip 20 \
   --time-step 0.001 \
   --cloth-coupling \
-  --cloth-config /path/to/OrcaPlayground/examples/cloth_3d/cloth_sim_config.orcagym_e2e.json
+  --cloth-config /path/to/OrcaPlayground/examples/embodied/cloth/cloth_sim_config.orcagym_e2e.json
 ```
 
 日志目录：`dataCollection_cloth/logs/`（OrcaLink、XPBD 子进程 stdout）。

@@ -20,9 +20,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = (
-    REPO_ROOT / "OrcaPlayground/examples/cloth_3d/cloth_sim_config.openloong.json"
+    REPO_ROOT / "OrcaPlayground/examples/embodied/cloth/cloth_sim_config.openloong.json"
 )
-CLOTH_3D = REPO_ROOT / "OrcaPlayground" / "examples" / "cloth_3d"
+CLOTH_3D = REPO_ROOT / "OrcaPlayground" / "examples" / "embodied" / "cloth"
 ORCA_MANIP = REPO_ROOT / "OrcaManipulation" / "src"
 
 for _p in (str(CLOTH_3D), str(ORCA_MANIP), str(Path(__file__).resolve().parent)):

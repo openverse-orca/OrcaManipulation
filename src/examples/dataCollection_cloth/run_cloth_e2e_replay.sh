@@ -29,4 +29,4 @@ python3 data_collection_cloth_tele.py \
   --frame-skip 20 \
   --time-step 0.001 \
   --cloth-coupling \
-  --cloth-config "${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.orcagym_e2e.json"
+  --cloth-config "${REPO}/OrcaPlayground/examples/embodied/cloth/cloth_sim_config.orcagym_e2e.json"

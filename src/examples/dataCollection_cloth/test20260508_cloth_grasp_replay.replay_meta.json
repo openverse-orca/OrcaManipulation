@@ -1,6 +1,6 @@
 {
-  "session_json": "/home/hjadmin/OrcaApr24/OrcaPlayground/examples/cloth_3d/cloth_sim_session_p23c_20260617_140613.json",
-  "gripper_keyframes_json": "/home/hjadmin/OrcaApr24/OrcaPlayground/examples/cloth_3d/cloth_robot_gripper_keyframes.json",
+  "session_json": "/home/hjadmin/OrcaApr24/OrcaPlayground/examples/embodied/cloth/cloth_sim_session_p23c_20260617_140613.json",
+  "gripper_keyframes_json": "/home/hjadmin/OrcaApr24/OrcaPlayground/examples/embodied/cloth/cloth_robot_gripper_keyframes.json",
   "mjcf_path": "/home/hjadmin/.orcagym/tmp/182000A0_5B03_4423_B4D1_FC8C703627A7.xml",
   "tele_neutral_applied": true,
   "default_joint_values": {

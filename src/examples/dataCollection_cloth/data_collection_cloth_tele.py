@@ -320,7 +320,7 @@ def main():
         "--cloth-config",
         type=str,
         default=None,
-        help="cloth_sim_config JSON；默认 OrcaPlayground cloth_3d/orcagym_e2e 或 dual_gripper_cross_full",
+        help="cloth_sim_config JSON；默认 OrcaPlayground embodied/cloth/orcagym_e2e 或 dual_gripper_cross_full",
     )
     parser.add_argument(
         "--cloth-auto-start-orcalink",
@@ -388,7 +388,7 @@ def main():
         repo_root = os.path.abspath(os.path.join(script_dir, "../../../.."))
         cfg = os.path.join(
             repo_root,
-            "OrcaPlayground/examples/cloth_3d/cloth_sim_config.debug.json",
+            "OrcaPlayground/examples/embodied/cloth/cloth_sim_config.debug.json",
         )
         argv = [
             sys.executable,

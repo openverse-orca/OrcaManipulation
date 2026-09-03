@@ -58,7 +58,7 @@ wait_pbd_meshes() {
   return 1
 }
 
-CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.debug.json"
+CFG="${REPO}/OrcaPlayground/examples/embodied/cloth/cloth_sim_config.debug.json"
 LOG_TAG="keyframe_macro${MAX_MACRO_FRAMES}_$(date +%Y%m%d_%H%M%S)"
 mkdir -p logs
 

@@ -17,7 +17,7 @@ from pathlib import Path
 import mujoco
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-CLOTH_3D = REPO_ROOT / "OrcaPlayground" / "examples" / "cloth_3d"
+CLOTH_3D = REPO_ROOT / "OrcaPlayground" / "examples" / "embodied" / "cloth"
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "cloth_robot_p0_minimal.xml"
 ORCA_MANIP = REPO_ROOT / "OrcaManipulation" / "src"
 XPBD_BIN = REPO_ROOT / "XPBD" / "build" / "dual_gripper_cross_mjc"
@@ -80,7 +80,7 @@ def _deep_merge_config(base: dict, overlay: dict) -> dict:
 
 
 def load_cloth_config(config_path: Path) -> dict:
-    """加载 cloth_sim JSON；``extends`` 相对 ``cloth_3d`` 目录递归深合并。"""
+    """加载 cloth_sim JSON；``extends`` 相对 ``embodied/cloth`` 目录递归深合并。"""
     path = config_path.expanduser().resolve()
     with open(path, "r", encoding="utf-8") as f:
         raw = json.load(f)
@@ -117,7 +117,7 @@ def write_xpbd_runtime_session_config(
     source_config_path: Path | None = None,
     source_mjcf_path: Path | None = None,
 ) -> Path:
-    """将运行时 effective config 写入 ``cloth_3d/cloth_sim_session_{ts}.json``。"""
+    """将运行时 effective config 写入 ``embodied/cloth/cloth_sim_session_{ts}.json``。"""
     session_path = (CLOTH_3D / f"cloth_sim_session_{session_timestamp}.json").resolve()
     payload = copy.deepcopy(config)
     meta: dict[str, str] = {

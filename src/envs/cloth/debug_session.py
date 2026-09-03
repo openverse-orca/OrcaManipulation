@@ -134,7 +134,7 @@ def write_xpbd_runtime_session_config(
     """
     将运行时 effective config 写入 ``cloth_3d/cloth_sim_session_{ts}.json``，供 XPBD 子进程加载。
 
-    路径须在 ``OrcaPlayground/examples/cloth_3d/`` 下，以便 XPBD 侧脚本相对解析。
+    路径须在 ``OrcaPlayground/examples/embodied/cloth/`` 下，以便 XPBD 侧脚本相对解析。
     """
     session_path = (CLOTH_3D_DIR / f"cloth_sim_session_{session_timestamp}.json").resolve()
     payload = copy.deepcopy(config)

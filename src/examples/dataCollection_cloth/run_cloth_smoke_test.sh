@@ -54,12 +54,12 @@ fi
 
 CLOTH_DEBUG="${CLOTH_DEBUG:-0}"
 if [[ "$CLOTH_DEBUG" == "1" ]]; then
-  CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.debug.json"
+  CFG="${REPO}/OrcaPlayground/examples/embodied/cloth/cloth_sim_config.debug.json"
   if [[ ! -f "$CFG" ]]; then
-    CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.json"
+    CFG="${REPO}/OrcaPlayground/examples/embodied/cloth/cloth_sim_config.json"
   fi
 else
-  CFG="${REPO}/OrcaPlayground/examples/cloth_3d/cloth_sim_config.json"
+  CFG="${REPO}/OrcaPlayground/examples/embodied/cloth/cloth_sim_config.json"
 fi
 LOG_TAG="smoke_$(date +%Y%m%d_%H%M%S)"
 echo "[SMOKE] 启动 data_collection_cloth_tele (日志 logs/${LOG_TAG}_tele.log)..."
