@@ -9,6 +9,11 @@ cd <REPO_ROOT>/OrcaLab_2409
 ./OrcaLab.sh --scene NursingHome
 ```
 
+**OrcaLab 场景准备（G1 遥操布料）**
+
+- 机器人资产实例命名为 **`g1_omnipicker_usda`**
+- 将该实例拖到左侧大纲的 **`Group`** 下，再 **Play**
+
 ### 方式 B：启动 OrcaStudio
 
 ```bash
