@@ -90,7 +90,7 @@ class PickPlaceTask(AbstractTask):
         # 缓存 site type，避免 is_success() 每帧调用 query_all_sites
         goal_site_name = self.get_goal_site_env_name()
         all_sites = self.env.gym.query_all_sites()
-        self._cached_site_type = all_sites[goal_site_name]["Type"]
+        self._cached_site_type = int(all_sites[goal_site_name]["Type"])
 
         return not self.is_success()
 
