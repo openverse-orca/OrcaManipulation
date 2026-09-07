@@ -99,6 +99,11 @@ class DataCollectionManager:
             "true",
             "yes",
         )
+        self._grip_clamp_close = False
+        self._grip_rigidify_state_path = ""
+        self._grip_trig_cap_l = None
+        self._grip_trig_cap_r = None
+        self._grip_close_cap: dict[int, float] = {}
 
     @property
     def save_video(self) -> bool:
@@ -213,6 +218,49 @@ class DataCollectionManager:
     def set_cloth_coupling(self, cloth_coupling) -> None:
         """挂载 envs.cloth 耦合句柄；复用与流体相同的 step/cleanup 钩子。"""
         self._fluid_coupling = cloth_coupling
+
+    def set_grip_close_clamp(self, enabled: bool, state_path: str | None = None) -> None:
+        """刚化后开口钳位：某手已刚化时，该手手指不得比刚化瞬间更合拢。
+
+        enabled: 是否开启钳位。
+        state_path: XPBD 写的刚化状态文件（两列 0/1，左、右）。没有则读环境变量。
+        """
+        self._grip_clamp_close = bool(enabled)
+        if state_path:
+            self._grip_rigidify_state_path = str(state_path)
+            os.environ["MJC_PBD_GRIP_RIGIDIFY_STATE_PATH"] = self._grip_rigidify_state_path
+            try:
+                parent = os.path.dirname(self._grip_rigidify_state_path)
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+                if not os.path.isfile(self._grip_rigidify_state_path):
+                    with open(self._grip_rigidify_state_path, "w") as f:
+                        f.write("0 0\n")
+            except OSError:
+                pass
+
+    def _read_grip_rigidify_locked(self) -> tuple[bool, bool]:
+        """读刚化状态文件，返回 (左手已刚化, 右手已刚化)。文件缺失当作都未刚化。"""
+        path = self._grip_rigidify_state_path or os.environ.get(
+            "MJC_PBD_GRIP_RIGIDIFY_STATE_PATH", ""
+        )
+        if not path:
+            return False, False
+        try:
+            with open(path) as f:
+                parts = f.read().split()
+            left = int(float(parts[0])) != 0
+            right = int(float(parts[1])) != 0
+            return left, right
+        except Exception:
+            return False, False
+
+    def _actuator_name(self, index: int) -> str:
+        """查执行器名字，用来区分左右手指。"""
+        getter = getattr(self.env.model, "actuator_id2name", None)
+        if callable(getter):
+            return str(getter(index)).lower()
+        return ""
 
     def add_pre_fluid_step_callback(self, cb: Callable[[OrcaGymLocalEnv], None]) -> None:
         """注册在 run_controllers() 之前执行的回调（如水壶轨迹写入）。"""
@@ -564,13 +612,43 @@ class DataCollectionManager:
                             _lv, _rv = map(float, _f.read().split())
                     except Exception:
                         pass
-                for i, init_val in _saved_finger_ctrl.items():
-                    if i >= len(action):
-                        continue
-                    _is_left = 'left_hand_' in str(getattr(self.env.model, 'actuator_id2name', lambda x: '')(i)).lower()
-                    _trig = _lv if _is_left else _rv
-                    # 扳机按下=抓握(更弯)；init_val×(1+scale×trig)：松=基础弯 按=强弯（scale 可调）
-                    action[i] = init_val * (1.0 + _trig * self._grip_trigger_scale)
+                    if self._grip_clamp_close:
+                        _locked_l, _locked_r = self._read_grip_rigidify_locked()
+                        if _locked_l:
+                            if self._grip_trig_cap_l is None:
+                                self._grip_trig_cap_l = _lv
+                            _lv = min(_lv, self._grip_trig_cap_l)
+                        else:
+                            self._grip_trig_cap_l = None
+                        if _locked_r:
+                            if self._grip_trig_cap_r is None:
+                                self._grip_trig_cap_r = _rv
+                            _rv = min(_rv, self._grip_trig_cap_r)
+                        else:
+                            self._grip_trig_cap_r = None
+                    for i, init_val in _saved_finger_ctrl.items():
+                        if i >= len(action):
+                            continue
+                        _is_left = 'left_hand_' in str(getattr(self.env.model, 'actuator_id2name', lambda x: '')(i)).lower()
+                        _trig = _lv if _is_left else _rv
+                        # 扳机按下=抓握(更弯)；init_val×(1+scale×trig)：松=基础弯 按=强弯（scale 可调）
+                        action[i] = init_val * (1.0 + _trig * self._grip_trigger_scale)
+                if self._grip_clamp_close:
+                    _locked_l, _locked_r = self._read_grip_rigidify_locked()
+                    for i in _saved_finger_ctrl:
+                        if i >= len(action):
+                            continue
+                        _name = self._actuator_name(i)
+                        _locked = ("left_hand_" in _name and _locked_l) or (
+                            "right_hand_" in _name and _locked_r
+                        )
+                        if not _locked:
+                            self._grip_close_cap.pop(i, None)
+                            continue
+                        if i not in self._grip_close_cap:
+                            self._grip_close_cap[i] = float(action[i])
+                        if action[i] > self._grip_close_cap[i]:
+                            action[i] = self._grip_close_cap[i]
             t1 = time.perf_counter()
             should_step = True
             if self._fluid_coupling is not None:

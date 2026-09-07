@@ -153,21 +153,22 @@
     }
   },
   "grip_bind": {
+    "comment": "XPBD 锁粒/刚化跟随的两指。finger1=拇指、finger2=食指。后缀必须带 left_/right_，否则左右手会绑到同一只手上。",
     "left": {
       "palm_legacy": "gripper_l_palm",
-      "palm_suffix": "wrist_yaw_link",
+      "palm_suffix": "left_wrist_yaw_link",
       "finger1_legacy": "gripper_l_finger1",
-      "finger1_suffix": "hand_index_0_link",
+      "finger1_suffix": "left_hand_thumb_0_link",
       "finger2_legacy": "gripper_l_finger2",
-      "finger2_suffix": "hand_middle_0_link"
+      "finger2_suffix": "left_hand_index_0_link"
     },
     "right": {
       "palm_legacy": "gripper_r_palm",
-      "palm_suffix": "wrist_yaw_link",
+      "palm_suffix": "right_wrist_yaw_link",
       "finger1_legacy": "gripper_r_finger1",
-      "finger1_suffix": "hand_index_0_link",
+      "finger1_suffix": "right_hand_thumb_0_link",
       "finger2_legacy": "gripper_r_finger2",
-      "finger2_suffix": "hand_middle_0_link"
+      "finger2_suffix": "right_hand_index_0_link"
     }
   },
   "xpbd_auto_discover": {

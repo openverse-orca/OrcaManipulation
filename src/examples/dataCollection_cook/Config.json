@@ -4,7 +4,7 @@
     "max_sim_time": 67.0
   },
   "orcastudio": {
-    "assets_folder": "/opt/PriWaic/Development/OrcaStudio_2409/Assets/Life_Kitchen_01"
+    "assets_folder": "/home/hjadmin/OrcaApr24/OrcaStudio_2409/Assets/Life_Kitchen_01"
   },
   "orcalink": {
     "enabled": true,
@@ -81,17 +81,62 @@
     "compliance_damping": 0.012,
     "substeps": 16,
     "particle_restitution": 0.0,
-    "particle_friction": 0.6,
+    "particle_friction": 0.0,
+    "comment_particle_friction": "粒子静=动摩擦。夹爪摩擦也低时，手–面包接触约取这两者的较大值（世界仍是 Max）。粘手就再降；桌上打滑不要靠它，去调 cube_*_friction。",
     "grip_side": "both",
-    "lock_radius_m": 0.05,
-    "max_lock_approach_m": 0.25,
-    "finger_close_ratio": 0.5,
+    "lock_radius_m": 0.08,
+    "comment_lock_radius_m": "旧局部锁粒半径（米，随后会乘 scene_scale）。grip_rigidify.enabled=true 时忽略此值，改为锁全部顶点。0=不按半径过滤。",
+    "max_lock_approach_m": 2.0,
+    "comment_max_lock_approach_m": "指尖中点到最近顶点超过此值则拒绝刚化。单位是 XPBD 内部米，不乘 scene_scale。填写=Studio真实米×20。2.0=Studio 10cm，方便三指包住可颂；隔空误抓→调小（1.0=5cm）；怎么都不触发→再确认单位。",
+    "finger_close_ratio": 0.99,
+    "comment_finger_close_ratio": "开度辅门：当前指间距 < 张开基线×该比例才允许刚化。比例不随 scene_scale 变。仅 require_pinch=true 时生效。可颂用 0.8（约收到全开的 80%）；要夹得更紧才刚化→调小（0.5 对面包过严）。",
+    "grip_rigidify": {
+      "enabled": true,
+      "comment_enabled": "true：grip 后整块面包刚化并跟手走。false：仍走旧的局部锁粒。",
+      "freeze_frame": "tip_mid",
+      "comment_freeze_frame": "刚化坐标系。tip_mid=两指中点（推荐）；palm=掌心。跟手拧转不对时再试 palm。",
+      "release_shape": "keep_grasped",
+      "comment_release_shape": "松开后形状。keep_grasped=保持捏过的外形；restore_rest=弹回网格原始静止形。",
+      "require_both_fingers_contact": true,
+      "comment_require_both_fingers_contact": "true：该手两指代理盒附近都有足够面包粒子才刚化。锁太早（悬空跟着走）时保持 true。",
+      "min_contacts_per_finger": 3,
+      "comment_min_contacts_per_finger": "每指最少靠近的粒子数。误触发→调大；很难触发→调到 1。",
+      "require_trigger": false,
+      "comment_require_trigger": "是否还要求 Pico 扳机超过 0.5。dg_traj=pico 时建议 true；当前 cloth_robot 用 false。",
+      "require_pinch": false,
+      "comment_require_pinch": "是否还要求手指开度收到 finger_close_ratio。false：遥操双指碰到面包即可刚化。true：还要收到 finger_close_ratio。",
+      "clamp_close": true,
+      "comment_clamp_close": "刚化后禁止手指更合拢，防止抓穿刚化形体。",
+      "clamp_mode": "trigger",
+      "comment_clamp_mode": "trigger=刚化后扳机只许减小（第一版）。span=按刚化瞬间指间距钳 ctrl（需 XPBD 回传，后续再开）。",
+      "close_margin_m": 0.04,
+      "comment_close_margin_m": "判断「指碰到面包」时在包围球上加的余量。单位同样是 XPBD 米，不乘 20。0.04=Studio 2mm。刚化时盒子已叠进表面→略增大；两指离面包还有缝→略减小，不要变负。"
+    },
     "comment_physics": "面包走四面体软体路径（经 mjc_pbd_bridge_cloth_softbody_config 读取）。目标「大形变 + 可回弹」：volume/edge_compliance 越大越软、形变越大（volume 是压扁主杠杆）；compliance_damping 越小回弹越强（0=关）；substeps 越大数值阻尼越小、回弹越强。当前 volume 0.05 是「大形变」起点，太塌就调小（0.05→0.02→0.01）。",
-    "comment_grip": "抓取锁定：lock_radius_m（锁粒半径）/ max_lock_approach_m（最大接近距离，防隔空抓取）/ finger_close_ratio（指闭合阈值）。经 xpbd_process → DG_LOCK_RADIUS_M / DG_MAX_LOCK_APPROACH_M / DG_FINGER_CLOSE_RATIO。"
+    "comment_grip": "第一版整块刚化：双指接触后锁全部顶点。跟随指为拇指+食指，见顶层 grip_bind。"
+  },
+  "grip_bind": {
+    "comment": "刚化/锁粒跟随的两指（finger1=拇指，finger2=食指）。须带 left_/right_ 全名，否则左右手会绑到同一只手。与 Agent-utree.json 相同；合并后以此为准。",
+    "left": {
+      "palm_legacy": "gripper_l_palm",
+      "palm_suffix": "left_wrist_yaw_link",
+      "finger1_legacy": "gripper_l_finger1",
+      "finger1_suffix": "left_hand_thumb_0_link",
+      "finger2_legacy": "gripper_l_finger2",
+      "finger2_suffix": "left_hand_index_0_link"
+    },
+    "right": {
+      "palm_legacy": "gripper_r_palm",
+      "palm_suffix": "right_wrist_yaw_link",
+      "finger1_legacy": "gripper_r_finger1",
+      "finger1_suffix": "right_hand_thumb_0_link",
+      "finger2_legacy": "gripper_r_finger2",
+      "finger2_suffix": "right_hand_index_0_link"
+    }
   },
   "particle_render": {
     "enabled": true,
-    "grpc_address": "localhost:50261",
+    "grpc_address": "localhost:50263",
     "update_rate_hz": 30,
     "comment": "XPBD PBD_GRPC=1 + GrpcClient；Studio PBDRender Gem Play cloth_demo",
     "sbt_rotation": "zup_yflip",
@@ -99,12 +144,18 @@
   },
   "xpbd_rigid_parity": {
     "match_v4": false,
+    "apply_finger_friction_from_json": true,
+    "comment_apply_finger_friction_from_json": "match_v4=false 时也采用下面的手指/手掌摩擦。必须 true，否则厨房仍走写死的 1.5/2.0，下面四个键无效。",
     "finger_mass_kg": 0.05,
     "palm_restitution": 0.1,
-    "palm_dynamic_friction": 0.8,
-    "palm_static_friction": 1.0,
-    "finger_dynamic_friction": 2.5,
-    "finger_static_friction": 3.0,
+    "palm_dynamic_friction": 0.1,
+    "palm_static_friction": 0.1,
+    "finger_dynamic_friction": 0.1,
+    "finger_static_friction": 0.1,
+    "comment_gripper_friction": "手指/手掌与面包的摩擦。第一版 match_v4=false 时非 Cube 代理盒都用 finger_*。粘手→再降；太滑捏不住（刚化前）→略升。",
+    "cube_dynamic_friction": 5.0,
+    "cube_static_friction": 8.0,
+    "comment_cube_friction": "名字含 Cube 的场景盒（桌面等）摩擦。与夹爪分开：桌上爬→保持大；夹爪低摩擦不会把桌面一起带滑。",
     "base_dynamic_friction": 1.5,
     "base_static_friction": 2.0,
     "gripper_collider_layer_group": 1,
@@ -134,7 +185,8 @@
     "disable_base_phys": true,
     "force_gs_solver": true,
     "auto_build": true,
-    "debug_bin_path": "",
+    "debug_bin_path": "/home/hjadmin/OrcaApr24/XPBD/build/dual_gripper_g1_cook2",
+    "comment_debug_bin_path": "必须指向本地刚编的二进制（当前用 Release）。空字符串会走 pip 包旧程序，没有整块刚化。",
     "dg_traj": "cloth_robot",
     "show_ui": true,
     "overlay_mjc": true,
@@ -183,7 +235,7 @@
   },
   "orcagym": {
     "comment": "Studio 关卡须含 gripper_l_palm 等刚体名；无 anchor SITE 时走 body-only 发包（mjc_agent_prefix/rigid_body_map_key/sync_mocap_from_gripper 见 Agent-utree.json）",
-    "level": "NursingHome"
+    "level": "Life_Kitchen_01_with_utree"
   },
   "cloth_robot": {
     "gripper_keyframes_json": "cloth_robot_gripper_keyframes.test20260508_RectCloth.json",
@@ -233,6 +285,8 @@
     "skip_stale_kill": false,
     "xpbd_auto_build": true,
     "xpbd_build_target": "",
+    "finger_span_monitor": false,
+    "comment_finger_span_monitor": "true：联调期间记录拇指–食指间距，结束后打印 min/max。当前关闭以免每宏步写 CSV 拖慢求解。",
     "mujoco_viewer": "0",
     "gui": "0",
     "bench_json": ""

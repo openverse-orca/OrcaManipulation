@@ -1695,6 +1695,14 @@ def _mount_cloth(
         return (float(ks["leftHand"]["triggerValue"]), float(ks["rightHand"]["triggerValue"]))
 
     cloth_handle.set_grip_trigger_provider(_read_pico_triggers, trigger_path)
+    os.environ["MJC_PBD_GRIP_TRIGGER_PATH"] = str(trigger_path)
+    rigidify_state_path = cloth_handle.ctx.config_path.parent / "grip_rigidify_state.txt"
+    os.environ["MJC_PBD_GRIP_RIGIDIFY_STATE_PATH"] = str(rigidify_state_path)
+    grip_rigidify = (cloth_config.get("cloth") or {}).get("grip_rigidify") or {}
+    data_collection_manager.set_grip_close_clamp(
+        bool(grip_rigidify.get("enabled", False)) and bool(grip_rigidify.get("clamp_close", False)),
+        str(rigidify_state_path),
+    )
     data_collection_manager.set_skip_render(True)
 
 
@@ -2488,11 +2496,12 @@ def _start_cloth_coupling(
         force_restart=True,
         orcalink_port=orcalink_port,
     )
-    xpbd_dg_traj = str((adapted.get("xpbd") or {}).get("dg_traj", "")).strip()
-    if xpbd_dg_traj == "pico":
-        trigger_path = run_log_dir / "grip_triggers.txt"
-        os.environ["MJC_PBD_GRIP_TRIGGER_PATH"] = str(trigger_path)
-        logger.info("PICO grip triggers → %s (MJC_PBD_DG_TRAJ=pico)", trigger_path)
+    trigger_path = run_log_dir / "grip_triggers.txt"
+    rigidify_state_path = run_log_dir / "grip_rigidify_state.txt"
+    os.environ["MJC_PBD_GRIP_TRIGGER_PATH"] = str(trigger_path)
+    os.environ["MJC_PBD_GRIP_RIGIDIFY_STATE_PATH"] = str(rigidify_state_path)
+    logger.info("grip triggers → %s", trigger_path)
+    logger.info("grip rigidify state → %s", rigidify_state_path)
     ProcessXPBD.start_xpbd_if_configured(
         adapted,
         config_path=session_path,

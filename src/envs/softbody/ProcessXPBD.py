@@ -364,6 +364,9 @@ def start_xpbd_if_configured(
         logger.info("XPBD MJC_PBD_DG_TRAJ=full (max_sim_time=%.1fs)", max_sim)
     elif not discover_only:
         logger.info("XPBD builtin traj off (cloth_discover_only=false, OrcaLink body_track)")
+    rigidify_state_path = env.get("MJC_PBD_GRIP_RIGIDIFY_STATE_PATH", "").strip()
+    if rigidify_state_path:
+        logger.info("XPBD MJC_PBD_GRIP_RIGIDIFY_STATE_PATH=%s", rigidify_state_path)
 
     # ClothRobot / 全链联调：默认 GS（R-PHYS-4：Jacobi 布–刚接触曾穿台）；可用 xpbd.force_gs_solver 覆盖。
     force_gs_cfg = xpbd_cfg.get("force_gs_solver")
