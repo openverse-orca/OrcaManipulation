@@ -63,6 +63,14 @@ class SceneManager:
         task_config = self._config.get("task", {})
         return task_config
 
+    def get_agent_joint_prefix(self) -> str | None:
+        """读取数据采集时需要记录和恢复的关节名称前缀。
+
+        Returns:
+            前缀字符串（如 ``g1_omnipicker_``）；未配置时返回 None，表示不过滤。
+        """
+        return self._config.get("data_collection", {}).get("agent_joint_prefix")
+
     def set_actor_qpos(self, joint_name: str, qpos: np.array):
         '''
         @param:

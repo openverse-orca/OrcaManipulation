@@ -6,12 +6,13 @@
 
 ## ✨ 特性
 
-- 🎮 **双模式支持**: TELECONTROL (VR遥控) + AUGMENTATION (数据增强)
+- 🎮 **三种模式**: TELECONTROL (VR遥控) + AUGMENTATION (数据增强) + INFERENCE (在线策略)
 - 🎯 **模块化设计**: 清晰的分层架构，易于扩展和定制
-- 🔧 **开箱即用**: 提供常用控制器（OSC臂控制、夹爪控制）
+- 🔧 **开箱即用**: 提供常用控制器（OSC臂控制、夹爪控制、底盘）
 - 🎲 **场景随机化**: 支持物体位姿、光照的随机化配置
-- 💾 **高效存储**: HDF5 格式，支持压缩和元数据管理
-- 🎬 **视频录制**: 自动保存任务执行视频
+- 💾 **高效存储**: HDF5 与 LeRobot v2.1，训练/推理共用 PolicySchema
+- 📷 **相机与编码**: WebSocket 拉流、帧时钟对齐、可选 NVENC
+- 🧠 **策略推理**: PolicyClient + PolicyDevice 对接 OpenPI WebSocket
 - 📈 **数据增强**: 内置插值器，扩充数据集规模
 
 ---
@@ -32,7 +33,9 @@ DataCollectionManager (核心调度器)
     ├── Task Layer           # 任务定义
     │   └── AbstractTask         (任务目标/成功判定)
     └── Storage Layer        # 数据存储
-        └── AbstractDataStorage  (数据采集/HDF5保存)
+        ├── AbstractDataStorage  (数据采集/HDF5保存)
+        └── LeRobotDatasetWriter (LeRobot v2.1)
+    PolicySchema / PolicyClient / PolicyDevice   # 训练与推理共用
 ```
 
 ---
@@ -43,6 +46,9 @@ DataCollectionManager (核心调度器)
 
 ```bash
 pip install -r requirements.txt
+# LeRobot / OpenPI 客户端使用仓内 fork（打过补丁，不能只装上游包）
+pip install --no-deps --no-build-isolation ./third_party/lerobot
+pip install --no-deps --no-build-isolation ./third_party/openpi-client
 ```
 
 ### 2. 数据采集相关脚本（同一目录）
@@ -204,16 +210,20 @@ OrcaManipulation/
 │   ├── controllers/             # 控制器
 │   ├── scene/                   # 场景管理
 │   ├── task/                    # 任务定义
-│   ├── dataStorage/             # 数据存储
+│   ├── dataStorage/             # 数据存储（HDF5 + LeRobot）
+│   ├── policy/                  # PolicySchema / PolicyClient
+│   ├── sensor/                  # 相机流与 NVENC
 │   ├── envs/                    # 环境定义
 │   ├── conf/                    # 机器人配置
 │   └── examples/                # 示例代码
-│       └── dataCollection/
-│           ├── data_collection_tele.py    # VR 遥操作采集（→ dataset）
-│           ├── data_collection_aug.py     # 数据增广（dataset → aug_dataset）
-│           ├── data_collection_replay.py  # 轨迹回放验证（可选 data_root / replay_mode）
-│           ├── example.yaml               # 场景配置示例
-│           └── warehouse.yaml             # 另一场景配置示例
+│       ├── dataCollection/
+│       │   ├── data_collection_tele.py    # VR 遥操作采集（→ dataset）
+│       │   ├── data_collection_aug.py     # 数据增广（dataset → aug_dataset）
+│       │   ├── data_collection_replay.py  # 轨迹回放验证
+│       │   ├── example.yaml
+│       │   └── warehouse.yaml
+│       └── southgrid/           # 南网比赛任务
+├── docs/                        # LeRobot / 推理 / 相机 / OpenPI
 ├── QUICK_START.md               # 快速开始
 ├── DEVELOPER_GUIDE.md           # 开发者指南
 └── README.md                    # 本文件

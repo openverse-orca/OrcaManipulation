@@ -1,0 +1,40 @@
+gripper_open: -1.0
+gripper_close: 2
+
+segments:
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.2659, -0.1038, 0.2064]
+    r_quat_b: [-0.4440, -0.2454, 0.0704, 0.8589]
+    gripper_r: open
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.2771, -0.0951, 0.0084]
+    r_quat_b: [-0.4379, 0.3158, 0.5002, 0.6770]
+    gripper_r: open
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.2776, -0.0980, 0.0073]
+    r_quat_b: [-0.4381, 0.3164, 0.4945, 0.6808]
+    gripper_r: close
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.3156, -0.0723, 0.2489]
+    r_quat_b: [-0.3024, 0.0120, 0.3264, 0.8955]
+    gripper_r: close
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.3290, 0.1061, 0.2290]
+    r_quat_b: [-0.2006, -0.1237, 0.4742, 0.8483]
+    gripper_r: close
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.3336, 0.1115, 0.2006]
+    r_quat_b: [-0.2259, -0.1030, 0.4675, 0.8485]
+    gripper_r: open

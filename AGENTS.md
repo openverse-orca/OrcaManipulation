@@ -66,3 +66,7 @@ python some_script.py
 若公共 API 不满足需求，**暂停并提交用户决策**，不要穿墙访问内部属性。扩展途径：
 - 在 OrcaGym 侧添加公共方法（联系 OrcaGym 开发者）
 - 在本仓库 controller/task/storage/device 子类中添加公共访问器
+
+## 规则 4：第三方兼容层必须收敛
+
+对第三方库（LeRobot、OrcaGym CameraWrapper、CPython `resource_tracker` 等）的私有方法运行时替换，必须收进明确命名的兼容层（如 `dataStorage/lerobot_writer.py` 的 `patch_lerobot_dataset_for_nvenc`、`sensor/camera_stream.py` 的 `stop_camera_stream`），禁止散落在采集或推理脚本里。

@@ -1,0 +1,25 @@
+button_color: green
+task: "按绿色按钮"
+
+gripper_open: -1.0
+gripper_close: 2
+
+segments:
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.2182, -0.1307, 0.1169]
+    r_quat_b: [-0.0295, -0.0704, 0.0353, 0.9965]
+    gripper_r: close
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.4272, 0.009, 0.0998]
+    r_quat_b: [0.0125, 0.0314, 0.0669, 0.9972]
+    gripper_r: close
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.2038, -0.0624, 0.1187]
+    r_quat_b: [0.0193, -0.0532, 0.1467, 0.9876]
+    gripper_r: close

@@ -1,0 +1,43 @@
+# 坐标系：G1 OmniPicker base_body（body_link1）
+# segments 顺序：接近、抓取、经由 1、经由 2、放置、松开
+
+gripper_open: -0.8561
+gripper_close: 2.0
+
+segments:
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.5642, -0.4128, 0.1750]
+    r_quat_b: [-0.5395, 0.5459, 0.4157, 0.4881]
+    gripper_r: open
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.5631, -0.4116, 0.1791]
+    r_quat_b: [-0.5254, 0.5459, 0.4481, 0.4745]
+    gripper_r: close
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.6788, -0.0182, 0.4808]
+    r_quat_b: [-0.5427, -0.2961, 0.4458, 0.6473]
+    gripper_r: close
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.6690, 0.1026, 0.4191]
+    r_quat_b: [-0.4673, -0.3541, 0.4946, 0.6415]
+    gripper_r: close
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.5867, 0.1902, 0.2037]
+    r_quat_b: [-0.6557, -0.2457, 0.6428, 0.3107]
+    gripper_r: close
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.5864, 0.1904, 0.2046]
+    r_quat_b: [-0.6526, -0.2458, 0.6444, 0.3138]
+    gripper_r: open

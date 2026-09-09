@@ -1,0 +1,42 @@
+# segments 顺序：接近、抓取、经由 1、经由 2、放置、松开
+
+gripper_open: -0.8561
+gripper_close: 2.0
+
+segments:
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.5528, -0.2064, 0.1935]
+    r_quat_b: [-0.5341, 0.3298, 0.4766, 0.6155]
+    gripper_r: open
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.5567, -0.2179, 0.1930]
+    r_quat_b: [-0.5151, 0.3948, 0.4696, 0.5986]
+    gripper_r: close
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.6788, -0.0182, 0.4808]
+    r_quat_b: [-0.5427, -0.2961, 0.4458, 0.6473]
+    gripper_r: close
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.6690, 0.1026, 0.4191]
+    r_quat_b: [-0.4673, -0.3541, 0.4946, 0.6415]
+    gripper_r: close
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.5867, 0.1902, 0.2037]
+    r_quat_b: [-0.6557, -0.2457, 0.6428, 0.3107]
+    gripper_r: close
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.5864, 0.1904, 0.2046]
+    r_quat_b: [-0.6526, -0.2458, 0.6444, 0.3138]
+    gripper_r: open

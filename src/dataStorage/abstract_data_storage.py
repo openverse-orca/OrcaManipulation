@@ -75,6 +75,12 @@ class AbstractDataStorage(metaclass=abc.ABCMeta):
         '''
         env.stop_save_video()
 
+    def open_capture_session(self, env: OrcaGymLocalEnv) -> None:
+        """采集循环开始前打开相机会话。默认空实现。"""
+
+    def close_capture_session(self, env: OrcaGymLocalEnv) -> None:
+        """采集循环结束后关闭相机会话。默认空实现。"""
+
     def set_hdf5_path(self, hdf5_path: str):
         '''
         @description: 设置hdf5文件的保存目录, 相对于unit_path的路径
@@ -144,6 +150,30 @@ class AbstractDataStorage(metaclass=abc.ABCMeta):
         
         return group.create_dataset(dataset_name, data=data, **kwargs)
 
+    def write_episode_metadata(self, f: h5py.File, **kwargs):
+        """写入回合元数据。缺省字段不会落盘，保证旧数据集仍可回放。"""
+        task_info = kwargs.get("task_info", {})
+        scene_info = kwargs.get("scene_info", {})
+        f.create_dataset("task_info", data=json.dumps(task_info))
+        f.create_dataset("scene_info", data=json.dumps(scene_info))
+        optional_json_keys = (
+            "initial_joint_qpos",
+            "opt_config",
+            "augmentation_info",
+        )
+        for key in optional_json_keys:
+            value = kwargs.get(key)
+            if value is not None:
+                f.create_dataset(key, data=json.dumps(value))
+        for key in ("record_start_time", "record_end_time"):
+            value = kwargs.get(key)
+            if value is not None:
+                f.create_dataset(key, data=str(value))
+        if kwargs.get("frame_skip") is not None:
+            f.create_dataset("frame_skip", data=int(kwargs["frame_skip"]))
+        if kwargs.get("dt") is not None:
+            f.create_dataset("dt", data=float(kwargs["dt"]))
+
     def save_data(self, **kwargs):
         '''
         @description: 保存数据
@@ -152,12 +182,7 @@ class AbstractDataStorage(metaclass=abc.ABCMeta):
         '''  
         self._save_data(**kwargs)
         with h5py.File(self.get_hdf5_absolute_path(), 'r+') as f:
-            task_info = kwargs.get("task_info", {})
-            scene_info = kwargs.get("scene_info", {})
-            task_info_str = json.dumps(task_info)
-            scene_info_str = json.dumps(scene_info)
-            f.create_dataset("task_info", data=task_info_str)
-            f.create_dataset("scene_info", data=scene_info_str)
+            self.write_episode_metadata(f, **kwargs)
 
         self.dict = {}
         self.get_next_unit_path()

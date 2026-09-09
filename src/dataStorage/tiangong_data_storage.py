@@ -5,7 +5,6 @@ from conf import tiangong2_conf
 import numpy as np
 import h5py
 from orca_gym.log import OrcaLog
-import json
 
 orca_logger = OrcaLog.get_instance()
 
@@ -63,12 +62,7 @@ class Tiangong2DataStorage(AbstractDataStorage):
     def save_data(self, **kwargs):
         self._save_data(**kwargs)
         with h5py.File(self.get_hdf5_absolute_path(), 'r+') as f:
-            task_info = kwargs.get("task_info", {})
-            scene_info = kwargs.get("scene_info", {})
-            task_info_str = json.dumps(task_info)
-            scene_info_str = json.dumps(scene_info)
-            f.create_dataset("task_info", data=task_info_str)
-            f.create_dataset("scene_info", data=scene_info_str)
+            self.write_episode_metadata(f, **kwargs)
         
         self.data = {"time_step": []}
         self.get_next_unit_path()

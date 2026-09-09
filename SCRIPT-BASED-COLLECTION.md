@@ -191,6 +191,17 @@ python data_collection_aug.py --level shop_scaning --agent_name openloong --task
 
 多段首尾相接；仓库内 **`pose.yaml`** 可作为示例。
 
+南网脚本化采集额外使用**路点 YAML** 与**候选位姿 YAML**（见 `src/examples/southgrid/`）：
+
+| 字段 / 文件 | 说明 |
+|-------------|------|
+| `segments[].r_target_b` / `r_quat_b` / `gripper_r` / `steps` | Unitree G1 / OmniPicker 路点段，`steps` 按控制步计 |
+| `my_slot_waypoints.yaml` | 工具槽位覆盖路点 |
+| `pose_g1_button_candidates.yaml` | 四色按钮候选末端位姿 |
+| `my_waypoint_button*.yaml` / `my_waypoint_tool*.yaml` | 按钮 / 工具任务路点 |
+
+这些文件只服务比赛任务，不要抽进通用 `data_collection_scripted.py`。
+
 ---
 
 ## 附录 F：相关文件

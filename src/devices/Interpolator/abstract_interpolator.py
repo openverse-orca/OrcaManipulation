@@ -342,3 +342,27 @@ class OpenLoongInterpolatorAdvanced(AbstractInterpolator):
         w2 = np.sin(t * theta) / sin_theta
         
         return w1 * q1 + w2 * q2
+
+
+class G1OmniPickerInterpolator(OpenLoongInterpolator):
+    """OpenLoong 插值器的扩展，额外对底盘 ``/action/drive/ctrl`` 做线性插值。"""
+
+    def get_interpolation_paths(self) -> list[str]:
+        return [
+            "/action/effector/motor",
+            "/action/end/position",
+            "/action/end/orientation",
+            "/action/drive/ctrl",
+        ]
+
+    def interpolate(self, dataset: np.array, **kwargs):
+        dataset_path = kwargs.get("dataset_path", None)
+        if dataset_path is None:
+            raise ValueError("dataset_path is required")
+        if dataset_path == "/action/drive/ctrl":
+            return self.interpolate_drive_ctrl(dataset)
+        return super().interpolate(dataset, **kwargs)
+
+    def interpolate_drive_ctrl(self, dataset: np.array):
+        data_array = np.array(dataset)
+        return self._interpolate_linear(data_array, save_indices=False)

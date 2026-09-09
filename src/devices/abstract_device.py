@@ -16,14 +16,35 @@ class PicoJoystickDevice(AbstractDevice):
     def __init__(self, pico_joystick: PicoJoystick):
         self.pico_joystick = pico_joystick
         self.keys = []
+        self._idle_keys: list | None = None
+        self._input_enabled_fn: Callable[[], bool] | None = None
 
     def bind_key_event(self, key: PicoJoystickKey, event: Callable[[list | None, dict | None], None]):
         self.pico_joystick.bind_key_event(key, event)
         self.keys.append(key)
 
+    def set_active_keys(self, keys: list) -> None:
+        """设置 update() 时默认轮询的按键集合。"""
+        self.keys = list(keys)
+
+    def set_input_gate(
+        self,
+        running_keys: list,
+        idle_keys: list,
+        is_running: Callable[[], bool],
+    ) -> None:
+        """采集开始前只响应 idle_keys，采集中响应 running_keys。"""
+        self.keys = list(running_keys)
+        self._idle_keys = list(idle_keys)
+        self._input_enabled_fn = is_running
+
     @override
     def update(self):
-        self.pico_joystick.update(self.keys)
+        if self._input_enabled_fn is not None and self._idle_keys is not None:
+            keys = self.keys if self._input_enabled_fn() else self._idle_keys
+        else:
+            keys = self.keys
+        self.pico_joystick.update(keys)
 
     def transform_event(self, key: PicoJoystickKey, transform: list | None, key_state: dict | None, event: Callable[[np.array, np.array], None]):
         if transform is None:

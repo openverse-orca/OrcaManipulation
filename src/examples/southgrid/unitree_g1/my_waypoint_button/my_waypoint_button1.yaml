@@ -1,0 +1,25 @@
+button_color: red
+task: "按红色按钮"
+
+gripper_open: -1.0
+gripper_close: 2
+
+segments:
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.2540, -0.1199, 0.1244]
+    r_quat_b: [-0.0168, -0.0302, 0.1289, 0.9911]
+    gripper_r: close
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.4310, 0.0626, 0.1819]
+    r_quat_b: [-0.2421, -0.0633, 0.2661, 0.9309]
+    gripper_r: close
+
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.2104, -0.0043, 0.2110]
+    r_quat_b: [-0.1075, -0.1537, 0.3554, 0.9157]
+    gripper_r: close

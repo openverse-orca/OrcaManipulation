@@ -1,0 +1,136 @@
+"""G1 OmniPicker 工具入箱脚本化采集。"""
+import argparse
+import os
+import sys
+import traceback
+
+from yaml import Loader, load, safe_load
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from conf import g1_omnipicker_conf as agent_conf
+from controllers import controllers
+from dataCollectionManager.data_collection_manager import DataCollectionManager
+from dataStorage.g1_lerobot_storage import G1OmniPickerLeRobotStorage
+from devices.scripted_device import ScriptedTrajectoryDevice
+from examples.dataCollection.data_collection_scripted import build_segmented_trajectory
+from examples.southgrid.tasks.tool_place_task import ToolPlaceTask
+from orca_gym.log.orca_log import get_orca_logger
+from scene.scene_manager import SceneManager
+from sensor.camera_stream import select_camera_map
+
+ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
+base_dir = os.path.dirname(os.path.realpath(__file__))
+orca_logger = get_orca_logger(
+    name="G1ToolScripted",
+    log_file="g1_tool_scripted.log",
+    max_bytes=10 * 1024 * 1024,
+    backup_count=5,
+    console_level="INFO",
+    file_level="INFO",
+    log_dir=os.path.join(base_dir, "logs"),
+    use_colors=True,
+    force_reinit=True,
+)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--level", default="default")
+    parser.add_argument("--task_config", default="../configs/example.yaml")
+    parser.add_argument("--lerobot_out", required=True)
+    parser.add_argument("--repo_id", default="local/g1_tool")
+    parser.add_argument("--waypoint", default="my_waypoint_tool1.yaml")
+    parser.add_argument("--tool_body", default="screwdriver_bodyjoint")
+    parser.add_argument("--max_episodes", type=int, default=1)
+    parser.add_argument("--fps", type=int, default=20)
+    parser.add_argument("--clock", choices=("sim", "wall"), default="sim")
+    parser.add_argument("--cameras", default="head,wrist_r")
+    parser.add_argument("--orcagym_addr", default="localhost:50051")
+    args = parser.parse_args()
+
+    with open(os.path.join(base_dir, args.waypoint), "r", encoding="utf-8") as f:
+        waypoint = safe_load(f)
+    segments = waypoint.get("segments") or waypoint.get("waypoints") or []
+    g_open = float(waypoint.get("gripper_open", -0.8561))
+    g_close = float(waypoint.get("gripper_close", 2.0))
+
+    camera_map = select_camera_map(agent_conf.camera_map(), args.cameras)
+    storage = G1OmniPickerLeRobotStorage(
+        dataset_path=os.path.join(base_dir, "_lerobot_scratch", "g1_tool", args.level),
+        repo_id=args.repo_id,
+        root=os.path.abspath(os.path.expanduser(args.lerobot_out)),
+        fps=args.fps,
+        camera_map=camera_map,
+        task="place the tool into the toolbox",
+        clock=args.clock,
+        robot_type="g1_omnipicker",
+    )
+    with open(os.path.abspath(os.path.join(base_dir, args.task_config)), "r", encoding="utf-8") as f:
+        config = load(f, Loader=Loader)
+    scene_manager = SceneManager(args.orcagym_addr, config=config)
+    default_joint_values = {
+        **dict(zip(agent_conf.l_arm["joint_names"], [0.0] * 7)),
+        **dict(zip(agent_conf.r_arm["joint_names"], agent_conf.r_arm["neutral_joint_values"])),
+    }
+    manager = DataCollectionManager(
+        agent_name="g1_omnipicker",
+        env_name="DataCollection",
+        entry_point=ENTRY_POINT,
+        default_joint_values=default_joint_values,
+        obs_callback=storage.obs_callback,
+        scene_manager=scene_manager,
+        data_storage=storage,
+        frame_skip=5,
+        orcagym_addr=args.orcagym_addr,
+    )
+    env = manager.env
+    env.reset()
+    manager.set_disable_actuator_group([agent_conf.positions_group])
+    l_arm = controllers.create_arm_osc_controller(
+        env, agent_conf.l_arm, agent_conf.base_body,
+        [env.actuator(n) for n in agent_conf.l_arm["motors_names"]],
+        {env.actuator(n): v for n, v in zip(agent_conf.l_arm["motors_names"], agent_conf.l_arm["motors_init_ctrl"])},
+    )
+    r_arm = controllers.create_arm_osc_controller(
+        env, agent_conf.r_arm, agent_conf.base_body,
+        [env.actuator(n) for n in agent_conf.r_arm["motors_names"]],
+        {env.actuator(n): v for n, v in zip(agent_conf.r_arm["motors_names"], agent_conf.r_arm["motors_init_ctrl"])},
+    )
+    l_grip = controllers.create_gripper_2f85_reverse_controller(
+        env, agent_conf.gripper_l, agent_conf.base_body,
+        [env.actuator(n) for n in agent_conf.gripper_l["actuator_names"]],
+        {env.actuator(n): v for n, v in zip(agent_conf.gripper_l["actuator_names"], agent_conf.gripper_l["init_ctrl"])},
+    )
+    r_grip = controllers.create_gripper_2f85_reverse_controller(
+        env, agent_conf.gripper_r, agent_conf.base_body,
+        [env.actuator(n) for n in agent_conf.gripper_r["actuator_names"]],
+        {env.actuator(n): v for n, v in zip(agent_conf.gripper_r["actuator_names"], agent_conf.gripper_r["init_ctrl"])},
+    )
+    for ctrl in (l_arm, r_arm, l_grip, r_grip):
+        manager.add_controller(ctrl)
+    task = ToolPlaceTask(env, args.tool_body, agent_conf.base_body)
+    manager.set_task(task)
+    task_status = controllers.add_task_status_autostart_controller(manager, env, agent_conf.base_body)
+
+    def prepare_episode():
+        traj = build_segmented_trajectory(env, agent_conf, segments, g_open, g_close)
+        manager.set_device(ScriptedTrajectoryDevice(l_arm, r_arm, l_grip, r_grip, task_status, *traj))
+
+    manager.add_pre_episode_callback(prepare_episode)
+    manager.save_policy = "always"
+    manager.save_video = False
+    manager.run(max_episodes=args.max_episodes)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        orca_logger.info("KeyboardInterrupt, End")
+    except Exception as exc:
+        orca_logger.error(f"Unexpected error: {exc}\n{traceback.format_exc()}")
+    finally:
+        os._exit(0)

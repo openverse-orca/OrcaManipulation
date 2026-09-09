@@ -23,12 +23,14 @@ class TaskStatus(enum.Enum):
 class TaskStatusController(AbstractController):
     def __init__(self, env: OrcaGymLocalEnv,
                  base_body: str,
-                 is_controller: bool = True
+                 is_controller: bool = True,
+                 auto_start: bool = False,
                  ):
         super().__init__(env, [], {}, base_body)
         self.current_status = TaskStatus.NOT_STARTED
         self.current_time = time.time()
         self.is_controller = is_controller
+        self.auto_start = bool(auto_start)
 
     @override
     def run_controller(self)-> TaskStatus:
@@ -53,4 +55,4 @@ class TaskStatusController(AbstractController):
                 orca_logger.info("Task status: NOT_STARTED")
         
     def reset(self):
-        self.current_status = TaskStatus.NOT_STARTED
+        self.current_status = TaskStatus.RUNNING if self.auto_start else TaskStatus.NOT_STARTED

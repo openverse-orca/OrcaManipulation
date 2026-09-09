@@ -3,6 +3,8 @@ import json
 import os
 import signal
 import subprocess
+from dataclasses import dataclass
+from datetime import datetime
 from textwrap import shorten
 import time
 import numpy as np
@@ -20,11 +22,26 @@ from orca_gym.sensor.rgbd_camera import Monitor
 from sensor.touch_sensor_visualizer import TouchSensorVisualizer
 orca_logger = OrcaLog.get_instance()
 
+
+@dataclass
+class EpisodeResult:
+    """单集运行结果。布尔上下文等价于 ``success``。"""
+
+    success: bool
+    record_start_time: datetime | None = None
+    record_end_time: datetime | None = None
+    initial_joint_qpos: dict | None = None
+
+    def __bool__(self) -> bool:
+        return self.success
+
+
 class DataCollectionManager:
     
     class DataCollectionMode(enum.Enum):
         TELECONTROL = 0
         AUGMENTATION = 1
+        INFERENCE = 2
         
     def __init__(self, agent_name: str,
                 env_name: str,
@@ -41,11 +58,13 @@ class DataCollectionManager:
                 task_status_controller: TaskStatusController = None,
                 scene_manager: SceneManager = None,
                 data_storage: AbstractDataStorage = None,
+                aug_count: int = 1,
                 **kwargs):
         self.device = device
         self.time_step = time_step
         self.frame_skip = frame_skip
         self.real_time_step = time_step * frame_skip
+        self.aug_count = max(1, int(aug_count))
         self.scene_manager: SceneManager = scene_manager
         self.env : OrcaGymLocalEnv = self.create_env(agent_name, env_name, entry_point, default_joint_values, obs_callback, env_index, max_episode_steps, frame_skip, time_step, orcagym_addr, **kwargs)
         self.controllers: list[AbstractController] = []
@@ -62,7 +81,10 @@ class DataCollectionManager:
         self._save_video = False
         self._saving = False
         self._mode = self.DataCollectionMode.TELECONTROL
+        self.inference_ui_message = "推理中..."
         self._shutdown_requested = False
+        self._episode_abort_requested = False
+        self._episode_abort_discard = False
         self._original_sigint = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, self._sigint_handler)
 
@@ -77,6 +99,14 @@ class DataCollectionManager:
         self._bench_enabled = False
         self._bench_output_path: str | None = None
         self._bench_steps: list[dict] = []
+
+        # 0 表示不渲染；1 表示每步都渲染
+        self._render_every = 1
+        self._render_counter = 0
+
+        # on_success：仅成功回合落盘；always：无论成败都落盘
+        self._save_policy = "on_success"
+        self._pre_episode_callbacks: list[Callable] = []
 
     @property
     def save_video(self) -> bool:
@@ -101,6 +131,24 @@ class DataCollectionManager:
     @mode.setter
     def mode(self, value: DataCollectionMode):
         self._mode = value
+
+    @property
+    def save_policy(self) -> str:
+        return self._save_policy
+
+    @save_policy.setter
+    def save_policy(self, value: str):
+        if value not in ("on_success", "always"):
+            raise ValueError(f"save_policy 只能是 'on_success' 或 'always'，收到: {value!r}")
+        self._save_policy = value
+
+    def add_pre_episode_callback(self, cb: Callable) -> None:
+        """在 ``update_scene`` 之后、``run_episode`` 之前调用。默认不注册。"""
+        self._pre_episode_callbacks.append(cb)
+
+    def _run_pre_episode_callbacks(self) -> None:
+        for cb in self._pre_episode_callbacks:
+            cb()
 
     def add_monitor_port(self, port: int):
         self.monitor_ports.append(port)
@@ -305,8 +353,118 @@ class DataCollectionManager:
         return self.ctrl
 
     def _sigint_handler(self, signum, frame):
+        self.request_shutdown()
+
+    def request_shutdown(self) -> None:
+        """终止全部采集循环。"""
         self._shutdown_requested = True
         orca_logger.info("Shutdown requested, finishing current operation...")
+
+    def request_episode_abort(self, discard: bool = True) -> None:
+        """结束当前一集。``discard=True`` 时由外层丢弃本集数据并继续下一集。"""
+        self._episode_abort_requested = True
+        self._episode_abort_discard = bool(discard)
+
+    def clear_shutdown(self) -> None:
+        """清除全局退出与本集中止标记，用于丢弃本集后继续采集。"""
+        self._shutdown_requested = False
+        self._episode_abort_requested = False
+        self._episode_abort_discard = False
+
+    @property
+    def shutdown_requested(self) -> bool:
+        return self._shutdown_requested
+
+    @property
+    def episode_abort_requested(self) -> bool:
+        return self._episode_abort_requested
+
+    @property
+    def episode_abort_discard(self) -> bool:
+        return self._episode_abort_discard
+
+    def set_render_every(self, every: int) -> None:
+        """设置 ``run_episode`` 中每隔多少步调用一次 ``env.render()``。
+
+        ``every=1`` 为每步都渲染（默认）；``every=0`` 关闭渲染。
+        """
+        self._render_every = max(0, int(every))
+        self._render_counter = 0
+
+    def collect_sim_metadata(self) -> dict:
+        """采集仿真器元数据（opt_config / frame_skip / dt），用于训练时复现仿真设置。"""
+        metadata = {}
+        try:
+            gym = getattr(self.env, "gym", None)
+            opt = getattr(gym, "opt", None) if gym is not None else None
+            if opt is not None:
+                opt_config = getattr(opt, "opt_config", None)
+                if isinstance(opt_config, dict):
+                    metadata["opt_config"] = {
+                        k: (v.tolist() if hasattr(v, "tolist") else v)
+                        for k, v in opt_config.items()
+                    }
+        except Exception as e:
+            orca_logger.warning(f"Collect opt_config failed: {e}")
+        try:
+            metadata["frame_skip"] = int(self.env.frame_skip)
+        except Exception:
+            pass
+        try:
+            metadata["dt"] = float(self.env.dt)
+        except Exception:
+            pass
+        return metadata
+
+    def _build_save_kwargs(self, result: EpisodeResult, aug_idx: int = 0) -> dict:
+        task_info = self.task.get_task_info()
+        scene_info = self.scene_manager.get_scene_info()
+        sim_metadata = self.collect_sim_metadata()
+        save_kwargs = dict(
+            task_info=task_info,
+            scene_info=scene_info,
+            task_description=self.task.get_task_description(),
+            record_start_time=(
+                result.record_start_time.isoformat()
+                if result.record_start_time is not None
+                else None
+            ),
+            record_end_time=(
+                result.record_end_time.isoformat()
+                if result.record_end_time is not None
+                else None
+            ),
+            initial_joint_qpos=result.initial_joint_qpos,
+            **sim_metadata,
+        )
+        if self.mode == self.DataCollectionMode.AUGMENTATION and self.device is not None:
+            source_path = self.device.get_current_unit_path()
+            save_kwargs["augmentation_info"] = {
+                "source_unit_id": os.path.basename(source_path) if source_path else None,
+                "aug_index": aug_idx,
+                "aug_total": self.aug_count,
+                "created_at": datetime.now().isoformat(),
+            }
+        return save_kwargs
+
+    def _finish_episode_video(self) -> None:
+        if self.save_video and self.saving and self.data_storage is not None:
+            self.data_storage.stop_save_video(self.env)
+            self.saving = False
+
+    def _persist_episode(self, result: EpisodeResult, aug_idx: int = 0) -> None:
+        if self.data_storage is None:
+            return
+        discarded = self._episode_abort_requested and self._episode_abort_discard
+        should_save = (not discarded) and (
+            True if self._save_policy == "always" else bool(result.success)
+        )
+        if should_save:
+            orca_logger.info("Task Success!" if result.success else "Saving episode (save_policy=always)")
+            self.data_storage.save_data(**self._build_save_kwargs(result, aug_idx))
+        else:
+            self.data_storage.clear_data()
+            orca_logger.info("Task Failed!" if not discarded else "Episode discarded")
 
     def run(self, max_episodes: int | None = None):
         self._shutdown_requested = False
@@ -315,6 +473,8 @@ class DataCollectionManager:
         episode_count = 0
         if self.touch_sensor_names:
             self.touch_sensor = TouchSensorVisualizer()
+        if self.data_storage is not None:
+            self.data_storage.open_capture_session(self.env)
         try:
             while not self._shutdown_requested:
                 self.env.reset()
@@ -324,22 +484,30 @@ class DataCollectionManager:
                 if not update_scene_ret:
                     orca_logger.info("Can't update scene, End")
                     break
-                task_is_success = self.run_episode()
+                self._run_pre_episode_callbacks()
+                for aug_idx in range(self.aug_count):
+                    if aug_idx > 0:
+                        self.env.reset()
+                        time.sleep(0.1)
+                        if not self._replay_current_augmentation():
+                            break
+                        orca_logger.info(
+                            f"Augmentation {aug_idx + 1}/{self.aug_count} for current data unit"
+                        )
+                        self._run_pre_episode_callbacks()
+                    result = self.run_episode()
+                    self._finish_episode_video()
+                    self._persist_episode(result, aug_idx)
+                    self._episode_abort_requested = False
+                    self._episode_abort_discard = False
+                    if self._shutdown_requested:
+                        break
                 episode_count += 1
                 if max_episodes is not None and episode_count >= max_episodes:
                     orca_logger.info(f"Reached max_episodes={max_episodes}, exiting run loop")
                     break
                 if self._shutdown_requested:
                     break
-                if self.data_storage is not None:
-                    if task_is_success:
-                        orca_logger.info("Task Success!")
-                        task_info = self.task.get_task_info()
-                        scene_info = self.scene_manager.get_scene_info()
-                        self.data_storage.save_data(task_info=task_info, scene_info=scene_info, task_description=self.task.get_task_description())
-                    else:
-                        self.data_storage.clear_data()
-                        orca_logger.info("Task Failed!")
 
         except Exception as e:
             orca_logger.error(f"Run error: {e}")
@@ -354,10 +522,39 @@ class DataCollectionManager:
             if self.data_storage is not None:
                 orca_logger.info("Clear data")
                 self.data_storage.clear_data()
+                self.data_storage.close_capture_session(self.env)
             self.env.reset()
             # sleep0.1秒等待模拟器重置完成
             time.sleep(0.1)
             self.env.close()
+
+    def _replay_current_augmentation(self) -> bool:
+        """对当前数据单元重新插值并恢复场景，用于同一条源数据的多次增强。"""
+        from devices.data_device import DataDevice
+
+        if not isinstance(self.device, DataDevice):
+            orca_logger.warning("Device is not DataDevice, skip replay")
+            return False
+        replay_ret = self.device.replay_current_data()
+        if not replay_ret:
+            return False
+        if self.scene_manager is not None:
+            self.scene_manager.spawn_scene()
+            self.scene_manager.show_ui_message(1, "回放中...", "0x00bfff", showtime=0)
+            task_info = self.device.get_task_info()
+            scene_info = self.device.get_scene_info()
+            self.scene_manager.update_actor_qpos(restore=True, scene_info=scene_info)
+            initial_joint_qpos = self.device.get_initial_joint_qpos()
+            if initial_joint_qpos is not None:
+                self._restore_initial_joint_qpos(initial_joint_qpos)
+            self.task.get_task(self.scene_manager, task_info=task_info)
+        self.env.disable_actuator(self.disable_actuator_group)
+        self._run_physics_reinit_callbacks()
+        if self._fluid_coupling is not None and hasattr(
+            self._fluid_coupling, "on_physics_reinitialized"
+        ):
+            self._fluid_coupling.on_physics_reinitialized()
+        return True
 
     def update_scene(self):
         if self.scene_manager is not None:
@@ -368,8 +565,21 @@ class DataCollectionManager:
                     self.scene_manager.update_actor_qpos()
                     self.task.get_task(self.scene_manager)
                     orca_logger.info(f"Task description: {self.task.get_task_description()}")
-                    # self.scene_manager.show_ui_message(1, self.task.get_task_description(),showtime=5)
+                    self.scene_manager.show_ui_message(
+                        1, "按 GripButton 开始采集", "0xffff00", showtime=10
+                    )
 
+            elif self.mode == self.DataCollectionMode.INFERENCE:
+                if self.task is not None:
+                    self.scene_manager.update_actor_qpos()
+                    self.task.get_task(self.scene_manager)
+                    orca_logger.info(f"Task description: {self.task.get_task_description()}")
+                    self.scene_manager.show_ui_message(
+                        1,
+                        self.inference_ui_message or "推理中...",
+                        "0x00bfff",
+                        showtime=0,
+                    )
                 
             elif self.mode == self.DataCollectionMode.AUGMENTATION:
                 from devices.data_device import DataDevice
@@ -388,9 +598,13 @@ class DataCollectionManager:
                     orca_logger.info(f"Replay data unit: {unit_path}")
                     replay_msg = shorten(f"回放目录: {current_dir_name}", width=80, placeholder="...")
                    # self.scene_manager.show_ui_message(1, replay_msg, "0x00bfff", showtime=0)
+                self.scene_manager.show_ui_message(1, "回放中...", "0x00bfff", showtime=0)
                 task_info = self.device.get_task_info()
                 scene_info = self.device.get_scene_info()
                 self.scene_manager.update_actor_qpos(restore=True, scene_info=scene_info)
+                initial_joint_qpos = self.device.get_initial_joint_qpos()
+                if initial_joint_qpos is not None:
+                    self._restore_initial_joint_qpos(initial_joint_qpos)
                 self.task.get_task(self.scene_manager, task_info=task_info)
 
             self.env.disable_actuator(self.disable_actuator_group)
@@ -401,11 +615,66 @@ class DataCollectionManager:
                 self._fluid_coupling.on_physics_reinitialized()
         return True
 
-    def run_episode(self):
+    def _get_agent_joint_prefix(self) -> str | None:
+        """从 scene_manager 配置中读取需要记录的机器人关节前缀。"""
+        if self.scene_manager is not None:
+            return self.scene_manager.get_agent_joint_prefix()
+        return None
+
+    def _capture_initial_joint_qpos(self) -> dict:
+        """采集机器人关节的当前 qpos，用于回放时恢复初始状态。
+
+        配置 data_collection.agent_joint_prefix 后，仅记录与该前缀匹配的关节。
+        """
+        try:
+            joint_names = list(self.env.model.get_joint_dict().keys())
+            prefix = self._get_agent_joint_prefix()
+            if prefix:
+                joint_names = [n for n in joint_names if n.startswith(prefix)]
+            qpos_dict = self.env.query_joint_qpos(joint_names)
+            result = {name: list(np.asarray(qpos).flatten()) for name, qpos in qpos_dict.items()}
+            orca_logger.info(f"Captured initial state for {len(result)} joints")
+            return result
+        except Exception:
+            orca_logger.warning("Unable to capture the initial robot state")
+            return {}
+
+    def _restore_initial_joint_qpos(self, initial_joint_qpos: dict) -> bool:
+        """用记录的初始关节位置恢复机器人状态。仅恢复当前模型中存在的关节。"""
+        if not initial_joint_qpos:
+            orca_logger.warning("initial_joint_qpos is empty, skip restore")
+            return False
+        try:
+            current_joint_names = set(self.env.model.get_joint_dict().keys())
+            filtered_qpos = {
+                name: qpos
+                for name, qpos in initial_joint_qpos.items()
+                if name in current_joint_names
+            }
+            skipped = set(initial_joint_qpos.keys()) - current_joint_names
+            if skipped:
+                orca_logger.info(
+                    f"Ignored {len(skipped)} state entries not present in the active model"
+                )
+            self.env.set_joint_qpos(filtered_qpos)
+            self.env.mj_forward()
+            orca_logger.info(
+                f"Restored initial joint qpos: {len(filtered_qpos)}/{len(initial_joint_qpos)} joints"
+            )
+            return True
+        except Exception:
+            orca_logger.warning("Unable to restore the initial robot state")
+            return False
+
+    def run_episode(self) -> EpisodeResult:
 
         self.set_init_ctrl()
         self.env.set_ctrl(self.ctrl)
         self.env.mj_forward()
+
+        initial_joint_qpos = None
+        record_start_time = None
+        record_end_time = None
 
         for controller in self.controllers:
             controller.reset()
@@ -417,7 +686,7 @@ class DataCollectionManager:
         if self.task_status_controller is not None:
             self.task_status_controller.reset()
 
-        while not self._shutdown_requested:
+        while not self._shutdown_requested and not self._episode_abort_requested:
             t0 = time.perf_counter()
             self._run_pre_fluid_step_hooks()
             action = self.run_controllers()
@@ -443,7 +712,10 @@ class DataCollectionManager:
                 sensor_data = self.env.query_sensor_data(self.touch_sensor_names)
                 touch_sensor_data = {name: sensor_data[name][0] for name in self.touch_sensor_names}
                 self.touch_sensor.update_data(touch_sensor_data)
-            self.env.render()
+            if self._render_every > 0:
+                self._render_counter += 1
+                if self._render_counter % self._render_every == 0:
+                    self.env.render()
             t4 = time.perf_counter()
 
             if self._bench_enabled:
@@ -465,6 +737,8 @@ class DataCollectionManager:
                 task_status = self.task_status_controller.run_controller()
                 if task_status == TaskStatus.RUNNING:
                     if not data_recording_started:
+                        record_start_time = datetime.now()
+                        initial_joint_qpos = self._capture_initial_joint_qpos()
                         unit_path = None
                         if self.data_storage is not None:
                             unit_path = self.data_storage.get_current_unit_path()
@@ -484,6 +758,7 @@ class DataCollectionManager:
                         self.data_storage.stop_save_video(self.env)
                         self.saving = False
                     if data_recording_started:
+                        record_end_time = datetime.now()
                         unit_path = None
                         if self.data_storage is not None:
                             unit_path = self.data_storage.get_current_unit_path()
@@ -494,7 +769,9 @@ class DataCollectionManager:
                             self.scene_manager.show_ui_message(1, "结束采集", "0xff8800", showtime=2)
                     orca_logger.info("Task end")
                     task_is_success = self.task.is_success()
-                    return task_is_success
+                    return EpisodeResult(
+                        task_is_success, record_start_time, record_end_time, initial_joint_qpos
+                    )
 
             if (self._max_episode_steps is not None
                 and self._max_episode_steps < np.iinfo(np.int64).max
@@ -503,8 +780,12 @@ class DataCollectionManager:
                 if self.save_video and self.saving and self.data_storage is not None:
                     self.data_storage.stop_save_video(self.env)
                     self.saving = False
+                if data_recording_started:
+                    record_end_time = datetime.now()
                 task_is_success = self.task.is_success() if self.task is not None else False
-                return task_is_success
+                return EpisodeResult(
+                    task_is_success, record_start_time, record_end_time, initial_joint_qpos
+                )
 
             elapsed_time = time.perf_counter() - t0
             sleep_dur = self.real_time_step - elapsed_time
@@ -513,3 +794,4 @@ class DataCollectionManager:
             if self._bench_enabled and self._bench_steps:
                 self._bench_steps[-1]["sleep_ms"] = round(max(0, sleep_dur) * 1000, 3)
 
+        return EpisodeResult(task_is_success, record_start_time, record_end_time, initial_joint_qpos)

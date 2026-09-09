@@ -10,6 +10,8 @@
 - [核心概念](#核心概念)
 - [必须实现的组件](#必须实现的组件)
   - [1. 数据存储器 (DataStorage)](#1-数据存储器-datastorage)
+  - [1b. LeRobot 数据存储](#1b-lerobot-数据存储)
+  - [1c. 策略 Schema](#1c-策略-schema)
   - [2. 控制器配置 (Controllers)](#2-控制器配置-controllers)
   - [3. 场景配置 (Scene Config)](#3-场景配置-scene-config)
   - [4. 任务定义 (Task)](#4-任务定义-task)
@@ -23,14 +25,19 @@
 
 ## 快速开始
 
-框架支持两种数据采集模式：
+框架支持三种数据采集模式：
 
 1. **TELECONTROL 模式**：通过 VR 手柄遥控机器人采集真实演示数据
 2. **AUGMENTATION 模式**：读取已有数据并回放，应用插值和噪声增强数据集
+3. **INFERENCE 模式**（可选）：用 `PolicyDevice` 在线执行策略，主循环仍是 `manager.run()`
 
 参考示例：
-- `examples/dataCollection/data_collection_tele.py` - 遥控采集示例
+- `examples/dataCollection/data_collection_tele.py` - 遥控采集（HDF5）
+- `examples/dataCollection/data_collection_tele_lerobot.py` - 遥控采集（LeRobot）
+- `examples/dataCollection/data_collection_scripted.py` - 脚本化采集（HDF5）
+- `examples/dataCollection/data_collection_scripted_lerobot.py` - 脚本化采集（LeRobot）
 - `examples/dataCollection/data_collection_aug.py` - 数据增强示例
+- `examples/dataCollection/data_collection_infer.py` - 在线推理示例
 
 ---
 
@@ -128,6 +135,52 @@ class MyDataStorage(AbstractDataStorage):
 
 **参考**: `src/dataStorage/openloong_data_storage.py`
 
+### 1b. LeRobot 数据存储
+
+把 `obs_callback` 的观测写成 LeRobot v2.1 时，不要再在 Storage 里实现 `build_state`，也不要在入口脚本里创建 writer / 拉相机。组合方式：
+
+1. 实现或选用一个 `PolicySchema`
+2. HDF5 Storage 继续负责 `obs_callback`（默认路径不变）
+3. LeRobot Storage 在构造时 `setup_lerobot(...)`，由 `manager.run()` 调用 `open_capture_session` / `close_capture_session` 管理相机与 writer
+
+```python
+from dataStorage.g1_lerobot_storage import G1OmniPickerLeRobotStorage
+
+storage = G1OmniPickerLeRobotStorage(
+    dataset_path=scratch_dir,
+    repo_id="local/g1_omnipicker",
+    root=lerobot_out,
+    fps=20,
+    camera_map=camera_map,
+    task="robot manipulation",
+)
+manager = DataCollectionManager(..., data_storage=storage)
+manager.save_policy = "on_success"  # 可选 "always"
+manager.run()
+```
+
+通用入口：`data_collection_tele_lerobot.py --lerobot_out ...`。
+
+约定与目录结构见 [docs/lerobot_dataset.md](docs/lerobot_dataset.md)；相机端口见 [docs/cameras_and_video.md](docs/cameras_and_video.md)。
+
+### 1c. 策略 Schema
+
+`src/policy/schema.py` 的 `PolicySchema` 同时定义写入数据集的状态向量和推理时的动作反变换。训练与推理必须共用同一个实现。
+
+```python
+from policy.dual_arm_schema import g1_omnipicker_schema
+from policy.client import PolicyClient
+from devices.policy_device import PolicyDevice
+
+schema = g1_omnipicker_schema()
+client = PolicyClient(host, port, prompt, camera_name_map, cameras, schema=schema)
+device = PolicyDevice(schema)
+device.bind("r_pos_b", r_arm.update_action_position)
+device.set_raw_action(client.infer_action_chunk(state)[0])
+```
+
+接口说明见 [docs/policy_inference.md](docs/policy_inference.md)。
+
 ---
 
 ### 2. 控制器配置 (Controllers)
@@ -145,6 +198,8 @@ class MyDataStorage(AbstractDataStorage):
 - `add_gripper_2f85_openloong_data_controller` - 2F85夹爪控制器 (数据回放)
 - `add_task_status_pico_controller` - 任务状态控制器 (VR手柄)
 - `add_task_status_openloong_data_controller` - 任务状态控制器 (数据回放)
+- `add_episode_control_pico_controller` - 可选：右 Grip 丢弃本集 / 双 Grip 终止（不装即无此行为）
+- `add_joint_hold_controller` - 可选：把指定关节锁在参考位姿
 
 **使用示例** (TELECONTROL 模式):
 
@@ -702,12 +757,20 @@ with h5py.File("dataset/xxx/record/data.hdf5", "r") as f:
 
 ---
 
+## 注释与 docstring 约定
+
+- **新增与迁入的代码**使用 Google 中文风格（`Args:` / `Returns:` / `Raises:`）。
+- **不要**为统一风格去改未改动的老文件。老代码里的 `@description` / `@param` / `@return` 可以保留。
+- 比赛任务专属说明（中文 prompt、布局名、按键）写在 `src/examples/southgrid/`，不要写进通用模块。
+
 ## 更多资源
 
 - 示例代码: `src/examples/dataCollection/`
+- 南网示例: `src/examples/southgrid/`
 - 参考实现: `src/dataStorage/openloong_data_storage.py`
 - 控制器示例: `src/controllers/`
 - 任务示例: `src/task/pick_place_task.py`
+- LeRobot / 推理 / 相机: `docs/lerobot_dataset.md`、`docs/policy_inference.md`、`docs/cameras_and_video.md`
 
 如有问题，请参考源码或提交 Issue。
 

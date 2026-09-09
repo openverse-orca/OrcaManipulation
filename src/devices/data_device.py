@@ -40,6 +40,10 @@ class DataDevice(AbstractDevice):
         self.current_unit_path = None
         self.task_info = None
         self.scene_info = None
+        self.initial_joint_qpos = None
+        self.opt_config = None
+        self.frame_skip = None
+        self.dt = None
         self.interpolator = interpolator
 
     @override
@@ -101,6 +105,22 @@ class DataDevice(AbstractDevice):
         '''
         return self.scene_info
 
+    def get_initial_joint_qpos(self) -> dict | None:
+        """获取机器人初始关节位置（用于回放时恢复）。字段缺省时返回 None。"""
+        return self.initial_joint_qpos
+
+    def get_opt_config(self) -> dict | None:
+        """获取仿真器 opt 配置。字段缺省时返回 None。"""
+        return self.opt_config
+
+    def get_frame_skip(self) -> int | None:
+        """获取 frame_skip（每次 step() 的物理步进次数）。"""
+        return self.frame_skip
+
+    def get_dt(self) -> float | None:
+        """获取控制周期 dt = opt.timestep * frame_skip（秒）。"""
+        return self.dt
+
     def get_current_unit_path(self) -> str | None:
         '''
         @description: 获取当前回放的数据目录
@@ -147,22 +167,58 @@ class DataDevice(AbstractDevice):
             if unit_path in self._all_unit_datasets_path:
                 self._all_unit_datasets_path.remove(unit_path)
             return self.load_data()
+        self._load_unit_from_disk()
+        return True
+
+    def replay_current_data(self) -> bool:
+        """重新加载当前数据单元并应用插值，用于对同一单元进行多次增强。"""
+        if self.current_unit_path is None:
+            return False
+        hdf5_path = os.path.join(self.current_unit_path, self.hdf5_path)
+        if not os.path.isfile(hdf5_path):
+            orca_logger.warning(f"HDF5 file not found: {hdf5_path}, skip replay")
+            return False
+        self._load_unit_from_disk()
+        return True
+
+    def _load_unit_from_disk(self):
+        """从磁盘加载 current_unit_path 对应的数据单元，并应用插值、重置游标。"""
+        hdf5_path = os.path.join(self.current_unit_path, self.hdf5_path)
         with h5py.File(hdf5_path, "r") as f:
             self.data = {}
+            meta_keys = [
+                "task_info",
+                "scene_info",
+                "augmentation_info",
+                "record_start_time",
+                "record_end_time",
+                "initial_joint_qpos",
+                "opt_config",
+                "frame_skip",
+                "dt",
+            ]
             for key in f.keys():
-                if key not in ["task_info", "scene_info"]:
+                if key not in meta_keys:
                     self.data[key] = self._load_recursive(f[key])
-            
+
             self.task_info = json.loads(f["task_info"][()])
             self.scene_info = json.loads(f["scene_info"][()])
-        
+            self.initial_joint_qpos = (
+                json.loads(f["initial_joint_qpos"][()])
+                if "initial_joint_qpos" in f
+                else None
+            )
+            self.opt_config = (
+                json.loads(f["opt_config"][()]) if "opt_config" in f else None
+            )
+            self.frame_skip = int(f["frame_skip"][()]) if "frame_skip" in f else None
+            self.dt = float(f["dt"][()]) if "dt" in f else None
+
         if self.interpolator is not None:
             self._apply_interpolation()
 
-        # 每次加载新数据单元后重置回放游标，避免使用 pop(0) 造成 O(n) 开销
         self.dataset_cursor = {dataset_path: 0 for dataset_path in self.dataset_event.keys()}
         self.update_task_status = True
-        return True
 
     def _load_recursive(self, item):
         '''递归加载HDF5数据到内存，Dataset数据flatten便于处理'''
