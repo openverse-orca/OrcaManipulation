@@ -1,0 +1,277 @@
+{
+  "description": "SPlisHSPlasH 配置模板：force_position 耦合（position_follow + external 刚体动力学）。全链路由 fluid_sim_config_auto_force_position.json + generate_orcasph_config 选用；短链仍可用固定 orcasph_config.json。",
+
+  "orcalink_client": {
+    "enabled": true,
+    "server_address": "localhost:50351",
+    "session_id": 1,
+    "client_name": "SPlisHSPlasH",
+    "update_rate_hz": 50,
+    "encoding": {
+      "i_frame_interval": 30,
+      "change_threshold": 0.001,
+      "comment": "OrcaLink 通道编码；与 ParticleRender gRPC 无关"
+    },
+    "session": {
+      "control_mode": "sync",
+      "expected_clients": 2,
+      "ready_timeout_sec": 30.0,
+      "grpc_call_timeout_sec": 5.0,
+      "async_params": {
+        "flow_control_enabled": true,
+        "flow_control_window_size": 5,
+        "speed_ratio_threshold": 1.5
+      },
+      "sync_params": {
+        "sync_window_size": 1,
+        "comment": "force_position 短链验证用 1；全链路 fluid JSON 可覆盖"
+      }
+    }
+  },
+
+  "orcalink_bridge": {
+    "coupling_mode": "force_position",
+    "force_position": {
+      "channels": {
+        "force": {
+          "channel_id": 1,
+          "publish": true,
+          "subscribe": false,
+          "comment": "SPH 发布流体力到 MuJoCo"
+        },
+        "position": {
+          "channel_id": 2,
+          "publish": false,
+          "subscribe": true,
+          "comment": "SPH 订阅 MuJoCo 位姿+线速度"
+        }
+      },
+      "rigid_body_dynamics": {
+        "mode": "external",
+        "force_smoothing_alpha": 0.3,
+        "comment": "external: 跳过 PBD 刚体积分；SPH 刚体由 position_follow 跟随 MuJoCo；流体力仍采集并发 MuJoCo"
+      },
+      "position_follow": {
+        "scheme": "lag_compensated",
+        "velocity_cap_mps": 1.0,
+        "comment": "scheme: lag_compensated | vel_uniform"
+      }
+    },
+    "spring_constraint": {
+      "channels": {
+        "position": {
+          "channel_id": 2,
+          "publish": true,
+          "subscribe": true
+        }
+      },
+      "anchor_particles": {
+        "actuator_type": "spring_force"
+      },
+      "rigid_body_dynamics": {
+        "mode": "internal",
+        "force_smoothing_alpha": 0.3
+      },
+      "force_clamping": {
+        "enabled": true,
+        "rigid_body": {
+          "enabled": true,
+          "max_acceleration_g": 10.0,
+          "discard_on_clamp": true
+        },
+        "debug": {
+          "log_clamped_forces": true,
+          "log_threshold_n": 1000.0
+        }
+      }
+    },
+    "multi_point_force": {
+      "channels": {
+        "force": {
+          "channel_id": 2,
+          "publish": true,
+          "subscribe": false
+        },
+        "position": {
+          "channel_id": 2,
+          "publish": false,
+          "subscribe": true
+        }
+      },
+      "force_decomposition": {
+        "precompute_inverse": true,
+        "regularization": 1e-8
+      },
+      "anchor_particles": {
+        "actuator_type": "pd_controller"
+      },
+      "rigid_body_dynamics": {
+        "mode": "internal",
+        "force_smoothing_alpha": 0.3
+      }
+    },
+    "shared_modules": {
+      "spring_force": {
+        "apply_spring_forces": true,
+        "auto_tune": true,
+        "natural_frequency_hz": 2.0,
+        "damping_ratio": 0.2,
+        "linear_spring_stiffness": 5000.0,
+        "linear_damping_coefficient": 180.0,
+        "angular_spring_stiffness": 40.0,
+        "angular_damping_coefficient": 2.0,
+        "max_spring_force": 5000.0,
+        "max_spring_torque": 200.0,
+        "position_deadzone": 0.0001,
+        "rotation_deadzone": 0.001,
+        "estimate_remote_velocity": false,
+        "velocity_filter_alpha": 0.3
+      },
+      "pd_controller": {
+        "enabled": true,
+        "auto_tune": true,
+        "natural_frequency_hz": 1.8,
+        "damping_ratio": 1.0,
+        "Kp": 5000.0,
+        "Kd": 500.0,
+        "position_deadzone": 0.0001,
+        "velocity_filter_alpha": 0.3
+      },
+      "passivity_control": {
+        "enabled": true,
+        "auto_tune": true,
+        "reference_mass": 1.0,
+        "energy_threshold_per_kg": 1.0,
+        "max_damping_per_sqrt_kg": 150.0,
+        "dissipation_time_constant": 0.2,
+        "min_velocity_threshold": 0.01,
+        "fluid_force": {
+          "enabled": true,
+          "auto_tune": true,
+          "energy_control": {
+            "enabled": true,
+            "energy_threshold_per_kg": 10.0,
+            "max_force_attenuation": 0.8,
+            "velocity_damping_per_sqrt_kg": 22.36,
+            "dissipation_time_constant": 0.5,
+            "min_velocity_threshold": 0.01
+          },
+          "force_rate_limit": {
+            "enabled": true,
+            "max_force_rate_per_kg": 1000.0
+          }
+        }
+      },
+      "gravity": {
+        "enable_rigid_body_gravity": false,
+        "enable_rigid_body_collision": true,
+        "anchor_particle_mass_ratio": 0.5
+      },
+      "force_clamping": {
+        "enabled": true,
+        "rigid_body": {
+          "enabled": true,
+          "max_acceleration_g": 10.0,
+          "discard_on_clamp": true
+        }
+      },
+      "force_inference": {
+        "method": "sph",
+        "smoothing": {
+          "ema_filter": {
+            "enabled": true,
+            "alpha": 0.2
+          },
+          "rate_limit": {
+            "enabled": true,
+            "max_force_change_rate": 5000.0,
+            "max_torque_change_rate": 100.0
+          }
+        }
+      }
+    }
+  },
+
+  "physics": {
+    "gravity": [0, 0, -9.81]
+  },
+
+  "particle_render": {
+    "grpc": {
+      "server_address": "localhost:50251",
+      "enabled": true,
+      "update_rate_hz": 30,
+      "realtime_sync": true,
+      "payload_format": "quantized_packed",
+      "compression": {
+        "enabled": false,
+        "show_stats": false
+      },
+      "quantization": {
+        "enabled": true
+      },
+      "transmission_mode": "particle_frame"
+    },
+    "recording": {
+      "enabled": false,
+      "output_path": "",
+      "record_fps": 30.0,
+      "record_iframe_only": false,
+      "stats_interval_timesteps": 10,
+      "flush_interval_frames": 1,
+      "log_stats": false
+    },
+    "voxel_grid": {
+      "width": 128,
+      "height": 128,
+      "depth": 128,
+      "voxel_size_ratio": 1.0,
+      "origin": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "data_mode": "density_velocity",
+      "velocity": {
+        "max_speed": 5.0,
+        "enabled": true
+      },
+      "statistics": {
+        "enabled": false
+      }
+    },
+    "particle_frame": {
+      "grid_resolution": {
+        "x": 512,
+        "y": 512,
+        "z": 512
+      },
+      "origin": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "voxel_size_ratio": 1.0,
+      "ip_frame": {
+        "i_frame_interval": 30,
+        "position_threshold": 1,
+        "velocity_threshold": 2,
+        "change_ratio_threshold": 0.5
+      }
+    }
+  },
+
+  "debug": {
+    "verbose_logging": false,
+    "log_sph_solver_stdout": false,
+    "enable_actuator_force_stats": false,
+    "enable_fluid_force_stats": false,
+    "enable_passivity_stats": false,
+    "stats_log_interval": 1.0,
+    "visualize_anchor_particles": true,
+    "visualize_target_positions": true,
+    "visualize_actuator_connections": true,
+    "anchor_particle_size": 0.02,
+    "target_position_size": 0.015
+  }
+}

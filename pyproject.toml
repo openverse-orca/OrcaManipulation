@@ -27,6 +27,13 @@ select = ["E", "F", "W", "I", "SLF001"]
 "tests/**" = ["SLF001"]
 # __init__.py allows re-export
 "**/__init__.py" = ["SLF001", "F401"]
+# Auto-generated protobuf files
+"**/grpc_stubs/*_pb2*.py" = ["SLF001"]
+# Fluid fork code (from fluidmani branch) accesses MuJoCo internals for trajectory recording
+"src/envs/fluid/sim_env.py" = ["SLF001"]
+"src/envs/fluid/trajectory/trajectory_h5.py" = ["SLF001"]
+"src/examples/dataCollection/utils/kettle_scene_helpers.py" = ["SLF001"]
+"src/examples/dataCollection/utils/kettle_trajectory_driver.py" = ["SLF001"]
 
 
 
