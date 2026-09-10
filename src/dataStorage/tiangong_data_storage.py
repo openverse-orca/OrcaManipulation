@@ -1,27 +1,77 @@
-import os
-from dataStorage.abstract_data_storage import AbstractDataStorage
-from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
-from conf import tiangong2_conf
+"""Tiangong2 机器人存储模块。
+
+包含：
+- ``Tiangong2RobotProfile``：Tiangong2 机器人型号 profile（格式无关），
+  封装 ``obs_callback`` + ``build_state`` + ``state_dim`` + ``state_names``
+- ``Tiangong2DataStorage``：Tiangong2 HDF5 数据存储叶子类，组合 profile
+"""
+from __future__ import annotations
+
 import numpy as np
-import h5py
-from orca_gym.log import OrcaLog
-import json
 
-orca_logger = OrcaLog.get_instance()
+from conf import tiangong2_conf
+from dataStorage.abstract_data_storage import Hdf5DataStorage
+from dataStorage.robot_profile import RobotProfile
+from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
 
-class Tiangong2DataStorage(AbstractDataStorage):
-    def __init__(self, dataset_path: str, hdf5_path: str = None):
-        super().__init__(dataset_path=dataset_path, hdf5_path=hdf5_path)
-        self.data["time_step"] = []
-        
-    def collection_data(self, data: dict, env: OrcaGymLocalEnv, **kwargs):
-        for key, value in data.items():
-            if key not in self.data:
-                self.data[key] = []
-            self.data[key].append(value)
-        self.data["time_step"].append(env.data.time)
-        
+
+# ---------------------------------------------------------------------------
+# state 列名生成（38 维 = 14 基础 + 24 灵巧手）
+# ---------------------------------------------------------------------------
+
+def _build_tiangong2_state_names() -> list[str]:
+    """构建 tiangong2 的 state 列名列表。
+
+    列名结构：
+        - 前 14 维：左右手末端位置 (3+3) 和姿态四元数 (4+4)
+        - 后 24 维：左右灵巧手各 actuator 归一化值（名称来自 tiangong2_conf）
+    """
+    names: list[str] = [
+        "l_pos_x", "l_pos_y", "l_pos_z",
+        "l_quat_x", "l_quat_y", "l_quat_z", "l_quat_w",
+        "r_pos_x", "r_pos_y", "r_pos_z",
+        "r_quat_x", "r_quat_y", "r_quat_z", "r_quat_w",
+    ]
+    for name in tiangong2_conf.gripper_l["actuator_names"]:
+        names.append(f"l_{name}_norm")
+    for name in tiangong2_conf.gripper_r["actuator_names"]:
+        names.append(f"r_{name}_norm")
+    return names
+
+
+class Tiangong2RobotProfile(RobotProfile):
+    """Tiangong2 机器人型号 profile（格式无关）。
+
+    obs_callback（HDF5 / LeRobot 共用）：
+        采集关节位置、电机值、末端位姿等观测数据。
+
+    build_state（仅 LeRobot 调用）：
+        组装 state 向量（38 维）：
+        [l_pos(3), l_quat_xyzw(4), r_pos(3), r_quat_xyzw(4),
+         l_hand_norm(12), r_hand_norm(12)]
+        手部归一化：每个 actuator 按 conf.actuator_ranges[i] 的最大值
+        独立归一化到 [0, 1]。
+    """
+
+    def __init__(self):
+        n_l = len(tiangong2_conf.gripper_l["actuator_names"])
+        n_r = len(tiangong2_conf.gripper_r["actuator_names"])
+        self._l_hand_max = np.array(
+            [r[1] for r in tiangong2_conf.gripper_l["actuator_ranges"][:n_l]],
+            dtype=np.float32,
+        )
+        self._r_hand_max = np.array(
+            [r[1] for r in tiangong2_conf.gripper_r["actuator_ranges"][:n_r]],
+            dtype=np.float32,
+        )
+        self._n_effector = n_l + n_r
+        self._n_l = n_l
+
     def obs_callback(self, env: OrcaGymLocalEnv) -> dict:
+        """采集 Tiangong2 观测数据。
+
+        返回 obs 字典，包含关节位置、电机值、末端位姿等。
+        """
         obs = {}
         joint_names = tiangong2_conf.l_arm["joint_names"] + tiangong2_conf.r_arm["joint_names"]
         joint_names = [env.joint(joint_name) for joint_name in joint_names]
@@ -52,34 +102,54 @@ class Tiangong2DataStorage(AbstractDataStorage):
         obs["/action/effector/motor"] = np.array([hand_motor_values], dtype=np.float32).flatten()
         obs["/action/end/position"] = np.array([ee_site_pos_quat[ee_site_name]["xpos"] for ee_site_name in ee_site_names], dtype=np.float32)
         obs["/action/end/orientation"] = np.array([ee_site_pos_quat[ee_site_name]["xquat"][[1, 2, 3, 0]] for ee_site_name in ee_site_names], dtype=np.float32)
-        
-        return obs   
+
+        return obs
+
+    @property
+    def state_dim(self) -> int:
+        return 14 + self._n_effector
+
+    @property
+    def state_names(self) -> list[str]:
+        return _build_tiangong2_state_names()
+
+    def build_state(self, obs: dict) -> np.ndarray:
+        """从 obs 组装 state，灵巧手各关节按各自量程归一化到 [0, 1]。
+
+        Args:
+            obs: ``obs_callback`` 返回的观测字典，需包含以下键：
+                - "/action/end/position": (2, 3) 左右手末端位置
+                - "/action/end/orientation": (2, 4) 左右手末端姿态（xyzw 四元数）
+                - "/action/effector/motor": (n_l+n_r,) 灵巧手电机值
+
+        Returns:
+            float32 向量，形状 (14+n_effector,)，各分量已归一化。
+        """
+        pos = np.asarray(obs["/action/end/position"], dtype=np.float32)    # (2, 3)
+        quat = np.asarray(obs["/action/end/orientation"], dtype=np.float32)  # (2, 4)
+        motor = np.asarray(obs["/action/effector/motor"], dtype=np.float32).flatten()
+        l_motor = motor[:self._n_l]
+        r_motor = motor[self._n_l:]
+        l_norm = np.clip(l_motor, 0.0, self._l_hand_max) / self._l_hand_max
+        r_norm = np.clip(r_motor, 0.0, self._r_hand_max) / self._r_hand_max
+        return np.concatenate([
+            pos[0], quat[0],
+            pos[1], quat[1],
+            l_norm, r_norm,
+        ]).astype(np.float32)
 
 
-    def clear_data(self):
-        super().clear_data()
-        self.data["time_step"] = []
+class Tiangong2DataStorage(Hdf5DataStorage):
+    """Tiangong2 HDF5 数据存储叶子类。
 
-    def save_data(self, **kwargs):
-        self._save_data(**kwargs)
-        with h5py.File(self.get_hdf5_absolute_path(), 'r+') as f:
-            task_info = kwargs.get("task_info", {})
-            scene_info = kwargs.get("scene_info", {})
-            task_info_str = json.dumps(task_info)
-            scene_info_str = json.dumps(scene_info)
-            f.create_dataset("task_info", data=task_info_str)
-            f.create_dataset("scene_info", data=scene_info_str)
-        
-        self.data = {"time_step": []}
-        self.get_next_unit_path()
+    组合 ``Tiangong2RobotProfile`` + ``Hdf5DataStorage``。
+    构造签名与原 ``AbstractDataStorage`` 子类一致（内部自动创建 profile），
+    保证 HDF5 采集脚本（如 ``tiangong_collection_tele.py``）无需改动。
+    """
 
-    def _save_data(self, **kwargs):
-        os.makedirs(self.get_current_unit_path(), exist_ok=True)
-        orca_logger.info(f"Saving data to {self.get_current_unit_path()}")
-
-        hdf5_path = self.get_hdf5_absolute_path()
-        os.makedirs(os.path.dirname(hdf5_path), exist_ok=True)
-        
-        with h5py.File(hdf5_path, 'w') as f:
-            for key, value in self.data.items():
-                self.create_dataset(f, key, data=np.array(value), compression="gzip", compression_opts=4)
+    def __init__(self, dataset_path: str, hdf5_path: str = None):
+        super().__init__(
+            dataset_path=dataset_path,
+            robot_profile=Tiangong2RobotProfile(),
+            hdf5_path=hdf5_path,
+        )

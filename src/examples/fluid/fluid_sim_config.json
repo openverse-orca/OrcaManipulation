@@ -100,7 +100,7 @@
     "command": "orcasph",
     "args": [],
     "scene_auto_generate": true,
-    "config_template": "sph_sim_config_force_position.json",
+    "config_template": "sph_sim_config.json",
     "sphscale": 1.0,
     "position_follow": {
       "scheme": "lag_compensated",

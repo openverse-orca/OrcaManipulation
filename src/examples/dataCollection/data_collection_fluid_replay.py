@@ -24,6 +24,7 @@ from orca_gym.log.orca_log import get_orca_logger
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from controllers import controllers
 from envs.fluid import default_fluid_config_path, load_fluid_config, start_fluid_coupling
+from examples.dataCollection.data_collection_fluid_tele import FluidLifecycleCallback
 from examples.dataCollection.utils.bench_fluid_config import apply_build_mode, apply_orcasph_gui
 from examples.dataCollection.utils.fluid_replay_helpers import (
     apply_sph_follow_patch,
@@ -225,8 +226,6 @@ def main():
         frame_skip=frame_skip,
         time_step=time_step,
     )
-    if args.no_realtime:
-        data_collection_manager.set_realtime_sync(False)
 
     env = data_collection_manager.env
     env.reset()
@@ -254,7 +253,14 @@ def main():
     cpu_affinity = _resolve_cpu_affinity(args.use_all_cpu)
     orca_logger.info("Starting fluid coupling (OrcaLink + OrcaSPH)")
     fluid_coupling = start_fluid_coupling(env, fluid_config, cpu_affinity=cpu_affinity)
-    data_collection_manager.set_fluid_coupling(fluid_coupling)
+    fluid_callback = FluidLifecycleCallback(
+        data_collection_manager,
+        fluid_coupling,
+    )
+    if args.no_realtime:
+        fluid_callback.realtime_sync = False
+        orca_logger.info("No-realtime mode: skip wall-clock sleep between macro steps")
+    data_collection_manager.register_episode_callback(fluid_callback)
 
     data_collection_manager.mode = DataCollectionManager.DataCollectionMode.AUGMENTATION
     data_collection_manager.save_video = False

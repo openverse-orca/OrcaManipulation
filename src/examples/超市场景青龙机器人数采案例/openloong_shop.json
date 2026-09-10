@@ -1,153 +1,172 @@
 {
-    "version": "1.0",
-    "name": "root",
-    "path": "/",
-    "transform": {
-        "position": "[0,0,0]",
-        "rotation": "[1,0,0,0]",
-        "scale": 1.0
+    "version": "3.0",
+    "viewport_camera_transform": {
+        "position": [
+            -6.578919887542725,
+            1.6093710660934448,
+            2.93295955657959
+        ],
+        "rotation": [
+            0.8944037595956185,
+            -0.44724992114170936,
+            -0.0013728374675646118,
+            0.0027455741194600783
+        ]
     },
-    "is_visible": true,
-    "is_parent_visible": true,
-    "is_locked": false,
-    "is_parent_locked": false,
-    "type": "GroupActor",
-    "children": [
+    "actors": [
         {
             "name": "Group",
             "path": "/Group",
+            "type": "GroupActor",
             "transform": {
-                "position": "[0.0,0.0,0.0]",
-                "rotation": "[1.0,0.0,0.0,0.0]",
+                "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
                 "scale": 1.0
             },
-            "is_visible": true,
-            "is_parent_visible": true,
-            "is_locked": false,
-            "is_parent_locked": false,
-            "type": "GroupActor",
             "children": [
                 {
                     "name": "Interactive_Objects",
                     "path": "/Group/Interactive_Objects",
-                    "transform": {
-                        "position": "[0.0,0.0,0.0]",
-                        "rotation": "[1.0,0.0,0.0,0.0]",
-                        "scale": 1.0
-                    },
-                    "is_visible": true,
-                    "is_parent_visible": true,
-                    "is_locked": false,
-                    "is_parent_locked": false,
                     "type": "GroupActor",
-                    "children": []
+                    "transform": {
+                        "position": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "rotation": [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "scale": 1.0
+                    }
                 }
             ]
         },
         {
             "name": "openloong",
             "path": "/openloong",
+            "type": "AssetActor",
             "transform": {
-                "position": "[-6.57465124130249,2.2361035346984863,0.07998798787593842]",
-                "rotation": "[0.7071067811865475,0.0,0.0,0.7071067811865475]",
+                "position": [
+                    -6.57465124130249,
+                    2.2361035346984863,
+                    0.07998798787593842
+                ],
+                "rotation": [
+                    0.7071067811865475,
+                    0.0,
+                    0.0,
+                    0.7071067811865475
+                ],
                 "scale": 1.0
             },
-            "is_visible": true,
-            "is_parent_visible": true,
-            "is_locked": false,
-            "is_parent_locked": false,
-            "type": "AssetActor",
             "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/openloong_gripper_2f85_fix_base_usda",
-            "modified_properties": [
+            "entity_overrides": [
                 {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_head_yaw/Link_head_pitch/neck_center_body/camera_head/cameras/camera_head:Camera",
-                    "name": "ColorCamera",
-                    "type": "BOOL",
-                    "value": true
-                },
-                {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_head_yaw/Link_head_pitch/neck_center_body/camera_head/cameras/camera_head:Camera",
-                    "name": "DepthCamera",
-                    "type": "BOOL",
-                    "value": true
-                },
-                {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_head_yaw/Link_head_pitch/neck_center_body/camera_head/cameras/camera_head:Camera",
-                    "name": "UseNvEnc",
-                    "type": "BOOL",
-                    "value": true
-                },
-                {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_head_yaw/Link_head_pitch/neck_center_body/camera_head/cameras/camera_head:Camera",
-                    "name": "IsRecording",
-                    "type": "BOOL",
-                    "value": true
-                },
-                {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_r_01/Link_arm_r_02/Link_arm_r_03/Link_arm_r_04/Link_arm_r_05/Link_arm_r_06/Link_arm_r_07/camera_wrist_r/cameras/camera_wrist_r:Camera",
-                    "name": "ColorCamera",
-                    "type": "BOOL",
-                    "value": true
-                },
-                {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_r_01/Link_arm_r_02/Link_arm_r_03/Link_arm_r_04/Link_arm_r_05/Link_arm_r_06/Link_arm_r_07/camera_wrist_r/cameras/camera_wrist_r:Camera",
-                    "name": "DepthCamera",
-                    "type": "BOOL",
-                    "value": true
-                },
-                {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_r_01/Link_arm_r_02/Link_arm_r_03/Link_arm_r_04/Link_arm_r_05/Link_arm_r_06/Link_arm_r_07/camera_wrist_r/cameras/camera_wrist_r:Camera",
-                    "name": "UseNvEnc",
-                    "type": "BOOL",
-                    "value": true
-                },
-                {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_r_01/Link_arm_r_02/Link_arm_r_03/Link_arm_r_04/Link_arm_r_05/Link_arm_r_06/Link_arm_r_07/camera_wrist_r/cameras/camera_wrist_r:Camera",
-                    "name": "IsRecording",
-                    "type": "BOOL",
-                    "value": true
-                },
-                {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_l_01/Link_arm_l_02/Link_arm_l_03/Link_arm_l_04/Link_arm_l_05/Link_arm_l_06/Link_arm_l_07/camera_wrist_l/cameras/camera_wrist_l:Camera",
-                    "name": "ColorCamera",
-                    "type": "BOOL",
-                    "value": true
-                },
-                {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_l_01/Link_arm_l_02/Link_arm_l_03/Link_arm_l_04/Link_arm_l_05/Link_arm_l_06/Link_arm_l_07/camera_wrist_l/cameras/camera_wrist_l:Camera",
-                    "name": "DepthCamera",
-                    "type": "BOOL",
-                    "value": true
-                },
-                {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_l_01/Link_arm_l_02/Link_arm_l_03/Link_arm_l_04/Link_arm_l_05/Link_arm_l_06/Link_arm_l_07/camera_wrist_l/cameras/camera_wrist_l:Camera",
-                    "name": "UseNvEnc",
-                    "type": "BOOL",
-                    "value": true
-                },
-                {
-                    "group_prefix": "/mujoco_wrap/rootPrim/base_link/base_link/Link_arm_l_01/Link_arm_l_02/Link_arm_l_03/Link_arm_l_04/Link_arm_l_05/Link_arm_l_06/Link_arm_l_07/camera_wrist_l/cameras/camera_wrist_l:Camera",
-                    "name": "IsRecording",
-                    "type": "BOOL",
-                    "value": true
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 0
+                        },
+                        {
+                            "name": "base_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "base_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "Link_head_yaw",
+                            "index": 2
+                        },
+                        {
+                            "name": "Link_head_pitch",
+                            "index": 1
+                        },
+                        {
+                            "name": "neck_center_body",
+                            "index": 1
+                        },
+                        {
+                            "name": "camera_head",
+                            "index": 0
+                        },
+                        {
+                            "name": "cameras",
+                            "index": 0
+                        },
+                        {
+                            "name": "camera_head",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "DepthCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "IsRecording",
+                                    "value": true,
+                                    "type": "bool"
+                                }
+                            ]
+                        }
+                    ]
                 }
             ]
         },
         {
             "name": "basket",
             "path": "/basket",
+            "type": "AssetActor",
             "transform": {
-                "position": "[-6.796365738,2.779978037,1.096674442]",
-                "rotation": "[1.0,0.0,0.0,0.0]",
+                "position": [
+                    -6.796365738,
+                    2.779978037,
+                    1.096674442
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
                 "scale": 1.0
             },
-            "is_visible": true,
-            "is_parent_visible": true,
-            "is_locked": false,
-            "is_parent_locked": false,
-            "type": "AssetActor",
-            "asset_path": "assets/e071469a36d3c8aa/default_project/shop_scene/els/basket",
-            "modified_properties": []
+            "asset_path": "assets/e071469a36d3c8aa/default_project/shop_scene/els/basket"
         }
     ]
 }

@@ -46,3 +46,27 @@ motors_group = 0
 positions_group = 1
 
 base_body = "base_link"
+
+cameras_conf = {
+    "camera_wrist_l": {
+        "width": 1080,
+        "height": 720,
+        "use_nvenc": True,
+        "capture_rgb": True,
+        "capture_depth": False,
+    },
+    "camera_wrist_r": {
+        "width": 1080,
+        "height": 720,
+        "use_nvenc": True,
+        "capture_rgb": True,
+        "capture_depth": False,
+    },
+    "camera_head": {
+        "width": 1080,
+        "height": 720,
+        "use_nvenc": True,
+        "capture_rgb": True,
+        "capture_depth": False,
+    }
+}
