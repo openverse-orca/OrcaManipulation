@@ -15,11 +15,7 @@ from controllers import controllers
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from dataStorage.g1_lerobot_storage import G1PickOscLeRobotStorage
 from devices.abstract_device import PicoJoystickDevice
-from examples.southgrid.unitree_g1.g1_pick_constraints import (
-    _L_INIT_JOINT_VALUES,
-    _R_INIT_JOINT_VALUES,
-    pin_all_joints,
-)
+from examples.southgrid.unitree_g1.g1_pick_constraints import pin_all_joints
 from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
 from orca_gym.log.orca_log import get_orca_logger
 from scene.scene_manager import SceneManager
@@ -55,13 +51,10 @@ def main():
     parser.add_argument("--cameras", default="head,wrist_r")
     parser.add_argument("--camera_source", choices=("websocket", "mp4"), default="websocket")
     parser.add_argument("--agent_name", default="g1_pick")
+    controllers.add_osc_tuning_args(parser)
     args = parser.parse_args()
 
-    default_joint_values = {}
-    for name, value in zip(g1_pick_osc_conf.l_arm["joint_names"], _L_INIT_JOINT_VALUES):
-        default_joint_values[name] = value
-    for name, value in zip(g1_pick_osc_conf.r_arm["joint_names"], _R_INIT_JOINT_VALUES):
-        default_joint_values[name] = value
+    default_joint_values = g1_pick_osc_conf.build_default_joint_values()
 
     camera_map = select_camera_map(g1_pick_osc_conf.camera_map(), args.cameras)
     storage = G1PickOscLeRobotStorage(
@@ -96,6 +89,8 @@ def main():
     env.reset()
     pin_all_joints(env, args.agent_name)
     manager.set_disable_actuator_group([g1_pick_osc_conf.positions_group])
+    kp, dls_lambda, dls_sigma_th, null_kp = controllers.resolve_osc_tuning(args.agent_name, args)
+    controllers.install_osc_patches(dls_lambda=dls_lambda, dls_sigma_th=dls_sigma_th, null_kp=null_kp)
     controllers.add_gripper_2f85_reverse_pico_controller(
         manager, env, g1_pick_osc_conf.gripper_l, g1_pick_osc_conf.base_body, pico,
         [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
@@ -104,12 +99,13 @@ def main():
         manager, env, g1_pick_osc_conf.gripper_r, g1_pick_osc_conf.base_body, pico,
         [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
     )
-    controllers.add_arm_osc_pico_controller(
+    l_arm = controllers.add_arm_osc_pico_controller(
         manager, env, g1_pick_osc_conf.l_arm, g1_pick_osc_conf.base_body, pico, PicoJoystickKey.L_TRANSFORM
     )
-    controllers.add_arm_osc_pico_controller(
+    r_arm = controllers.add_arm_osc_pico_controller(
         manager, env, g1_pick_osc_conf.r_arm, g1_pick_osc_conf.base_body, pico, PicoJoystickKey.R_TRANSFORM
     )
+    controllers.apply_osc_impedance(l_arm, r_arm, kp=kp)
     manager.set_task(EmptyTask(env))
     controllers.add_task_status_pico_controller(manager, env, pico, g1_pick_osc_conf.base_body)
     controllers.add_episode_control_pico_controller(

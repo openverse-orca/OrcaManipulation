@@ -50,15 +50,10 @@ def main():
     parser.add_argument("--orcagym_addr", default="localhost:50051")
     parser.add_argument("--cameras", default="head,wrist_r")
     parser.add_argument("--camera_source", choices=("websocket", "mp4"), default="websocket")
+    controllers.add_osc_tuning_args(parser)
     args = parser.parse_args()
 
-    default_joint_values = {}
-    for name, value in zip(g1_omnipicker_conf.l_arm["joint_names"], [0.0] * 7):
-        default_joint_values[name] = value
-    for name, value in zip(
-        g1_omnipicker_conf.r_arm["joint_names"], g1_omnipicker_conf.r_arm["neutral_joint_values"]
-    ):
-        default_joint_values[name] = value
+    default_joint_values = g1_omnipicker_conf.build_default_joint_values()
 
     camera_map = select_camera_map(g1_omnipicker_conf.camera_map(), args.cameras)
     storage = G1OmniPickerLeRobotStorage(
@@ -92,6 +87,8 @@ def main():
     env = manager.env
     env.reset()
     manager.set_disable_actuator_group([g1_omnipicker_conf.positions_group])
+    kp, dls_lambda, dls_sigma_th, null_kp = controllers.resolve_osc_tuning("g1_omnipicker", args)
+    controllers.install_osc_patches(dls_lambda=dls_lambda, dls_sigma_th=dls_sigma_th, null_kp=null_kp)
     controllers.add_gripper_2f85_reverse_pico_controller(
         manager, env, g1_omnipicker_conf.gripper_l, g1_omnipicker_conf.base_body, pico,
         [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
@@ -102,14 +99,15 @@ def main():
     )
     left_tf = controllers.make_pico_arm_transform([np.pi / 2, 0, 0], [0, 2, 1], [1.0, 1.0, -1.0])
     right_tf = controllers.make_pico_arm_transform([-3 * np.pi / 2, 0, 0], [0, 2, 1], [1.0, 1.0, -1.0])
-    controllers.add_arm_osc_pico_controller(
+    l_arm = controllers.add_arm_osc_pico_controller(
         manager, env, g1_omnipicker_conf.l_arm, g1_omnipicker_conf.base_body,
         pico, PicoJoystickKey.L_TRANSFORM, pico_transform=left_tf,
     )
-    controllers.add_arm_osc_pico_controller(
+    r_arm = controllers.add_arm_osc_pico_controller(
         manager, env, g1_omnipicker_conf.r_arm, g1_omnipicker_conf.base_body,
         pico, PicoJoystickKey.R_TRANSFORM, pico_transform=right_tf,
     )
+    controllers.apply_osc_impedance(l_arm, r_arm, kp=kp)
     manager.set_task(EmptyTask(env))
     controllers.add_task_status_pico_controller(manager, env, pico, g1_omnipicker_conf.base_body)
     controllers.add_episode_control_pico_controller(

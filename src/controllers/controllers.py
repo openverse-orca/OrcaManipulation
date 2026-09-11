@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from functools import partial
 from controllers.controller_arm import ControllerArm
 from controllers.controller_joint_hold import JointHoldController
@@ -107,6 +109,109 @@ def install_osc_patches(
 
     if null_kp != 10.0:
         _osc_mod.nullspace_torques = _make_null_torques(null_kp)
+
+
+def add_osc_tuning_args(parser) -> None:
+    parser.add_argument(
+        "--kp",
+        type=float,
+        default=None,
+        help="OSC 阻抗刚度；0 沿用 osc_pose；未指定时 g1_omnipicker 为 220",
+    )
+    parser.add_argument(
+        "--dls_lambda",
+        type=float,
+        default=None,
+        help="DLS 阻尼 λ；0 为伪逆；未指定时 g1_pick 为 0.23",
+    )
+    parser.add_argument(
+        "--dls_sigma_th",
+        type=float,
+        default=None,
+        help="变 λ 奇异值阈值；未指定时 g1_pick 为 0.12",
+    )
+    parser.add_argument("--null_kp", type=float, default=10.0, help="零空间关节复原增益")
+
+
+def add_track_ki_args(parser, default_ki: float | None = None) -> None:
+    parser.add_argument("--track_ki", type=float, default=default_ki, help="末端位置外环积分增益")
+    parser.add_argument("--track_clamp", type=float, default=0.08, help="积分补偿限幅，单位米")
+
+
+def resolve_track_ki(agent_name: str, args) -> float:
+    if getattr(args, "track_ki", None) is not None:
+        return float(args.track_ki)
+    return 0.02 if agent_name == "g1_pick" else 0.0
+
+
+def add_grasp_integral_args(parser) -> None:
+    parser.add_argument("--grasp_integral", action="store_true", help="近桌时对右臂末端位置做外环积分")
+    parser.add_argument("--grasp_integral_ki", type=float, default=0.2)
+    parser.add_argument("--grasp_integral_max", type=float, default=0.01)
+    parser.add_argument("--grasp_integral_axes", type=str, default="z")
+    parser.add_argument("--grasp_integral_log_every", type=int, default=0)
+    parser.add_argument("--grasp_integral_z_below", type=float, default=0.25)
+
+
+def resolve_osc_tuning(agent_name: str, args):
+    kp = 220.0 if agent_name == "g1_omnipicker" else 0.0
+    dls_lambda = 0.23 if agent_name == "g1_pick" else 0.0
+    dls_sigma_th = 0.12 if agent_name == "g1_pick" else 0.0
+    if getattr(args, "kp", None) is not None:
+        kp = float(args.kp)
+    if getattr(args, "dls_lambda", None) is not None:
+        dls_lambda = float(args.dls_lambda)
+    if getattr(args, "dls_sigma_th", None) is not None:
+        dls_sigma_th = float(args.dls_sigma_th)
+    null_kp = float(getattr(args, "null_kp", 10.0))
+    return kp, dls_lambda, dls_sigma_th, null_kp
+
+
+def apply_osc_impedance(*arms, kp: float) -> None:
+    if kp <= 0.0:
+        return
+    kp_val = float(np.clip(kp, 1.0, 300.0))
+    for arm in arms:
+        controller = getattr(arm, "controller", None)
+        if controller is None or not hasattr(controller, "kp"):
+            continue
+        controller.kp = np.ones(6, dtype=np.float64) * kp_val
+        controller.kd = 2.0 * np.sqrt(controller.kp)
+
+
+class GraspIntegralBinder:
+    def __init__(self, arm: ControllerArm, z_below: float):
+        self.arm = arm
+        self.z_below = float(z_below)
+        self._prev = False
+
+    def reset(self) -> None:
+        self._prev = False
+        self.arm.enable_integral(False)
+        self.arm.reset_integral()
+
+    def update_action_position(self, position) -> None:
+        pos = np.asarray(position, dtype=np.float64).reshape(3)
+        active = float(pos[2]) <= self.z_below
+        if active and not self._prev:
+            self.arm.reset_integral()
+        if (not active) and self._prev:
+            self.arm.reset_integral()
+        self.arm.enable_integral(active)
+        self._prev = active
+        self.arm.update_action_position(pos)
+
+
+def setup_grasp_integral(arm: ControllerArm, args) -> GraspIntegralBinder | None:
+    if not getattr(args, "grasp_integral", False):
+        return None
+    arm.configure_integral(
+        ki=float(args.grasp_integral_ki),
+        max_bias=float(args.grasp_integral_max),
+        axes=str(args.grasp_integral_axes),
+        log_every=int(args.grasp_integral_log_every),
+    )
+    return GraspIntegralBinder(arm, float(args.grasp_integral_z_below))
 
 
 def create_arm_osc_controller(env: OrcaGymLocalEnv,

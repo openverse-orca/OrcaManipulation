@@ -60,6 +60,34 @@ cd src/examples/southgrid/g1_omnipicker
 
 ---
 
+## 路点从哪来
+
+脚本化采集读的路点可由通用标点入口写出，默认保存到 `examples/southgrid/waypoint/g1_omnipicker/`。在仓库 `src/examples/dataCollection` 下、OrcaLab 已加载对应布局后：
+
+```bash
+conda activate orcalab_lerobot
+cd src/examples/dataCollection
+
+# 工具 6 点（接近 / 抓取 / 经由 / 放箱 / 松开）
+# → waypoint/g1_omnipicker/my_waypoint_tool.yaml
+python record_waypoints.py --agent_name g1_omnipicker --task tool \
+  --task_config ../southgrid/configs/example.yaml --guide tool6
+
+# 四色按钮候选（一色一次；--resume 保留其它颜色）
+# → waypoint/g1_omnipicker/pose_g1_button_candidates.yaml
+python record_waypoints.py --agent_name g1_omnipicker --task button --color red \
+  --task_config ../southgrid/configs/example.yaml --resume
+
+# 槽位补录（自动摆工具，每个组合记 wp0 / wp1）
+# → waypoint/g1_omnipicker/my_slot_waypoints.yaml
+python record_waypoints.py --agent_name g1_omnipicker --task slot \
+  --task_config ../southgrid/configs/example.yaml
+```
+
+按键：双 Grip 记一个点，单右 Grip 重置当前任务，Ctrl+C 写出 YAML。
+
+---
+
 ## 工具整理脚本化采集
 
 请先在 OrcaLab 中加载 `src/examples/southgrid/g1_omnipicker/g1_tool.json`，再在上一节的工作目录中运行：
@@ -68,31 +96,31 @@ cd src/examples/southgrid/g1_omnipicker
 python g1_omnipicker_collection_scripted_tool_lerobot.py \
     --task_config ../configs/example.yaml \
     --lerobot_out ~/datasets/g1_tool_scripted \
-    --repo_id local/g1_omnipicker_tool \
-    --num_episodes 20 \
-    --fps 20
+    --repo_id local/g1_tool \
+    --waypoint my_waypoint_tool1.yaml \
+    --task "整理工具" \
+    --max_episodes 20 \
+    --fps 20 \
+    --kp 220 \
+    --grasp_integral
 ```
 
-断点续采时请追加 `--resume`。
+路点默认读脚本目录下的 `my_waypoint_tool1.yaml`。新录的路点可用 `--waypoint ../waypoint/g1_omnipicker/my_waypoint_tool.yaml`。
 
 | 参数 | 含义 | 默认值 | 何时需要改 |
 |------|------|--------|------------|
 | `--task_config` | 任务配置文件路径 | `../configs/example.yaml` | 使用其它任务配置时 |
 | `--lerobot_out` | 数据集输出目录 | 无默认值，必须指定 | 每次采集都需要指定 |
-| `--repo_id` | 数据集仓库名 | `local/g1_omnipicker_tool` | 需要区分不同数据集时 |
-| `--num_episodes` | 采集轮数 | `1` | 需要采集多轮时 |
+| `--repo_id` | 数据集仓库名 | `local/g1_tool` | 需要区分不同数据集时 |
+| `--waypoint` | 路点 YAML | `my_waypoint_tool1.yaml` | 使用其它路点文件时 |
 | `--task` | 写入数据集的语言指令 | `整理工具` | 需要与训练时的指令对齐时 |
+| `--max_episodes` | 采集轮数 | `1` | 需要采集多轮时 |
 | `--fps` | 采集帧率 | `20` | 需要更改帧率时 |
 | `--clock` | 采帧时钟源：`sim` 为仿真时间，`wall` 为墙钟 | `sim` | 需要与遥操作采集对齐时钟时改为 `wall` |
-| `--resume` | 追加到已有数据集 | 未启用 | 断点续采时追加该参数 |
+| `--cameras` | 启用的相机 | `head,wrist_r` | 只启用其中一路时 |
 | `--orcagym_addr` | OrcaGym 服务地址 | `localhost:50051` | 服务不在本机默认端口时 |
-| `--randomize` | 每个 episode 随机排列槽位 | 未启用 | 需要随机化抓取顺序时追加该参数 |
-| `--seed` | 随机化基础种子 | 未设置 | 需要可复现的随机顺序时 |
-| `--num_tools` | 本集实际抓取的工具数量 | `5` | 只采集前几把工具时 |
-| `--tools` | 要抓的工具编号，从 1 开始，逗号分隔 | 空，按 `--num_tools` 取前 N 把 | 只抓指定编号的工具时 |
-| `--speed` | 轨迹整体提速倍率 | `1.0` | 需要加快或放慢脚本化轨迹时 |
-
-路点与分段步数等冷门参数见文末「高级调参参数」。
+| `--kp` | OSC 阻抗刚度 | `220`（`g1_omnipicker`） | 需要改刚度时 |
+| `--grasp_integral` | 近桌右臂外环积分 | 未启用 | 工具采集建议加上 |
 
 ---
 
@@ -112,26 +140,21 @@ python g1_omnipicker_collection_scripted_button_lerobot.py \
 
 说明：
 
-- `--counts` 参数的顺序为红、绿、黄、蓝，例如 `25,25,25,25` 表示每种颜色各采 25 集。
-- 每种颜色的 task prompt 由 `pose_g1_button_candidates.yaml` 中对应按钮的 `task` 提供，脚本会在每个 episode 开始前自动写入 `按红色按钮`、`按绿色按钮`、`按黄色按钮` 或 `按蓝色按钮`，无需传入 `--task`。
-- 交互式终端会由脚本询问各颜色集数。非交互终端若不传入 `--counts`，脚本将按红、绿、黄、蓝各 5 集执行。
-- 候选位姿文件默认为同目录的 `pose_g1_button_candidates.yaml`，可通过 `--pose_candidates` 指定其它文件。
-- 断点续采时请追加 `--resume`。
+- `--counts` 参数的顺序为红、绿、黄、蓝，例如 `25,25,25,25` 表示每种颜色各采 25 集。默认 `1,1,1,1`。
+- 每种颜色的 task prompt 由候选位姿 YAML 中对应按钮的 `task` 提供，脚本会在每个 episode 开始前写入 `按红色按钮` 等，无需再传 `--task`。
+- 候选位姿文件默认为同目录的 `pose_g1_button_candidates.yaml`，可通过 `--pose_file` 指定其它文件。
 
 | 参数 | 含义 | 默认值 | 何时需要改 |
 |------|------|--------|------------|
 | `--task_config` | 任务配置文件路径 | `../configs/example.yaml` | 使用其它任务配置时 |
 | `--lerobot_out` | 数据集输出目录 | 无默认值，必须指定 | 每次采集都需要指定 |
-| `--repo_id` | 数据集仓库名 | `local/g1_omnipicker_button` | 需要区分不同数据集时 |
-| `--counts` | 红、绿、黄、蓝各采集集数，逗号分隔 | 未传入时：交互式终端询问，非交互终端按各色 5 集执行 | 需要指定各颜色集数时 |
+| `--repo_id` | 数据集仓库名 | `local/g1_button` | 需要区分不同数据集时 |
+| `--counts` | 红、绿、黄、蓝各采集集数，逗号分隔 | `1,1,1,1` | 需要指定各颜色集数时 |
+| `--pose_file` | 候选位姿文件路径 | `pose_g1_button_candidates.yaml` | 使用其它候选位姿文件时 |
 | `--fps` | 采集帧率 | `20` | 需要更改帧率时 |
-| `--clock` | 采帧时钟源：`sim` 为仿真时间，`wall` 为墙钟 | `wall` | 需要改用仿真时钟时 |
-| `--resume` | 追加到已有数据集 | 未启用 | 断点续采时追加该参数 |
+| `--clock` | 采帧时钟源：`sim` 为仿真时间，`wall` 为墙钟 | `sim` | 需要改用墙钟时 |
+| `--cameras` | 启用的相机 | `head,wrist_r` | 只启用其中一路时 |
 | `--orcagym_addr` | OrcaGym 服务地址 | `localhost:50051` | 服务不在本机默认端口时 |
-| `--pose_candidates` | 候选位姿文件路径 | 同目录 `pose_g1_button_candidates.yaml` | 使用其它候选位姿文件时 |
-| `--shuffle_seed` | 随机打乱种子 | 未设置 | 需要可复现的颜色顺序时 |
-
-接近、前推、保压、后撤等分段步数见文末「高级调参参数」。
 
 ---
 
@@ -158,7 +181,6 @@ python g1_omnipicker_collection_tele_lerobot.py \
     --fps 20 \
     --clock wall \
     --cameras head,wrist_r \
-    --cam_resolution 480x640 \
     --camera_source websocket
 ```
 
@@ -176,7 +198,6 @@ python g1_omnipicker_collection_tele_lerobot.py \
 | `--resume` | 追加到已有数据集 | 未启用 | 断点续采时追加该参数 |
 | `--orcagym_addr` | OrcaGym 服务地址 | `localhost:50051` | 服务不在本机默认端口时 |
 | `--cameras` | 启用的相机列表，逗号分隔，可选 `head` / `wrist_r` | `head,wrist_r` | 只启用其中一路相机时 |
-| `--cam_resolution` | 采集帧分辨率，格式为高×宽 | `480x640` | 需要更改分辨率时 |
 | `--camera_source` | 相机数据来源：`websocket` 为内存流，`mp4` 为集末从服务端提取 | `websocket` | 需要改用集末提取时 |
 
 ### 按键映射
@@ -221,28 +242,24 @@ OrcaLab 场景内会显示操作提示：`第一次按左侧握键=开始 第二
 
 ```bash
 python g1_omnipicker_replay_lerobot.py \
-    --dataset_dir /path/to/lerobot_dataset \
+    --lerobot_out /path/to/lerobot_dataset \
     --task_config ../configs/example.yaml \
-    --episode 1 \
-    --steps_per_frame 10 \
-    --render_every 5
+    --episode_index 0 \
+    --kp 220 \
+    --grasp_integral
 ```
 
-- `--episode` 指定要回放的集号，集号从 1 开始。传入 `--episode 1` 时只回放第 1 集。不传入该参数时，脚本按文件名顺序回放数据集中的全部集。
-- `--steps_per_frame` 表示每个数据帧重复执行的控制步数，数值越小回放速度越快（默认 10）。
-- 需要循环播放时请追加 `--loop`。循环播放时，请在运行回放脚本的主机终端中按 `Ctrl+C` 退出。
+`--episode_index` 从 0 开始。`--steps_per_frame` 默认 `0`，按数据集 fps 与 `env.dt` 推算每帧保持步数。
 
 | 参数 | 含义 | 默认值 | 何时需要改 |
 |------|------|--------|------------|
-| `--dataset_dir` | 待回放的数据集目录 | 无默认值，必须指定 | 每次回放都需要指定 |
-| `--task_config` | 任务配置文件路径 | 无默认值，必须指定 | 每次回放都需要指定 |
-| `--episode` | 只回放指定集号；集号从 1 开始 | 未传入则按文件名顺序回放全部集 | 只回放其中一集时 |
-| `--loop` | 全部播完后从头循环 | 未启用 | 需要循环播放时追加该参数 |
-| `--steps_per_frame` | 每个数据帧重复执行的控制步数 | `10` | 需要加快或放慢回放时 |
-| `--render_every` | 每隔多少控制步渲染一次 | `5` | 需要调整画面刷新频率时 |
+| `--lerobot_out` | 待回放的数据集目录 | 无默认值，必须指定 | 每次回放都需要指定 |
+| `--task_config` | 任务配置文件路径 | `../configs/example.yaml` | 使用其它任务配置时 |
+| `--episode_index` | 回放第几集，从 0 开始 | `0` | 回放其它集时 |
+| `--steps_per_frame` | 每个数据帧重复执行的控制步数 | `0`（按 fps 推算） | 需要加快或放慢回放时 |
+| `--kp` | OSC 阻抗刚度 | `220`（`g1_omnipicker`） | 需要改刚度时 |
+| `--grasp_integral` | 近桌右臂外环积分 | 未启用 | 工具回放建议加上 |
 | `--orcagym_addr` | OrcaGym 服务地址 | `localhost:50051` | 服务不在本机默认端口时 |
-
-回放跟踪刚度与近桌补偿等冷门参数见文末「高级调参参数」。
 
 ---
 
@@ -289,7 +306,6 @@ LeRobot v2.1 格式如下：
 │   └── episode_XXXXXX.parquet  # action / observation.state / timestamp
 └── videos/chunk-000/
     ├── observation.images.cam_head/
-    ├── observation.images.cam_wrist_l/
     └── observation.images.cam_wrist_r/
 ```
 

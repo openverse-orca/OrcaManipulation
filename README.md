@@ -216,13 +216,15 @@ OrcaManipulation/
 │   ├── envs/                    # 环境定义
 │   ├── conf/                    # 机器人配置
 │   └── examples/                # 示例代码
-│       ├── dataCollection/
-│       │   ├── data_collection_tele.py    # VR 遥操作采集（→ dataset）
-│       │   ├── data_collection_aug.py     # 数据增广（dataset → aug_dataset）
-│       │   ├── data_collection_replay.py  # 轨迹回放验证
-│       │   ├── example.yaml
-│       │   └── warehouse.yaml
-│       └── southgrid/           # 南网比赛任务
+│       ├── dataCollection/      # 通用采集 / 回放 / 标点
+│       │   ├── data_collection_tele_lerobot.py
+│       │   ├── data_collection_scripted_lerobot.py
+│       │   ├── data_collection_replay_lerobot.py
+│       │   └── record_waypoints.py
+│       ├── inference/           # 通用在线推理
+│       │   ├── infer_lerobot.py
+│       │   └── agents.py
+│       └── southgrid/           # 南网比赛任务（采集 / 推理 / 路点）
 ├── docs/                        # LeRobot / 推理 / 相机 / OpenPI
 ├── QUICK_START.md               # 快速开始
 ├── DEVELOPER_GUIDE.md           # 开发者指南

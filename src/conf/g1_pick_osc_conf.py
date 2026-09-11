@@ -18,6 +18,7 @@ l_arm = {
     ],
     # Left-arm reference posture.
     "neutral_joint_values": [0.0, 0.0, 0.0, 1.5708, 0.0, 0.0, 0.0],
+    "init_joint_values": [0.0, 0.127, 0.0, 1.5708, 0.0, 0.0, 0.0],
     "motors_names": [
         "left_shoulder_pitch_joint_mctrl",
         "left_shoulder_roll_joint_mctrl",
@@ -123,3 +124,13 @@ def camera_map(*, enable_wrist_l: bool = False) -> dict:
     if enable_wrist_l:
         mapping["camera_wrist_l_color"] = ("cam_wrist_l", 7070)
     return mapping
+
+
+def build_default_joint_values() -> dict[str, float]:
+    """环境 reset 使用的关节位置。有 ``init_joint_values`` 时优先，否则用 ``neutral_joint_values``。"""
+    values: dict[str, float] = {}
+    for arm in (l_arm, r_arm):
+        qpos = arm.get("init_joint_values", arm["neutral_joint_values"])
+        for name, value in zip(arm["joint_names"], qpos):
+            values[name] = value
+    return values

@@ -23,6 +23,13 @@ class ControllerArm(AbstractController):
             controller: robosuite控制器，这里可以是osc控制器或者Ik控制器
         '''
         self.controller = controller
+        self._integral_b = np.zeros(3, dtype=np.float64)
+        self._integral_active = False
+        self._integral_ki = 0.0
+        self._integral_max = 0.0
+        self._integral_axis_mask = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+        self._integral_log_every = 0
+        self._integral_step = 0
 
         super().__init__(env, ctrl_name, init_ctrl, base_body)
         self.ee_name = controller.eef_name
@@ -33,6 +40,47 @@ class ControllerArm(AbstractController):
         self.action = np.zeros(6, dtype=np.float32)
         self.action[0:3] = self.initial_ee_pos
         self.action[3:6] = R.from_quat(self.initial_ee_quat[[1, 2, 3, 0]]).as_rotvec()
+
+    def configure_integral(
+        self,
+        ki: float,
+        max_bias: float,
+        axes: str = "z",
+        log_every: int = 0,
+    ) -> None:
+        """配置外环积分增益、限幅与轴掩码。"""
+        self._integral_ki = float(max(0.0, ki))
+        self._integral_max = float(max(0.0, max_bias))
+        axes_l = (axes or "z").lower()
+        mask = np.zeros(3, dtype=np.float64)
+        if "x" in axes_l:
+            mask[0] = 1.0
+        if "y" in axes_l:
+            mask[1] = 1.0
+        if "z" in axes_l:
+            mask[2] = 1.0
+        if not np.any(mask):
+            mask[2] = 1.0
+        self._integral_axis_mask = mask
+        self._integral_log_every = max(0, int(log_every))
+
+    def enable_integral(self, active: bool) -> None:
+        self._integral_active = bool(active)
+
+    def reset_integral(self) -> None:
+        self._integral_b[:] = 0.0
+        self._integral_step = 0
+
+    def get_integral_bias_b(self) -> np.ndarray:
+        return np.asarray(self._integral_b, dtype=np.float64).copy()
+
+    def _query_actual_ee_b(self):
+        try:
+            ee_b = self.env.query_site_pos_and_quat_B([self.ee_name], [self.base_link])
+            return np.asarray(ee_b[self.ee_name]["xpos"], dtype=np.float64)
+        except Exception as exc:
+            orca_logger.warning(f"query ee pose failed: {exc}")
+            return None
 
     @override
     def reset(self):
@@ -53,6 +101,7 @@ class ControllerArm(AbstractController):
         # reflect the current physics state (after mj_forward), not stale values.
         self.controller.update()
         self.controller.reset_goal()
+        self.reset_integral()
 
     @override
     def run_controller(self) -> dict[int, float]:
@@ -83,10 +132,29 @@ class ControllerArm(AbstractController):
         @param:
             position: 位置
         '''
+        position_b = np.asarray(position, dtype=np.float64).reshape(3)
+        corrected_b = position_b
+        if self._integral_active and self._integral_ki > 0.0 and self._integral_max > 0.0:
+            actual_b = self._query_actual_ee_b()
+            if actual_b is not None:
+                err_b = (position_b - actual_b) * self._integral_axis_mask
+                self._integral_b = np.clip(
+                    self._integral_b + self._integral_ki * err_b,
+                    -self._integral_max,
+                    self._integral_max,
+                )
+                corrected_b = position_b + self._integral_b
+                self._integral_step += 1
+                if self._integral_log_every > 0 and self._integral_step % self._integral_log_every == 0:
+                    orca_logger.info(
+                        f"integral step={self._integral_step} "
+                        f"bias={self._integral_b.round(4).tolist()}"
+                    )
+            else:
+                corrected_b = position_b + self._integral_b
         base_body_xpos, _, base_body_xquat = self.env.get_body_xpos_xmat_xquat([self.base_link])
         base_body_rot = R.from_quat(base_body_xquat[[1, 2, 3, 0]])
-        position = base_body_rot.apply(position) + base_body_xpos
-        self.action[:3] = position
+        self.action[:3] = base_body_rot.apply(corrected_b) + base_body_xpos
 
     def update_action_axisangle(self, quat: np.array):
         '''

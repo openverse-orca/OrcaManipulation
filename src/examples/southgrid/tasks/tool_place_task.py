@@ -4,6 +4,7 @@ from __future__ import annotations
 import numpy as np
 from typing_extensions import override
 
+from examples.southgrid.g1_omnipicker.tool_slots import TOOL_BODY_JOINT_NAMES
 from scene.scene_manager import SceneManager
 from task.abstract_task import AbstractTask
 
@@ -17,13 +18,6 @@ _ROBOT_BODY_KEYWORDS = (
     "palm",
     "finger",
     "hand",
-)
-_TOOL_BODY_JOINT_NAMES = (
-    "screwdriver_bodyjoint",
-    "pliers_bodyjoint",
-    "wrench_bodyjoint",
-    "hammer_bodyjoint",
-    "tape_bodyjoint",
 )
 
 
@@ -49,7 +43,7 @@ def _is_robot_body(name: str) -> bool:
 
 
 def _match_tool_body(name: str) -> str | None:
-    for tool in _TOOL_BODY_JOINT_NAMES:
+    for tool in TOOL_BODY_JOINT_NAMES:
         if _body_name_matches(name, tool):
             return tool
     return None

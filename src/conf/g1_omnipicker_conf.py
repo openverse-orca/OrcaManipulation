@@ -9,6 +9,7 @@ l_arm = {
         "idx27_arm_l_joint7",
     ],
     "neutral_joint_values": [-1.42, 0.88, 1.54, -1.48, 0, 0, 0],
+    "init_joint_values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     "motors_names": [
         "idx21_arm_l_joint1_mctrl",
         "idx22_arm_l_joint2_mctrl",
@@ -114,3 +115,13 @@ def camera_map(*, enable_wrist_l: bool = False) -> dict:
     if enable_wrist_l:
         mapping["camera_wrist_l_color"] = ("cam_wrist_l", 7070)
     return mapping
+
+
+def build_default_joint_values() -> dict[str, float]:
+    """环境 reset 使用的关节位置。有 ``init_joint_values`` 时优先，否则用 ``neutral_joint_values``。"""
+    values: dict[str, float] = {}
+    for arm in (l_arm, r_arm):
+        qpos = arm.get("init_joint_values", arm["neutral_joint_values"])
+        for name, value in zip(arm["joint_names"], qpos):
+            values[name] = value
+    return values

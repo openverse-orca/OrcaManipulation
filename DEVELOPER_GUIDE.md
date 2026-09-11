@@ -37,7 +37,9 @@
 - `examples/dataCollection/data_collection_scripted.py` - 脚本化采集（HDF5）
 - `examples/dataCollection/data_collection_scripted_lerobot.py` - 脚本化采集（LeRobot）
 - `examples/dataCollection/data_collection_aug.py` - 数据增强示例
-- `examples/dataCollection/data_collection_infer.py` - 在线推理示例
+- `examples/inference/infer_lerobot.py` - 在线推理示例
+- `examples/dataCollection/data_collection_replay_lerobot.py` - LeRobot 回放
+- `trajectory/segmented_trajectory.py` - 分段末端轨迹构建
 
 ---
 
@@ -161,7 +163,20 @@ manager.run()
 
 通用入口：`data_collection_tele_lerobot.py --lerobot_out ...`。
 
+常用参数：
+
+- `--resume`：目标目录已存在时续采；未指定且目录已存在时会覆盖。
+- `--steps_per_frame`：回放时每帧动作保持的控制步数；`0` 表示按数据集 fps 与 `env.dt` 推算。
+- `--max_steps` / `--action_repeat`：推理单集最大控制步数，以及同一动作连续下发的步数。
+- `--kp`：OSC 阻抗刚度；`0` 沿用 `osc_pose`。未指定时 `g1_omnipicker` 为 `220`。
+- `--dls_lambda` / `--dls_sigma_th`：操作空间 DLS；`0` 为伪逆。未指定时 `g1_pick` 为 `0.23` / `0.12`。
+- `--null_kp`：零空间关节复原增益，默认 `10`。
+- `--track_ki` / `--track_clamp`：脚本化采集末端位置积分补偿。未指定时 `g1_pick` 为 `0.02` / `0.08`。
+- `--grasp_integral`：近桌时对右臂末端位置做外环积分，可配 `--grasp_integral_ki` / `--grasp_integral_max` / `--grasp_integral_axes` / `--grasp_integral_z_below`。
+
 约定与目录结构见 [docs/lerobot_dataset.md](docs/lerobot_dataset.md)；相机端口见 [docs/cameras_and_video.md](docs/cameras_and_video.md)。
+
+`controllers/pose_pin.py` 通过包装仿真步进钉住关节，目前依赖仿真器内部模型状态；调用方从 conf 传入关节表。
 
 ### 1c. 策略 Schema
 

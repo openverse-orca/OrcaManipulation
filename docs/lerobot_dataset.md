@@ -47,4 +47,4 @@
 pip install --no-deps --no-build-isolation ./third_party/lerobot
 ```
 
-相机端口与环境相机名属于机器人/部署配置，见各 `conf/*.py` 的 `camera_map()`，以及 [cameras_and_video.md](cameras_and_video.md)。
+相机端口与环境相机名属于机器人/部署配置，见各 `conf/*.py` 的 `camera_map()`，以及 [cameras_and_video.md](cameras_and_video.md)。在线推理入口见 [examples/inference/README.md](../src/examples/inference/README.md)。

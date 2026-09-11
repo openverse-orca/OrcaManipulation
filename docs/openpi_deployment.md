@@ -24,7 +24,7 @@ eval 推理脚本（本仓库）
 
 两套环境**不共享** Python 虚拟环境：采集与推理客户端使用本仓库的 Conda 环境，训练与推理服务使用 openpi 的 uv 环境。
 
-比赛任务的相机端口、prompt 与布局见 `src/examples/southgrid/docs/`。
+比赛任务的相机端口、prompt 与布局见 `src/examples/southgrid/docs/`。本仓库推理客户端见 [examples/inference/README.md](../src/examples/inference/README.md)。
 
 ---
 
@@ -374,7 +374,7 @@ server listening on 0.0.0.0:8010
 
 ### 9.1 安装 openpi-rtc
 
-请在运行推理服务的那台机器上，将交付的 `openpi-rtc/` 安装到 openpi 环境中：
+请在运行推理服务的那台机器上，将 `openpi-rtc/` 安装到 openpi 环境中：
 
 ```bash
 # 将 openpi-rtc 目录拷贝到 openpi 的 packages/ 下

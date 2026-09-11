@@ -16,13 +16,13 @@ from controllers.controller_2f85 import Controller2F85
 from controllers.controller_2f85_reverse import Controller2F85Reverse
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from devices.scripted_device import ScriptedTrajectoryDevice
-from examples.dataCollection.data_collection_scripted import (
-    build_segmented_trajectory,
-    load_pose_spec_from_file,
-)
 from scene.scene_manager import SceneManager
 from sensor.camera_stream import select_camera_map
 from task.abstract_task import EmptyTask
+from trajectory.segmented_trajectory import (
+    build_segmented_trajectory,
+    load_pose_spec_from_file,
+)
 
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
 
@@ -64,7 +64,35 @@ def main():
     parser.add_argument("--camera_source", type=str, default="websocket", choices=["websocket", "mp4"])
     parser.add_argument("--max_episodes", type=int, default=1)
     parser.add_argument("--save_policy", type=str, default="on_success", choices=["on_success", "always"])
+    parser.add_argument("--resume", action="store_true", help="目标目录已存在时续采")
     parser.add_argument("--orcagym_addr", type=str, default="localhost:50051")
+    parser.add_argument(
+        "--kp",
+        type=float,
+        default=None,
+        help="OSC 阻抗刚度；0 沿用 osc_pose；未指定时 g1_omnipicker 为 220",
+    )
+    parser.add_argument(
+        "--dls_lambda",
+        type=float,
+        default=None,
+        help="DLS 阻尼 λ；0 为伪逆；未指定时 g1_pick 为 0.23",
+    )
+    parser.add_argument(
+        "--dls_sigma_th",
+        type=float,
+        default=None,
+        help="变 λ 奇异值阈值；未指定时 g1_pick 为 0.12",
+    )
+    parser.add_argument("--null_kp", type=float, default=10.0, help="零空间关节复原增益")
+    parser.add_argument("--track_ki", type=float, default=None, help="末端位置外环积分增益")
+    parser.add_argument("--track_clamp", type=float, default=0.08, help="积分补偿限幅，单位米")
+    parser.add_argument("--grasp_integral", action="store_true", help="近桌时对右臂末端位置做外环积分")
+    parser.add_argument("--grasp_integral_ki", type=float, default=0.2)
+    parser.add_argument("--grasp_integral_max", type=float, default=0.01)
+    parser.add_argument("--grasp_integral_axes", type=str, default="z")
+    parser.add_argument("--grasp_integral_log_every", type=int, default=0)
+    parser.add_argument("--grasp_integral_z_below", type=float, default=0.25)
     args = parser.parse_args()
 
     spec = load_pose_spec_from_file(args.pose_file)
@@ -98,23 +126,30 @@ def main():
 
     raw_map = agent_conf.camera_map() if hasattr(agent_conf, "camera_map") else {}
     camera_map = select_camera_map(raw_map, args.cameras)
+    lerobot_root = os.path.abspath(os.path.expanduser(args.lerobot_out))
+    if os.path.exists(lerobot_root) and not args.resume:
+        orca_logger.warning(f"目标目录已存在，将覆盖: {lerobot_root}")
     data_storage = lerobot_cls(
         dataset_path=os.path.join(base_dir, "_lerobot_scratch", agent_name, args.level),
         repo_id=args.repo_id,
-        root=os.path.abspath(os.path.expanduser(args.lerobot_out)),
+        root=lerobot_root,
         fps=args.fps,
         camera_map=camera_map,
         camera_source=args.camera_source,
         task=args.task,
         clock=args.clock,
         robot_type=robot_type,
+        resume=args.resume,
     )
 
-    default_joint_values = {}
-    for joint_name, value in zip(agent_conf.l_arm["joint_names"], agent_conf.l_arm["neutral_joint_values"]):
-        default_joint_values[joint_name] = value
-    for joint_name, value in zip(agent_conf.r_arm["joint_names"], agent_conf.r_arm["neutral_joint_values"]):
-        default_joint_values[joint_name] = value
+    if hasattr(agent_conf, "build_default_joint_values"):
+        default_joint_values = agent_conf.build_default_joint_values()
+    else:
+        default_joint_values = {}
+        for joint_name, value in zip(agent_conf.l_arm["joint_names"], agent_conf.l_arm["neutral_joint_values"]):
+            default_joint_values[joint_name] = value
+        for joint_name, value in zip(agent_conf.r_arm["joint_names"], agent_conf.r_arm["neutral_joint_values"]):
+            default_joint_values[joint_name] = value
 
     with open(os.path.join(base_dir, args.task_config), "r", encoding="utf-8") as f:
         config = load(f, Loader=Loader)
@@ -138,6 +173,9 @@ def main():
     env = manager.env
     env.reset()
     manager.set_disable_actuator_group([agent_conf.positions_group])
+    kp, dls_lambda, dls_sigma_th, null_kp = controllers.resolve_osc_tuning(agent_name, args)
+    controllers.install_osc_patches(dls_lambda=dls_lambda, dls_sigma_th=dls_sigma_th, null_kp=null_kp)
+    track_ki = controllers.resolve_track_ki(agent_name, args)
 
     l_arm = controllers.create_arm_osc_controller(
         env,
@@ -177,13 +215,27 @@ def main():
     )
     for ctrl in (l_arm, r_arm, l_grip, r_grip):
         manager.add_controller(ctrl)
+    controllers.apply_osc_impedance(l_arm, r_arm, kp=kp)
+    grasp_binder = controllers.setup_grasp_integral(r_arm, args)
 
     manager.set_task(EmptyTask(env))
     task_status = controllers.add_task_status_autostart_controller(manager, env, agent_conf.base_body)
 
     def prepare_episode():
         traj = build_segmented_trajectory(env, agent_conf, segments, g_open, g_close)
-        manager.set_device(ScriptedTrajectoryDevice(l_arm, r_arm, l_grip, r_grip, task_status, *traj))
+        manager.set_device(
+            ScriptedTrajectoryDevice(
+                l_arm,
+                r_arm,
+                l_grip,
+                r_grip,
+                task_status,
+                *traj,
+                track_ki=track_ki,
+                track_clamp=float(args.track_clamp),
+                grasp_binder=grasp_binder,
+            )
+        )
 
     manager.add_pre_episode_callback(prepare_episode)
     manager.save_policy = args.save_policy

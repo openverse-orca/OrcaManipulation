@@ -6,9 +6,6 @@ from controllers.controllers import add_joint_hold_controller
 from controllers.pose_pin import PinJointSpec, pin_joints
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 
-_L_INIT_JOINT_VALUES = [0.0, 0.127, 0.0, 1.5708, 0.0, 0.0, 0.0]
-_R_INIT_JOINT_VALUES = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-
 
 def lock_waist_joints(manager: DataCollectionManager, env):
     """注册腰部姿态保持控制器。"""

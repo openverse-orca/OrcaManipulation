@@ -57,10 +57,26 @@ device.bind("r_grip_ctrl", r_grip.update_ctrl)
 device.set_raw_action(model_action)
 ```
 
-比赛任务若要锁定某条臂或加积分门控，可在示例层包一层 Device（见 `examples/southgrid/inference/` 工具整理脚本），不要改通用 `PolicyDevice`。
+不要改通用 `PolicyDevice` 来做机型约束。需要钉关节时，由业务 wrapper 把钩子传给通用入口的 `main(constraints_hook=...)`，再开 `--pin_joints`。近桌外环积分走 `--grasp_integral`，由 `controllers.setup_grasp_integral` 包一层位置回调。
+
+## 通用入口
+
+装配入口是 `src/examples/inference/infer_lerobot.py`，机型注册在 `src/examples/inference/agents.py`。当前可用 `openloong` / `tiangong2` / `g1_omnipicker` / `g1_pick`。
+
+```bash
+cd src/examples/inference
+python infer_lerobot.py \
+  --agent_name g1_omnipicker \
+  --level default \
+  --task_config ../southgrid/configs/example.yaml \
+  --host 127.0.0.1 --port 8010 \
+  --prompt "按红色按钮"
+```
+
+比赛任务的 prompt 与布局注入见 `src/examples/southgrid/inference/`。完整参数表见 [examples/inference/README.md](../src/examples/inference/README.md)。
 
 ## Manager 模式
 
-推理循环把 `manager.mode` 设为 `DataCollectionManager.DataCollectionMode.INFERENCE`，UI 文案用 `inference_ui_message`。
+推理循环把 `manager.mode` 设为 `DataCollectionManager.DataCollectionMode.INFERENCE`，UI 文案用 `inference_ui_message`。控制周期默认按 `real_time_step` 补齐，可用 `manager.realtime_pacing = False` 或入口的 `--no_realtime` 关闭。
 
 训练与部署服务端流程见 [openpi_deployment.md](openpi_deployment.md)。

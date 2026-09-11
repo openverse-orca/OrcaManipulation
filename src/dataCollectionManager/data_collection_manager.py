@@ -64,6 +64,8 @@ class DataCollectionManager:
         self.time_step = time_step
         self.frame_skip = frame_skip
         self.real_time_step = time_step * frame_skip
+        # 按 real_time_step 补齐控制周期
+        self.realtime_pacing = True
         self.aug_count = max(1, int(aug_count))
         self.scene_manager: SceneManager = scene_manager
         self.env : OrcaGymLocalEnv = self.create_env(agent_name, env_name, entry_point, default_joint_values, obs_callback, env_index, max_episode_steps, frame_skip, time_step, orcagym_addr, **kwargs)
@@ -473,9 +475,9 @@ class DataCollectionManager:
         episode_count = 0
         if self.touch_sensor_names:
             self.touch_sensor = TouchSensorVisualizer()
-        if self.data_storage is not None:
-            self.data_storage.open_capture_session(self.env)
         try:
+            if self.data_storage is not None:
+                self.data_storage.open_capture_session(self.env)
             while not self._shutdown_requested:
                 self.env.reset()
                 # sleep0.1秒等待模拟器重置完成
@@ -789,7 +791,7 @@ class DataCollectionManager:
 
             elapsed_time = time.perf_counter() - t0
             sleep_dur = self.real_time_step - elapsed_time
-            if sleep_dur > 0:
+            if self.realtime_pacing and sleep_dur > 0:
                 time.sleep(sleep_dur)
             if self._bench_enabled and self._bench_steps:
                 self._bench_steps[-1]["sleep_ms"] = round(max(0, sleep_dur) * 1000, 3)

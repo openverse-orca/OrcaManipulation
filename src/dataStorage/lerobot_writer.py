@@ -53,7 +53,7 @@ def set_logger(logger) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 动态导入 lerobot（仅在 orcalab_lerobot 环境中可用）
+# 动态导入 lerobot（需已安装 third_party/lerobot）
 # ---------------------------------------------------------------------------
 
 def _import_lerobot_dataset():
@@ -67,8 +67,8 @@ def _import_lerobot_dataset():
         except Exception:
             pass
     raise ImportError(
-        "无法导入 LeRobotDataset。请在 orcalab_lerobot 环境中运行，"
-        "并确认已安装 lerobot>=0.3.0。"
+        "无法导入 LeRobotDataset。请激活 orcalab_lerobot 环境，"
+        "并确认已安装 third_party/lerobot。"
     )
 
 

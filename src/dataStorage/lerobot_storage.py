@@ -95,7 +95,7 @@ class LeRobotSimSyncMixin:
 
     def open_capture_session(self, env: "OrcaGymLocalEnv") -> None:
         """拉起相机、创建 writer，使后续 collection_data/save_data 可直接使用。"""
-        if not self._lr_cfg:
+        if self._lr_session_open or not self._lr_cfg:
             return
         from sensor.camera_stream import bring_up_cameras, probe_camera_hw
 
@@ -156,7 +156,7 @@ class LeRobotSimSyncMixin:
         self._lr_session_open = True
 
     def close_capture_session(self, env: "OrcaGymLocalEnv") -> None:
-        """关闭相机、等待编码并释放 writer。"""
+        """关闭相机、等待编码并释放 writer。可重复调用。"""
         from sensor.camera_stream import close_cameras
 
         if self._lr_session_video_started:

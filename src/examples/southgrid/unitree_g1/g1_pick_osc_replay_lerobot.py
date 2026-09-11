@@ -12,13 +12,15 @@ if project_root not in sys.path:
 
 from conf import g1_pick_osc_conf as agent_conf
 from controllers import controllers
+from controllers.controller_2f85_reverse import Controller2F85Reverse
 from dataCollectionManager.data_collection_manager import DataCollectionManager
-from devices.lerobot_replay_device import LeRobotReplayDevice, load_episode_actions, scan_episode_parquets
-from examples.southgrid.unitree_g1.g1_pick_constraints import (
-    _L_INIT_JOINT_VALUES,
-    _R_INIT_JOINT_VALUES,
-    pin_all_joints,
+from devices.lerobot_replay_device import (
+    LeRobotReplayDevice,
+    load_episode_actions,
+    resolve_steps_per_frame,
+    scan_episode_parquets,
 )
+from examples.southgrid.unitree_g1.g1_pick_constraints import pin_all_joints
 from orca_gym.log.orca_log import get_orca_logger
 from policy.dual_arm_schema import g1_pick_osc_schema
 from scene.scene_manager import SceneManager
@@ -45,13 +47,17 @@ def main():
     parser.add_argument("--lerobot_out", required=True)
     parser.add_argument("--episode_index", type=int, default=0)
     parser.add_argument("--agent_name", default="g1_pick")
+    parser.add_argument(
+        "--steps_per_frame",
+        type=int,
+        default=0,
+        help="每帧动作保持的控制步数；0 表示按数据集 fps 与 env.dt 推算",
+    )
     parser.add_argument("--orcagym_addr", default="localhost:50051")
+    controllers.add_osc_tuning_args(parser)
     args = parser.parse_args()
 
-    default_joint_values = {
-        **dict(zip(agent_conf.l_arm["joint_names"], _L_INIT_JOINT_VALUES)),
-        **dict(zip(agent_conf.r_arm["joint_names"], _R_INIT_JOINT_VALUES)),
-    }
+    default_joint_values = agent_conf.build_default_joint_values()
     with open(os.path.abspath(os.path.join(base_dir, args.task_config)), "r", encoding="utf-8") as f:
         config = load(f, Loader=Loader)
     scene_manager = SceneManager(args.orcagym_addr, config=config)
@@ -71,6 +77,8 @@ def main():
     env.reset()
     pin_all_joints(env, args.agent_name)
     manager.set_disable_actuator_group([agent_conf.positions_group])
+    kp, dls_lambda, dls_sigma_th, null_kp = controllers.resolve_osc_tuning(args.agent_name, args)
+    controllers.install_osc_patches(dls_lambda=dls_lambda, dls_sigma_th=dls_sigma_th, null_kp=null_kp)
     l_arm = controllers.create_arm_osc_controller(
         env, agent_conf.l_arm, agent_conf.base_body,
         [env.actuator(n) for n in agent_conf.l_arm["motors_names"]],
@@ -81,22 +89,31 @@ def main():
         [env.actuator(n) for n in agent_conf.r_arm["motors_names"]],
         {env.actuator(n): v for n, v in zip(agent_conf.r_arm["motors_names"], agent_conf.r_arm["motors_init_ctrl"])},
     )
+    grip_type = Controller2F85Reverse.ControllerType.DATA
     l_grip = controllers.create_gripper_2f85_reverse_controller(
         env, agent_conf.gripper_l, agent_conf.base_body,
         [env.actuator(n) for n in agent_conf.gripper_l["actuator_names"]],
         {env.actuator(n): v for n, v in zip(agent_conf.gripper_l["actuator_names"], agent_conf.gripper_l["init_ctrl"])},
+        grip_type,
     )
     r_grip = controllers.create_gripper_2f85_reverse_controller(
         env, agent_conf.gripper_r, agent_conf.base_body,
         [env.actuator(n) for n in agent_conf.gripper_r["actuator_names"]],
         {env.actuator(n): v for n, v in zip(agent_conf.gripper_r["actuator_names"], agent_conf.gripper_r["init_ctrl"])},
+        grip_type,
     )
     for ctrl in (l_arm, r_arm, l_grip, r_grip):
         manager.add_controller(ctrl)
+    controllers.apply_osc_impedance(l_arm, r_arm, kp=kp)
     manager.set_task(EmptyTask(env))
     task_status = controllers.add_task_status_autostart_controller(manager, env, agent_conf.base_body)
+    dataset_dir = os.path.abspath(os.path.expanduser(args.lerobot_out))
+    steps_per_frame = resolve_steps_per_frame(dataset_dir, env.dt, args.steps_per_frame)
     device = LeRobotReplayDevice(
-        g1_pick_osc_schema(), load_episode_actions(files[args.episode_index]), task_status
+        g1_pick_osc_schema(),
+        load_episode_actions(files[args.episode_index]),
+        task_status,
+        steps_per_frame,
     )
     device.bind("l_pos_b", l_arm.update_action_position)
     device.bind("l_quat_b", l_arm.update_action_axisangle)

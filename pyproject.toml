@@ -16,7 +16,7 @@ inference = []
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["envs*", "examples*", "scene*", "conf*", "controllers*", "dataCollectionManager*", "dataStorage*", "devices*", "task*", "sensor*", "policy*", "utils*"]
+include = ["envs*", "examples*", "scene*", "conf*", "controllers*", "dataCollectionManager*", "dataStorage*", "devices*", "task*", "sensor*", "policy*", "trajectory*"]
 
 [tool.ruff]
 line-length = 120
@@ -47,9 +47,10 @@ select = ["E", "F", "W", "I", "SLF001"]
 # 示例脚本：先改 sys.path 再 import；约束模块访问仿真器内部状态
 "src/examples/dataCollection/data_collection_tele_lerobot.py" = ["E402"]
 "src/examples/dataCollection/data_collection_replay_lerobot.py" = ["E402"]
+"src/examples/dataCollection/data_collection_scripted.py" = ["E402"]
 "src/examples/dataCollection/data_collection_scripted_lerobot.py" = ["E402"]
-"src/examples/dataCollection/data_collection_infer.py" = ["E402"]
-"src/examples/southgrid/**" = ["E402", "SLF001", "F401", "F841"]
+"src/examples/inference/*.py" = ["E402"]
+"src/examples/southgrid/**" = ["E402", "SLF001", "F401", "F841", "I001"]
 
 
 

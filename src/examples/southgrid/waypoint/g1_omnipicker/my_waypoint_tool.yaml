@@ -1,0 +1,56 @@
+# 坐标系：g1_omnipicker base_body（body_link1）
+# steps / gripper_r 为占位值
+
+gripper_open: -0.8561
+gripper_close: 2
+
+segments:
+
+  # 路点 1  时间: 10:46:58  # 接近位（夹爪 open）
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.5112, -0.2085, 0.4545]
+    r_quat_b: [-0.4549, 0.0396, 0.4536, 0.7653]
+    gripper_r: open
+
+  # 路点 2  时间: 10:47:04  # 抓取闭爪位（夹爪 close）
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.5547, -0.2058, 0.1816]
+    r_quat_b: [-0.5641, 0.3540, 0.5218, 0.5331]
+    gripper_r: open
+
+  # 路点 3  时间: 10:47:07  # 放箱经由1（夹爪 close）
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.5537, -0.2039, 0.1814]
+    r_quat_b: [-0.5359, 0.3596, 0.4996, 0.5778]
+    gripper_r: close
+
+  # 路点 4  时间: 10:47:10  # 放箱经由2（夹爪 close）
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.6615, -0.1548, 0.4369]
+    r_quat_b: [-0.3014, -0.0543, 0.5475, 0.7787]
+    gripper_r: close
+
+  # 路点 5  时间: 10:47:13  # 工具箱上方 / 入箱前位（夹爪 close）
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.6597, 0.1117, 0.4324]
+    r_quat_b: [-0.1744, -0.1650, 0.6198, 0.7472]
+    gripper_r: close
+
+  # 路点 6  时间: 10:47:19  # 箱上松开位（夹爪 open）
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.6276, 0.1566, 0.2676]
+    r_quat_b: [-0.1838, 0.0528, 0.6887, 0.6993]
+    gripper_r: close
+
+  # 路点 7  时间: 10:47:21
+  - steps: 300
+    l_hold: true
+    r_target_b: [0.6324, 0.1619, 0.3110]
+    r_quat_b: [-0.1421, 0.0286, 0.6810, 0.7178]
+    gripper_r: open

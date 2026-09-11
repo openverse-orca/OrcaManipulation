@@ -6,7 +6,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from examples.dataCollection import data_collection_infer
+from examples.inference import infer_lerobot
 
 
 def main():
@@ -19,10 +19,10 @@ def main():
         "--task_config",
         os.path.join(os.path.dirname(__file__), "../../configs/example.yaml"),
         "--prompt",
-        "press the button",
+        "按红色按钮",
         *sys.argv[1:],
     ]
-    data_collection_infer.main()
+    infer_lerobot.main()
 
 
 if __name__ == "__main__":
