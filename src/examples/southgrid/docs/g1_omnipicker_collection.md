@@ -2,9 +2,10 @@
 
 本文说明智元 G1 OmniPicker 的场景准备、脚本化/遥操作采集、回放与按键。框架层的 LeRobot 约定、相机拉起与策略接口见仓库 `docs/`：
 
-- [lerobot_dataset.md](../../../../docs/lerobot_dataset.md)
-- [cameras_and_video.md](../../../../docs/cameras_and_video.md)
-- [policy_inference.md](../../../../docs/policy_inference.md)
+- [lerobot/README.md](../../../../docs/lerobot/README.md)
+- [lerobot/dataset.md](../../../../docs/lerobot/dataset.md)
+- [lerobot/cameras_and_video.md](../../../../docs/lerobot/cameras_and_video.md)
+- [lerobot/policy_inference.md](../../../../docs/lerobot/policy_inference.md)
 
 在线推理见 [g1_omnipicker_inference.md](g1_omnipicker_inference.md)。
 
@@ -346,4 +347,4 @@ LeRobot v2.1 格式如下：
 
 **现象**：续采报错，或终端只见「手柄已连接」等连接提示，而无「正在采集」日志。**原因**：数据集未能成功加载。**处理**：请停止脚本并检查终端报错；或去掉 `--resume` 后重新采集。
 
-**现象**：脚本报模块找不到。**原因**：未激活正确的 conda 环境，或依赖未安装。**处理**：请确认已激活 `orcalab_lerobot`，并在仓库根目录重新执行 `bash scripts/install_runtime.sh`。
+**现象**：脚本报模块找不到。**原因**：未激活正确的 conda 环境，或依赖未安装。**处理**：请确认已激活 `orcalab_lerobot`，并在仓库根目录重新执行 `bash docs/lerobot/install_runtime.sh`。

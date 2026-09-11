@@ -44,11 +44,26 @@ DataCollectionManager (核心调度器)
 
 ### 1. 安装依赖
 
+两套环境不要混用。
+
+**HDF5 旧入口**（`data_collection_tele.py` / `data_collection_aug.py`）继续用根目录 `requirements.txt`：
+
 ```bash
 pip install -r requirements.txt
-# LeRobot / OpenPI 客户端使用仓内 fork（打过补丁，不能只装上游包）
-pip install --no-deps --no-build-isolation ./third_party/lerobot
-pip install --no-deps --no-build-isolation ./third_party/openpi-client
+```
+
+**LeRobot 采集 / 回放 / 推理**（`*_lerobot.py`、`record_waypoints.py`、`examples/inference/`）用 [docs/lerobot/](docs/lerobot/README.md) 里的单独锁定文件，对齐 [SouthGrid](https://github.com/openverse-orca/SouthGrid) 运行时：
+
+```bash
+conda env create -f docs/lerobot/environment.yml
+conda activate orcalab_lerobot
+bash docs/lerobot/install_runtime.sh
+```
+
+需要 Ubuntu 22.04/24.04、Conda、Python 3.12.13、NVIDIA 驱动（采集视频要 RTX 40 系及以上的 AV1 NVENC）。装完检查：
+
+```bash
+python docs/lerobot/verify_environment.py
 ```
 
 ### 2. 数据采集相关脚本（同一目录）

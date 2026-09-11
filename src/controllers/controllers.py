@@ -146,7 +146,7 @@ def resolve_track_ki(agent_name: str, args) -> float:
 
 def add_grasp_integral_args(parser) -> None:
     parser.add_argument("--grasp_integral", action="store_true", help="近桌时对右臂末端位置做外环积分")
-    parser.add_argument("--grasp_integral_ki", type=float, default=0.2)
+    parser.add_argument("--grasp_integral_ki", type=float, default=0.22)
     parser.add_argument("--grasp_integral_max", type=float, default=0.01)
     parser.add_argument("--grasp_integral_axes", type=str, default="z")
     parser.add_argument("--grasp_integral_log_every", type=int, default=0)
@@ -176,6 +176,8 @@ def apply_osc_impedance(*arms, kp: float) -> None:
         if controller is None or not hasattr(controller, "kp"):
             continue
         controller.kp = np.ones(6, dtype=np.float64) * kp_val
+        if hasattr(controller, "kd"):
+            controller.kd = 2.0 * np.sqrt(controller.kp)
         controller.kd = 2.0 * np.sqrt(controller.kp)
 
 

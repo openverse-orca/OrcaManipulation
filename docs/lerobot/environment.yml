@@ -1,0 +1,13 @@
+# LeRobot 采集 / 回放 / 推理环境。与根目录 requirements.txt（HDF5 旧入口）分开。
+# 请从新环境创建，不要更新已有环境。
+
+name: orcalab_lerobot
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # 以下版本已通过完整运行验证。
+  - defaults::python=3.12.13=h4d16e0c_1
+  - defaults::pip=26.0.1=pyhc872135_1
+  - conda-forge::numpy=2.2.6
+  - defaults::scipy=1.16.2

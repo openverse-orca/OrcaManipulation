@@ -15,7 +15,12 @@ from controllers import controllers
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from dataStorage.g1_lerobot_storage import G1PickOscLeRobotStorage
 from devices.abstract_device import PicoJoystickDevice
-from examples.southgrid.unitree_g1.g1_pick_constraints import pin_all_joints
+from examples.southgrid.unitree_g1.g1_pick_constraints import (
+    add_joint_strip_args,
+    attach_g1_pick_model,
+    filter_stripped_joints,
+    install_joint_strip,
+)
 from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
 from orca_gym.log.orca_log import get_orca_logger
 from scene.scene_manager import SceneManager

@@ -1,6 +1,6 @@
 # 宇树 G1 · 数据采集与回放
 
-本文说明宇树 G1 的相机配置、Pico 遥操作、工具/按钮脚本化采集、回放与按键。通用数据链路见 [lerobot_dataset.md](../../../../docs/lerobot_dataset.md) 与 [cameras_and_video.md](../../../../docs/cameras_and_video.md)。姿态约束在 `g1_pick_constraints.py`，采集 / 回放 / 推理入口都调用它。在线推理见 [examples/inference/README.md](../../inference/README.md)。
+本文说明宇树 G1 的相机配置、Pico 遥操作、工具/按钮脚本化采集、回放与按键。通用数据链路见 [dataset.md](../../../../docs/lerobot/dataset.md) 与 [cameras_and_video.md](../../../../docs/lerobot/cameras_and_video.md)。姿态约束在 `g1_pick_constraints.py`，采集 / 回放 / 推理入口都调用它。在线推理见 [examples/inference/README.md](../../inference/README.md)。
 
 ---
 
@@ -398,4 +398,4 @@ python eval_g1_pick_lerobot.py --host 127.0.0.1 --port 8010 --prompt "整理工�
 
 **现象**：视频编码失败或报找不到 `av1_nvenc`。 **处理**：确认 NVIDIA GPU 和驱动支持 AV1 NVENC，并使用仓库安装脚本配置的 PyAV/FFmpeg 环境。
 
-**现象**：脚本报模块找不到。 **处理**：确认已激活 `orcalab_lerobot`，并在仓库根目录重新执行 `bash scripts/install_runtime.sh`。
+**现象**：脚本报模块找不到。 **处理**：确认已激活 `orcalab_lerobot`，并在仓库根目录重新执行 `bash docs/lerobot/install_runtime.sh`。

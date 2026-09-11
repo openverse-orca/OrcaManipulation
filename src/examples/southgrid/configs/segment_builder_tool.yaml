@@ -1,0 +1,15 @@
+# 与 orca_m/SouthGrid 工具脚本 CLI 默认一致（采集帧，fps=20 时 ×10 成控制步）
+# 不是 _build_tool_segments 函数签名里那组更大的数
+
+builder: tool
+safe_z: 0.50
+steps_transit: 50
+steps_descend: 30
+steps_grasp: 35
+steps_settle: 30
+steps_lift: 35
+steps_place_via: 45
+steps_to_box: 50
+steps_release: 45
+steps_release_settle: 20
+steps_lift_after: 15

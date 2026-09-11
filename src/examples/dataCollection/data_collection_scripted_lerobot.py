@@ -9,7 +9,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from orca_gym.log.orca_log import get_orca_logger
-from yaml import Loader, load
+from yaml import Loader, load, safe_load
 
 from controllers import controllers
 from controllers.controller_2f85 import Controller2F85
@@ -19,6 +19,11 @@ from devices.scripted_device import ScriptedTrajectoryDevice
 from scene.scene_manager import SceneManager
 from sensor.camera_stream import select_camera_map
 from task.abstract_task import EmptyTask
+from trajectory.segment_builder import (
+    BUILDER_NAMES,
+    collect_button_contacts,
+    get_segment_builder,
+)
 from trajectory.segmented_trajectory import (
     build_segmented_trajectory,
     load_pose_spec_from_file,
@@ -54,7 +59,20 @@ def main():
         help="机器人型号",
     )
     parser.add_argument("--task_config", type=str, required=True, help="任务配置文件")
-    parser.add_argument("--pose_file", type=str, required=True, help="轨迹 YAML/JSON，需含 segments")
+    parser.add_argument("--pose_file", type=str, required=True, help="轨迹 YAML/JSON；逗号分隔多个文件时按文件分别编段再拼接")
+    parser.add_argument(
+        "--segment_builder",
+        type=str,
+        default=None,
+        choices=BUILDER_NAMES,
+        help="路点编段：none 原样播，tool / button 按任务展开；默认同 --segment_config 或 none",
+    )
+    parser.add_argument(
+        "--segment_config",
+        type=str,
+        default=None,
+        help="编段 YAML（builder 与步数等）；示例见 southgrid/configs/segment_builder_*.yaml",
+    )
     parser.add_argument("--lerobot_out", type=str, required=True, help="LeRobot 数据集输出目录")
     parser.add_argument("--repo_id", type=str, default="local/robot", help="LeRobot repo_id")
     parser.add_argument("--task", type=str, default="robot manipulation", help="写入 LeRobot 的任务描述")
@@ -88,19 +106,63 @@ def main():
     parser.add_argument("--track_ki", type=float, default=None, help="末端位置外环积分增益")
     parser.add_argument("--track_clamp", type=float, default=0.08, help="积分补偿限幅，单位米")
     parser.add_argument("--grasp_integral", action="store_true", help="近桌时对右臂末端位置做外环积分")
-    parser.add_argument("--grasp_integral_ki", type=float, default=0.2)
+    parser.add_argument("--grasp_integral_ki", type=float, default=0.22)
     parser.add_argument("--grasp_integral_max", type=float, default=0.01)
     parser.add_argument("--grasp_integral_axes", type=str, default="z")
     parser.add_argument("--grasp_integral_log_every", type=int, default=0)
     parser.add_argument("--grasp_integral_z_below", type=float, default=0.25)
     args = parser.parse_args()
 
-    spec = load_pose_spec_from_file(args.pose_file)
-    segments = spec.get("segments") or spec.get("waypoints")
-    if not isinstance(segments, list) or len(segments) == 0:
-        parser.error("pose_file 必须包含非空 segments")
-    g_open = float(spec.get("gripper_open", 0.0))
-    g_close = float(spec.get("gripper_close", 220.0))
+    pose_files = [p.strip() for p in args.pose_file.split(",") if p.strip()]
+    builder_cfg: dict = {}
+    if args.segment_config:
+        cfg_path = os.path.expanduser(args.segment_config)
+        if not os.path.isabs(cfg_path):
+            cfg_path = os.path.join(base_dir, cfg_path)
+        cfg_path = os.path.abspath(cfg_path)
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            loaded = safe_load(f) or {}
+        if not isinstance(loaded, dict):
+            parser.error("segment_config 根节点必须是 mapping")
+        builder_cfg = dict(loaded)
+    builder_name = args.segment_builder or builder_cfg.pop("builder", None) or "none"
+
+    pose_specs = []
+    g_open = g_close = None
+    for pf in pose_files:
+        spec = load_pose_spec_from_file(pf)
+        pose_specs.append(spec)
+        if g_open is None:
+            g_open = float(spec.get("gripper_open", 0.0))
+            g_close = float(spec.get("gripper_close", 220.0))
+
+    frame_skip = 5
+    time_step = 0.001
+    env_dt = time_step * frame_skip
+    steps_scale = max(1, int(round((1.0 / float(args.fps)) / env_dt))) if builder_name == "tool" else 1
+    try:
+        segment_builder = get_segment_builder(builder_name, steps_scale=steps_scale, **builder_cfg)
+    except ValueError as exc:
+        parser.error(str(exc))
+    orca_logger.info(f"segment_builder={segment_builder.name} steps_scale={segment_builder.steps_scale}")
+
+    static_segments: list[dict] = []
+    button_contacts: list[dict] = []
+    if segment_builder.name == "button":
+        button_contacts = collect_button_contacts(pose_specs)
+        if not button_contacts:
+            parser.error("button builder 需要 buttons.*.candidates 或 segments 接触点")
+    else:
+        for spec in pose_specs:
+            segs = spec.get("segments") or spec.get("waypoints")
+            if not isinstance(segs, list) or len(segs) == 0:
+                parser.error("pose_file 必须包含非空 segments")
+            try:
+                static_segments.extend(segment_builder.build(segs, spec))
+            except ValueError as exc:
+                parser.error(str(exc))
+        if not static_segments:
+            parser.error("编段后没有可播的 segments")
 
     agent_name = args.agent_name
     if agent_name == "openloong":
@@ -220,8 +282,18 @@ def main():
 
     manager.set_task(EmptyTask(env))
     task_status = controllers.add_task_status_autostart_controller(manager, env, agent_conf.base_body)
+    episode_cursor = {"i": 0}
 
     def prepare_episode():
+        if button_contacts:
+            contact = button_contacts[episode_cursor["i"] % len(button_contacts)]
+            episode_cursor["i"] += 1
+            prompt = contact.get("task")
+            if prompt and hasattr(data_storage, "set_task"):
+                data_storage.set_task(str(prompt))
+            segments = segment_builder.build([contact], pose_specs[0])
+        else:
+            segments = static_segments
         traj = build_segmented_trajectory(env, agent_conf, segments, g_open, g_close)
         manager.set_device(
             ScriptedTrajectoryDevice(

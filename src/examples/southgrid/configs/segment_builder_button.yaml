@@ -1,0 +1,9 @@
+# 按钮：一个接触点编成 4 段（后退接近 → 前推 → 保压 → 撤回）
+# 步数直接作为控制步，与 SouthGrid 按钮脚本一致
+
+builder: button
+approach_back: 0.12
+steps_approach: 250
+steps_push: 120
+steps_hold: 40
+steps_retract: 150

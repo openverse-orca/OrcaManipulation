@@ -14,7 +14,7 @@ obs → PolicySchema.build_state
 | `agents.py` | 机器人接口注册表：conf / storage / schema / 夹爪类型 |
 | `infer_lerobot.py` | 通用装配入口 |
 
-核心接口在 `src/policy/` 与 `src/devices/policy_device.py`，说明见 [docs/policy_inference.md](../../../docs/policy_inference.md)。
+核心接口在 `src/policy/` 与 `src/devices/policy_device.py`，说明见 [docs/lerobot/policy_inference.md](../../../docs/lerobot/policy_inference.md)。
 
 ## 已注册机型
 
@@ -29,7 +29,7 @@ obs → PolicySchema.build_state
 
 ## 直接运行
 
-需先启动 OrcaLab，并另开终端启动 OpenPI 策略服务（见 [openpi_deployment.md](../../../docs/openpi_deployment.md)）。
+需先按 [docs/lerobot/](../../../docs/lerobot/README.md) 装好运行时，再启动 OrcaLab，并另开终端启动 OpenPI 策略服务（见 [openpi_deployment.md](../../../docs/lerobot/openpi_deployment.md)）。
 
 ```bash
 conda activate orcalab_lerobot

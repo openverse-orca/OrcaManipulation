@@ -55,42 +55,20 @@ class ButtonPressTask(AbstractTask):
 
     def build_segments(
         self,
-        approach_back: float = 0.08,
+        approach_back: float = 0.12,
         g_close: float = 0.0,
         steps_approach: int = 250,
         steps_push: int = 120,
         steps_hold: int = 40,
         steps_retract: int = 150,
     ) -> list[dict]:
-        px, py, pz = self.target_b
-        approach_pos = [px - approach_back, py, pz]
-        return [
-            {
-                "steps": steps_approach,
-                "l_hold": True,
-                "r_target_b": approach_pos,
-                "r_quat_b": self.quat_b,
-                "gripper_l": "hold",
-                "gripper_r": g_close,
-            },
-            {
-                "steps": steps_push,
-                "l_hold": True,
-                "r_target_b": self.target_b,
-                "r_quat_b": self.quat_b,
-                "gripper_r": g_close,
-            },
-            {
-                "steps": steps_hold,
-                "l_hold": True,
-                "r_hold": True,
-                "gripper_r": g_close,
-            },
-            {
-                "steps": steps_retract,
-                "l_hold": True,
-                "r_target_b": approach_pos,
-                "r_quat_b": self.quat_b,
-                "gripper_r": g_close,
-            },
-        ]
+        from trajectory.segment_builder import ButtonSegmentBuilder
+
+        return ButtonSegmentBuilder(
+            approach_back=approach_back,
+            g_close=g_close,
+            steps_approach=steps_approach,
+            steps_push=steps_push,
+            steps_hold=steps_hold,
+            steps_retract=steps_retract,
+        ).build([{"r_target_b": self.target_b, "r_quat_b": self.quat_b}])

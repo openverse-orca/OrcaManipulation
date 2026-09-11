@@ -1,6 +1,6 @@
 # 智元 G1 OmniPicker · 在线推理
 
-本文说明按钮/工具任务的 OpenPI 在线推理。通用接口见 [policy_inference.md](../../../../docs/policy_inference.md) 与 [openpi_deployment.md](../../../../docs/openpi_deployment.md)。数据采集见 [g1_omnipicker_collection.md](g1_omnipicker_collection.md)。通用入口用法见 [examples/inference/README.md](../../inference/README.md)。
+本文说明按钮/工具任务的 OpenPI 在线推理。通用接口见 [policy_inference.md](../../../../docs/lerobot/policy_inference.md) 与 [openpi_deployment.md](../../../../docs/lerobot/openpi_deployment.md)。数据采集见 [g1_omnipicker_collection.md](g1_omnipicker_collection.md)。通用入口用法见 [examples/inference/README.md](../../inference/README.md)。
 
 ---
 
@@ -32,8 +32,8 @@
 
 1. 请在运行本项目的主机上启动 OrcaLab 7.3，并在 OrcaLab 的加载布局对话框中选择与任务对应的布局文件（`src/examples/southgrid/g1_omnipicker/g1_button.json` 或 `src/examples/southgrid/g1_omnipicker/g1_tool.json`）。
 2. 请按采集文档配置相机端口并启动仿真（`localhost:50051`）。
-3. 请确认已按仓库根目录 README 的「环境安装」一节执行 `bash scripts/install_runtime.sh`，并激活 `orcalab_lerobot`。
-4. 策略服务器需要独立的 **openpi uv 环境**。请先按 [策略服务部署](../../../../docs/openpi_deployment.md) 创建独立的 OpenPI 环境，并使用对应的策略配置和 checkpoint 启动服务。
+3. 请确认已按 [docs/lerobot/](../../../../docs/lerobot/README.md) 执行 `conda env create -f docs/lerobot/environment.yml` 与 `bash docs/lerobot/install_runtime.sh`，并激活 `orcalab_lerobot`。
+4. 策略服务器需要独立的 **openpi uv 环境**。请先按 [策略服务部署](../../../../docs/lerobot/openpi_deployment.md) 创建独立的 OpenPI 环境，并使用对应的策略配置和 checkpoint 启动服务。
 
 ---
 
@@ -43,7 +43,7 @@
 
 ### 1. 启动策略服务器
 
-请在运行本项目的主机上打开一个独立终端，进入 openpi 工作目录（完整说明见 [openpi_deployment.md § 8](../../../../docs/openpi_deployment.md#8-启动推理服务)）：
+请在运行本项目的主机上打开一个独立终端，进入 openpi 工作目录（完整说明见 [openpi_deployment.md § 8](../../../../docs/lerobot/openpi_deployment.md#8-启动推理服务)）：
 
 ```bash
 cd /path/to/openpi
@@ -101,7 +101,7 @@ python eval_g1_omnipicker_tool_lerobot.py \
 
 ### 1. 在 GPU 服务器上启动策略服务
 
-请先通过 SSH 登录远程 GPU 服务器，再在该服务器的终端中进入 openpi 工作目录（参考 [openpi_deployment.md § 8](../../../../docs/openpi_deployment.md#8-启动推理服务)）：
+请先通过 SSH 登录远程 GPU 服务器，再在该服务器的终端中进入 openpi 工作目录（参考 [openpi_deployment.md § 8](../../../../docs/lerobot/openpi_deployment.md#8-启动推理服务)）：
 
 ```bash
 cd /path/to/openpi
@@ -187,7 +187,7 @@ python eval_g1_omnipicker_tool_lerobot.py \
 
 ## 故障排查
 
-**现象**：找不到 `openpi_client`。**处理**：请激活 `orcalab_lerobot`，并在仓库根目录重新执行 `bash scripts/install_runtime.sh`。
+**现象**：找不到 `openpi_client`。**处理**：请激活 `orcalab_lerobot`，并在仓库根目录重新执行 `bash docs/lerobot/install_runtime.sh`。
 
 **现象**：相机超时。**处理**：请按采集文档重新配置相机端口，并确认 IsRecording 已勾选。
 

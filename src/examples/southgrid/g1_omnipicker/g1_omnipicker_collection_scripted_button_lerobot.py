@@ -18,8 +18,14 @@ from controllers.controller_2f85_reverse import Controller2F85Reverse
 from dataCollectionManager.data_collection_manager import DataCollectionManager
 from dataStorage.g1_lerobot_storage import G1OmniPickerLeRobotStorage
 from devices.scripted_device import ScriptedTrajectoryDevice
+from examples.southgrid.tasks.button_press_task import ButtonPressTask
+from trajectory.segment_builder import (
+    build_button_color_seq,
+    get_segment_builder,
+    parse_button_counts,
+    pick_button_contact,
+)
 from trajectory.segmented_trajectory import build_segmented_trajectory
-from examples.southgrid.tasks.button_press_task import COLOR_ORDER, ButtonPressTask
 from orca_gym.log.orca_log import get_orca_logger
 from scene.scene_manager import SceneManager
 from sensor.camera_stream import select_camera_map
@@ -46,21 +52,47 @@ def main():
     parser.add_argument("--lerobot_out", required=True)
     parser.add_argument("--repo_id", default="local/g1_button")
     parser.add_argument("--pose_file", default="pose_g1_button_candidates.yaml")
-    parser.add_argument("--counts", default="1,1,1,1", help="红,绿,黄,蓝 集数")
+    parser.add_argument(
+        "--segment_config",
+        default="../configs/segment_builder_button.yaml",
+        help="按钮编段配置",
+    )
+    parser.add_argument("--counts", default="1,1,1,1", help="红,绿,黄,蓝各集数")
+    parser.add_argument("--shuffle_seed", type=int, default=None)
     parser.add_argument("--fps", type=int, default=20)
-    parser.add_argument("--clock", choices=("sim", "wall"), default="sim")
+    parser.add_argument("--clock", choices=("sim", "wall"), default="wall")
     parser.add_argument("--cameras", default="head,wrist_r")
     parser.add_argument("--orcagym_addr", default="localhost:50051")
     controllers.add_osc_tuning_args(parser)
     args = parser.parse_args()
 
-    with open(os.path.join(base_dir, args.pose_file), "r", encoding="utf-8") as f:
+    pose_path = args.pose_file
+    if not os.path.isabs(pose_path):
+        pose_path = os.path.join(base_dir, pose_path)
+    with open(pose_path, "r", encoding="utf-8") as f:
         pose_spec = safe_load(f)
-    counts = {color: int(n) for color, n in zip(COLOR_ORDER, args.counts.split(","))}
-    color_seq = [color for color, n in counts.items() for _ in range(n)]
-    random.shuffle(color_seq)
+    builder_cfg: dict = {}
+    cfg_path = args.segment_config
+    if cfg_path:
+        if not os.path.isabs(cfg_path):
+            cfg_path = os.path.join(base_dir, cfg_path)
+        with open(os.path.abspath(cfg_path), "r", encoding="utf-8") as f:
+            loaded = safe_load(f) or {}
+        if isinstance(loaded, dict):
+            builder_cfg = dict(loaded)
+            builder_cfg.pop("builder", None)
+    counts = parse_button_counts(args.counts)
+    color_seq = build_button_color_seq(counts, args.shuffle_seed)
+    if not color_seq:
+        raise SystemExit("--counts 总集数为 0")
+    rng = random.Random(args.shuffle_seed)
     g_open = float(pose_spec.get("gripper_open", -0.8561))
     g_close = float(pose_spec.get("gripper_close", 2.0))
+    if "approach_back" not in builder_cfg and pose_spec.get("approach_back") is not None:
+        builder_cfg["approach_back"] = float(pose_spec["approach_back"])
+    builder_cfg.setdefault("g_close", g_close)
+    segment_builder = get_segment_builder("button", **builder_cfg)
+    orca_logger.info(f"按钮序列（共{len(color_seq)}集）: {' → '.join(color_seq)}")
 
     camera_map = select_camera_map(agent_conf.camera_map(), args.cameras)
     storage = G1OmniPickerLeRobotStorage(
@@ -127,10 +159,11 @@ def main():
     def prepare_episode():
         color = color_seq[cursor["i"] % len(color_seq)]
         cursor["i"] += 1
-        chosen = random.choice(pose_spec["buttons"][color]["candidates"])
-        task.set_target(color, chosen["r_target_b"], chosen["r_quat_b"], pose_spec["buttons"][color]["task"])
+        chosen = pick_button_contact(pose_spec["buttons"], color, rng)
+        task.set_target(color, chosen["r_target_b"], chosen["r_quat_b"], chosen.get("task"))
         storage.set_task(task.get_task_description())
-        traj = build_segmented_trajectory(env, agent_conf, task.build_segments(g_close=g_close), g_open, g_close)
+        segs = segment_builder.build([chosen], pose_spec)
+        traj = build_segmented_trajectory(env, agent_conf, segs, g_open, g_close)
         manager.set_device(ScriptedTrajectoryDevice(l_arm, r_arm, l_grip, r_grip, task_status, *traj))
 
     manager.add_pre_episode_callback(prepare_episode)

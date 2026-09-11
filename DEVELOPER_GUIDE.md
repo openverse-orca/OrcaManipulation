@@ -174,7 +174,7 @@ manager.run()
 - `--track_ki` / `--track_clamp`：脚本化采集末端位置积分补偿。未指定时 `g1_pick` 为 `0.02` / `0.08`。
 - `--grasp_integral`：近桌时对右臂末端位置做外环积分，可配 `--grasp_integral_ki` / `--grasp_integral_max` / `--grasp_integral_axes` / `--grasp_integral_z_below`。
 
-约定与目录结构见 [docs/lerobot_dataset.md](docs/lerobot_dataset.md)；相机端口见 [docs/cameras_and_video.md](docs/cameras_and_video.md)。
+约定与目录结构见 [docs/lerobot/dataset.md](docs/lerobot/dataset.md)；相机端口见 [docs/lerobot/cameras_and_video.md](docs/lerobot/cameras_and_video.md)。
 
 `controllers/pose_pin.py` 通过包装仿真步进钉住关节，目前依赖仿真器内部模型状态；调用方从 conf 传入关节表。
 
@@ -194,7 +194,7 @@ device.bind("r_pos_b", r_arm.update_action_position)
 device.set_raw_action(client.infer_action_chunk(state)[0])
 ```
 
-接口说明见 [docs/policy_inference.md](docs/policy_inference.md)。
+接口说明见 [docs/lerobot/policy_inference.md](docs/lerobot/policy_inference.md)。
 
 ---
 
@@ -785,7 +785,7 @@ with h5py.File("dataset/xxx/record/data.hdf5", "r") as f:
 - 参考实现: `src/dataStorage/openloong_data_storage.py`
 - 控制器示例: `src/controllers/`
 - 任务示例: `src/task/pick_place_task.py`
-- LeRobot / 推理 / 相机: `docs/lerobot_dataset.md`、`docs/policy_inference.md`、`docs/cameras_and_video.md`
+- LeRobot / 推理 / 相机: [docs/lerobot/](docs/lerobot/README.md)
 
 如有问题，请参考源码或提交 Issue。
 

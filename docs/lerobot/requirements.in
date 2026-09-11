@@ -1,0 +1,76 @@
+# Python 3.12 / Linux x86-64：LeRobot 采集、回放、推理的直接依赖。
+# 不要与根目录 requirements.txt（data_collection_tele.py HDF5）混用。
+#
+# 重新生成锁定文件（在本目录下）：
+#   uv pip compile requirements.in --constraint constraints.txt \
+#     --python-version 3.12 --python-platform x86_64-unknown-linux-gnu \
+#     --generate-hashes --emit-index-url --index-strategy unsafe-best-match \
+#     --no-emit-package numpy --no-emit-package scipy \
+#     --no-emit-package argparse --output-file requirements.txt
+#
+# NumPy and SciPy use the validated Conda builds and are therefore excluded from
+# the pip lock. Python 3.12 uses the standard-library argparse module.
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Build tools for the three repository-owned source distributions.
+setuptools==82.0.1
+wheel==0.47.0
+
+# Conda-owned numerical ABI (must already be present).
+numpy==2.2.6
+scipy==1.16.2
+
+# OrcaGym 26.7.3 runtime dependencies. OrcaGym itself is installed separately
+# with --no-deps so pip does not replace the Conda-owned NumPy/SciPy builds.
+aiofiles==25.1.0
+grpcio==1.66.1
+grpcio-tools==1.66.1
+gymnasium==1.2.1
+mujoco==3.7.0
+scipy-stubs==1.16.2
+
+# OrcaLab 26.7.3 desktop runtime dependencies not already supplied above.
+# Shared packages are resolved once at the versions validated for this runtime.
+#
+# fastmcp is pinned explicitly to keep environment installation reproducible.
+fastmcp==3.4.7
+pyside6==6.9.2
+aiohttp==3.13.1
+psutil==7.1.2
+requests==2.32.5
+filelock==3.29.0
+qasync==0.28.0
+tomli_w==1.2.0
+
+# LeRobot v2.1 dataset I/O used by this repository.
+av==17.0.1
+datasets==3.6.0
+huggingface-hub==0.34.4
+jsonlines==4.0.0
+packaging==26.0
+pillow==12.0.0
+pyarrow==24.0.0
+torch==2.7.1+cpu
+torchvision==0.22.1+cpu
+
+# Project runtime.
+h5py==3.16.0
+# Required by the OrcaGym RGB-D camera module and included in the resolved lock.
+matplotlib==3.10.7
+numba==0.65.1
+opencv-python==4.13.0.92
+pyyaml==6.0.3
+termcolor==3.3.0
+typing-extensions==4.15.0
+
+# Repository-owned OpenPI client runtime dependencies. Keep the full dependency
+# set explicit because install_runtime.sh installs the client with --no-deps.
+dm-tree==0.1.10
+msgpack==1.1.2
+websockets==16.0
+
+# OrcaLab 7.3 兼容依赖。本仓遥操作走 PicoJoystick，不安装 televuer。
+aiohttp-cors==0.8.1
+killport==1.2.0
+vuer==0.0.60

@@ -73,7 +73,7 @@ python infer_lerobot.py \
   --prompt "按红色按钮"
 ```
 
-比赛任务的 prompt 与布局注入见 `src/examples/southgrid/inference/`。完整参数表见 [examples/inference/README.md](../src/examples/inference/README.md)。
+比赛任务的 prompt 与布局注入见 `src/examples/southgrid/inference/`。完整参数表见 [examples/inference/README.md](../../src/examples/inference/README.md)。
 
 ## Manager 模式
 

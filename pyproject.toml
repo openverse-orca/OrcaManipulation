@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 dependencies = ["orca-gym", "typing-extensions"]
 
 [project.optional-dependencies]
-# 实际安装见 README：pip install --no-deps ./third_party/lerobot 与 openpi-client
+# 实际安装见 docs/lerobot/environment.yml 与 docs/lerobot/install_runtime.sh
 lerobot = []
 inference = []
 

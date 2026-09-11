@@ -49,21 +49,29 @@ def pin_joints(env, agent_name: str, specs: list[PinJointSpec]) -> bool:
         return aid
 
     pinned: list[tuple[int, int, int, np.ndarray, list[int]]] = []
-    try:
-        for spec in specs:
+    for spec in specs:
+        try:
             qadr, dadr = _joint_adr(spec.name)
-            if spec.qpos is not None:
-                q0 = np.asarray(spec.qpos, dtype=np.float64).reshape(-1)
-            else:
-                q0 = np.array(md.qpos[qadr : qadr + spec.qpos_width], dtype=np.float64, copy=True)
-            act_ids = [_actuator_id(name) for name in (spec.zero_actuators or [])]
-            pinned.append((qadr, dadr, spec.dof_width, q0, act_ids))
-            md.qpos[qadr : qadr + len(q0)] = q0
-            md.qvel[dadr : dadr + spec.dof_width] = 0.0
-            for aid in act_ids:
-                md.ctrl[aid] = 0.0
-    except ValueError as exc:
-        orca_logger.warning(f"[CONSTRAINT] {exc}")
+        except ValueError as exc:
+            orca_logger.warning(f"[CONSTRAINT] {exc}")
+            continue
+        if spec.qpos is not None:
+            q0 = np.asarray(spec.qpos, dtype=np.float64).reshape(-1)
+        else:
+            q0 = np.array(md.qpos[qadr : qadr + spec.qpos_width], dtype=np.float64, copy=True)
+        act_ids = []
+        for name in spec.zero_actuators or []:
+            try:
+                act_ids.append(_actuator_id(name))
+            except ValueError as exc:
+                orca_logger.warning(f"[CONSTRAINT] {exc}")
+        pinned.append((qadr, dadr, spec.dof_width, q0, act_ids))
+        md.qpos[qadr : qadr + len(q0)] = q0
+        md.qvel[dadr : dadr + spec.dof_width] = 0.0
+        for aid in act_ids:
+            md.ctrl[aid] = 0.0
+    if not pinned:
+        orca_logger.warning("[CONSTRAINT] 姿态约束初始化失败：没有可钉住的关节")
         return False
 
     mujoco.mj_forward(mj, md)

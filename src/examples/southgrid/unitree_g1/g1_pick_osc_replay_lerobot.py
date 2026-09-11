@@ -4,6 +4,7 @@ import os
 import sys
 import traceback
 
+import numpy as np
 from yaml import Loader, load
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
@@ -62,12 +63,16 @@ def main():
         config = load(f, Loader=Loader)
     scene_manager = SceneManager(args.orcagym_addr, config=config)
     files = scan_episode_parquets(os.path.abspath(os.path.expanduser(args.lerobot_out)))
+
+    def obs_callback(env) -> dict:
+        return {"replay": np.zeros(max(env.nu, 1), dtype=np.float32)}
+
     manager = DataCollectionManager(
         agent_name=args.agent_name,
         env_name="DataCollection",
         entry_point=ENTRY_POINT,
         default_joint_values=default_joint_values,
-        obs_callback=lambda env: {},
+        obs_callback=obs_callback,
         scene_manager=scene_manager,
         data_storage=None,
         frame_skip=5,
