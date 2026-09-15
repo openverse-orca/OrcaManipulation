@@ -4,7 +4,7 @@
     "max_sim_time": 67.0
   },
   "orcastudio": {
-    "assets_folder": "/home/hjadmin/OrcaApr24/OrcaStudio_2409/Assets/Life_Kitchen_01"
+    "assets_folder": "/opt/PriWaic/Development/OrcaStudio_2409/Assets/Life_Kitchen_01"
   },
   "orcalink": {
     "enabled": true,
@@ -185,7 +185,7 @@
     "disable_base_phys": true,
     "force_gs_solver": true,
     "auto_build": true,
-    "debug_bin_path": "/home/hjadmin/OrcaApr24/XPBD/build/dual_gripper_g1_cook2",
+    "debug_bin_path": "/opt/PriWaic/Development/XPBD/build/dual_gripper_g1_cook2",
     "comment_debug_bin_path": "必须指向本地刚编的二进制（当前用 Release）。空字符串会走 pip 包旧程序，没有整块刚化。",
     "dg_traj": "cloth_robot",
     "show_ui": true,
