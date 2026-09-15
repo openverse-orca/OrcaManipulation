@@ -5,6 +5,7 @@ import copy
 import json
 import logging
 import os
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -166,6 +167,24 @@ class ClothCouplingHandle:
         return False
 
     def cleanup(self) -> None:
+        # XPBD owns the initial render vertices. Keep services alive until it
+        # uploads those vertices and closes its OpenGL window.
+        proc = self.ctx.process_manager.processes.get("XPBD")
+        if proc is not None:
+            if proc.poll() is None:
+                logger.info("Stopping XPBD: restore cloth, then close viewer")
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    logger.error("XPBD restore timed out; forcing viewer closed (restore unconfirmed)")
+                    proc.kill()
+                    proc.wait(timeout=5)
+            if proc.poll() is not None:
+                self.ctx.process_manager.processes.pop("XPBD", None)
+                log_handle = getattr(proc, "log_file", None)
+                if log_handle is not None:
+                    log_handle.close()
         if self.ctx.bridge is not None:
             try:
                 self.ctx.bridge.close()

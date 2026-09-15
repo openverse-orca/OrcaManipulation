@@ -9,6 +9,8 @@
 不依赖 envs.fluid / OrcaSPH；MuJoCo 经 OrcaGym 驱动，下游控制器与 data_collection_tele 相同。
 """
 import argparse
+import signal
+from contextlib import ExitStack
 import json
 import os
 import sys
@@ -173,6 +175,9 @@ class ClothLifecycleCallback:
         })
 
     def on_run_end(self) -> None:
+        if getattr(self, "_run_ended", False):
+            return
+        self._run_ended = True
         self._save_bench_data()
         for hook in self._run_end_hooks:
             try:
@@ -265,7 +270,36 @@ class ClothLifecycleCallback:
         orca_logger.info(f"Bench data saved to {self._bench_output_path}")
 
 
+_shutdown_started = False
+
+
+def install_shutdown_handlers():
+    """把 Ctrl+C / SIGTERM / SIGHUP 转成一次正常退出，并忽略后续同类信号。
+
+    第一次信号：抛 SystemExit，让 ExitStack 和 XPBD 布料复原跑完。
+    第二次信号：忽略，避免复原被打断。
+    """
+    def request_shutdown(signum, frame):
+        global _shutdown_started
+        if _shutdown_started:
+            return
+        _shutdown_started = True
+        # A second terminal signal must not interrupt mesh restoration.
+        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            signal.signal(sig, signal.SIG_IGN)
+        raise SystemExit(128 + signum)
+
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, request_shutdown)
+
+
 def main():
+    install_shutdown_handlers()
+    with ExitStack() as cleanup:
+        run_main(cleanup)
+
+
+def run_main(cleanup):
     parser = argparse.ArgumentParser(description="Cloth teleop / trajectory replay (no SPH fluid)")
     parser.add_argument("--level", type=str, required=True, help="场景的名称")
     parser.add_argument(
@@ -486,6 +520,7 @@ def main():
         orca_logger.info(f"Replay mode: {len(replay_frames)} frames from {args.replay_data}")
     else:
         pico_joystick = PicoJoystick()
+    cleanup.callback(pico_joystick.close)
     pico_joystick_device = PicoJoystickDevice(pico_joystick)
 
     orca_logger.info("Creating scene manager")
@@ -552,6 +587,7 @@ def main():
         realtime_sync=not args.no_realtime,
     )
     data_collection_manager.register_episode_callback(cloth_callback)
+    cleanup.callback(cloth_callback.on_run_end)
     if args.bench:
         orca_logger.info(f"Bench enabled: {args.bench}")
     env = data_collection_manager.env
@@ -820,6 +856,8 @@ def main():
             cloth_callback=cloth_callback,
         )
 
+    # Constructors may install their own SIGINT handler; restore ours before stepping.
+    install_shutdown_handlers()
     data_collection_manager.run(
         max_episodes=1 if (args.max_episode_sec is not None or args.max_macro_frames is not None) else None
     )
@@ -834,4 +872,4 @@ if __name__ == "__main__":
         orca_logger.error(f"Unexpected error: {e}\n{traceback.format_exc()}")
     finally:
         orca_logger.info("Exiting program")
-        os._exit(0)
+        # Normal exit runs atexit fallbacks, including partially started processes.
