@@ -100,7 +100,9 @@ class SceneManager:
                     # 随机挑选pick_nums索引，从range(len(actor_names))中挑选
                     joints = self.get_actors_joints_in_env()
                     joints_dof = self._config.get("actor", {}).get("joints_dof", [])
+                    actor_names = self._config.get("actor", {}).get("names", [])
                     pick_indices = np.random.choice(range(len(joints)), pick_nums, replace=False)
+                    placed_actor_names: list[str] = []
                     for i in pick_indices:
                         joint_name = joints[i]
                         in_scene_actors.append(joint_name)
@@ -122,12 +124,57 @@ class SceneManager:
                         elif dof == 1:
                             bound = random_config.get("one_dof", {}).get("bound")
                             qpos_bound = np.concatenate([bound])
-                        qpos = get_random_qpos(qpos_bound, dof)
+                        qpos = self._sample_qpos_without_overlap(
+                            joint_name, actor_names[i], qpos_bound, dof, placed_actor_names)
+                        placed_actor_names.append(actor_names[i])
                         orca_log.info(f"set actor qpos: {joint_name}, {qpos}")
-                        self.set_actor_qpos(joint_name, qpos)
-                        self.env.mj_forward()
         
         self.serialize_scene(in_scene_actors)
+
+    # 穿透重采样上限，防止极端配置下死循环
+    MAX_OVERLAP_RESAMPLE = 10
+
+    def _sample_qpos_without_overlap(self, joint_name: str, actor_name: str, qpos_bound: np.ndarray,
+                                     dof: int, placed_actor_names: list[str]) -> np.ndarray:
+        """
+        采样物体位姿并校验与已放置物体无几何穿插，重叠则重采样。
+        与货架/背景等静态几何的接触属正常接触，不触发重采样。
+        """
+        qpos = get_random_qpos(qpos_bound, dof)
+        self.set_actor_qpos(joint_name, qpos)
+        self.env.mj_forward()
+        for attempt in range(self.MAX_OVERLAP_RESAMPLE):
+            if not self._is_overlapping_with_actors(actor_name, placed_actor_names):
+                return qpos
+            orca_log.info(f"actor {actor_name} overlaps with placed actors, resampling attempt {attempt + 1}")
+            qpos = get_random_qpos(qpos_bound, dof)
+            self.set_actor_qpos(joint_name, qpos)
+            self.env.mj_forward()
+        orca_log.warning(
+            f"actor {actor_name} still overlaps after {self.MAX_OVERLAP_RESAMPLE} resamples, "
+            "consider enlarging actor.random bound_position")
+        return qpos
+
+    def _is_overlapping_with_actors(self, actor_name: str, placed_actor_names: list[str]) -> bool:
+        """通过 MuJoCo 接触检测判断物体是否与已放置的物体发生穿插。"""
+        if not placed_actor_names:
+            return False
+        for contact in self.env.query_contact_simple():
+            body1 = self.env.model.get_geom_body_name(contact["Geom1"])
+            body2 = self.env.model.get_geom_body_name(contact["Geom2"])
+            # 命名空间约定：spawned actor 的 body 名携带 "{actor_name}_" 前缀
+            new_actor_involved = (self._body_belongs_to_actor(body1, actor_name)
+                                  or self._body_belongs_to_actor(body2, actor_name))
+            if not new_actor_involved:
+                continue
+            other_body = body2 if self._body_belongs_to_actor(body1, actor_name) else body1
+            if any(self._body_belongs_to_actor(other_body, name) for name in placed_actor_names):
+                return True
+        return False
+
+    @staticmethod
+    def _body_belongs_to_actor(body_name: str, actor_name: str) -> bool:
+        return body_name == actor_name or body_name.startswith(actor_name + "_")
 
     def reset_actor_pos(self):
         joints_dof = self._config.get("actor", {}).get("joints_dof", [])
