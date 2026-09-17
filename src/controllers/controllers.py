@@ -7,6 +7,8 @@ from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
 from orca_gym.adapters.robosuite.controllers import controller_config, controller_factory
 from orca_gym.environment import OrcaGymLocalEnv
 from controllers.controller_2f85 import Controller2F85
+from controllers.controller_inspire_hand import ControllerInspireHand
+from controllers.controller_stand_pose import StandPoseController
 from devices.abstract_device import AbstractDevice, PicoJoystickDevice
 from devices.data_device import DataDevice
 
@@ -40,6 +42,16 @@ def create_arm_osc_controller(env: OrcaGymLocalEnv,
     
     controller.update_initial_joints(arm_config["neutral_joint_values"])
     return ControllerArm(env, ctrl_name, init_ctrl, base_body, controller)
+
+def add_stand_pose_controller(
+    data_collection_manager: DataCollectionManager,
+    env: OrcaGymLocalEnv,
+    actuator_names: list[str],
+    actuator_ctrl: list[float],
+    base_body: str,
+):
+    controller = StandPoseController(env, actuator_names, actuator_ctrl, base_body)
+    data_collection_manager.add_controller(controller)
 
 def add_arm_osc_pico_controller(data_collection_manager: DataCollectionManager, 
                 env: OrcaGymLocalEnv, 
@@ -79,6 +91,50 @@ def create_gripper_2f85_controller(env: OrcaGymLocalEnv,
                                   controller_type: Controller2F85.ControllerType = Controller2F85.ControllerType.PICO):
 
     return Controller2F85(env, ctrl_name, init_ctrl, gripper_config["actuator_ranges"], base_body, controller_type)
+
+def create_inspire_hand_controller(
+    env: OrcaGymLocalEnv,
+    hand_config: dict,
+    base_body: str,
+    ctrl_name: list[str],
+    init_ctrl: dict[str, float],
+    hand_label: str,
+) -> ControllerInspireHand:
+    closed_ctrl = {
+        env.actuator(name): value
+        for name, value in hand_config["closed_ctrl"].items()
+    }
+    return ControllerInspireHand(
+        env, ctrl_name, init_ctrl, base_body, closed_ctrl, hand_label=hand_label
+    )
+
+
+def add_inspire_hand_pico_controller(
+    data_collection_manager: DataCollectionManager,
+    env: OrcaGymLocalEnv,
+    hand_config: dict,
+    base_body: str,
+    device: PicoJoystickDevice,
+    keys: list[PicoJoystickKey],
+    hand_label: str,
+):
+    ctrl_name = [env.actuator(actuator_name) for actuator_name in hand_config["actuator_names"]]
+    init_ctrl = {name: init_val for name, init_val in zip(ctrl_name, hand_config["init_ctrl"])}
+    hand_controller = create_inspire_hand_controller(
+        env, hand_config, base_body, ctrl_name, init_ctrl, hand_label
+    )
+
+    for key in keys:
+        if key in [PicoJoystickKey.X, PicoJoystickKey.A]:
+            device.bind_primary_button_event(key, hand_controller.update_primary_button)
+        elif key in [PicoJoystickKey.Y, PicoJoystickKey.B]:
+            device.bind_secondary_button_event(key, hand_controller.update_secondary_button)
+        elif key in [PicoJoystickKey.L_TRIGGER, PicoJoystickKey.R_TRIGGER]:
+            device.bind_trigger_event(key, hand_controller.update_trigger_value)
+        else:
+            raise ValueError(f"Invalid key: {key}")
+    data_collection_manager.add_controller(hand_controller)
+
 
 def add_gripper_2f85_pico_controller(data_collection_manager: DataCollectionManager,
                                 env: OrcaGymLocalEnv,
