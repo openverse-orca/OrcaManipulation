@@ -519,7 +519,8 @@ def main() -> None:
             return
         if pin_fn is not None:
             pin_fn()
-        manager.set_disable_actuator_group([agent_conf.positions_group])
+        if args.agent_name != "g1_pick":
+            manager.set_disable_actuator_group([agent_conf.positions_group])
         kp, dls_lambda, dls_sigma_th, null_kp = controllers.resolve_osc_tuning(args.agent_name, args)
         controllers.install_osc_patches(dls_lambda=dls_lambda, dls_sigma_th=dls_sigma_th, null_kp=null_kp)
 

@@ -355,7 +355,8 @@ class DataCollectionManager:
         return self.ctrl
 
     def _sigint_handler(self, signum, frame):
-        self.request_shutdown()
+        print("\nCtrl+C，立即退出", flush=True)
+        os._exit(130)
 
     def request_shutdown(self) -> None:
         """终止全部采集循环。"""

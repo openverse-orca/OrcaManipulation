@@ -271,8 +271,9 @@ def main():
     env = data_collection_manager.env
     env.reset()
 
-    orca_logger.info("Disabling position controller")
-    data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
+    if agent_name != "g1_pick":
+        orca_logger.info("Disabling position controller")
+        data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
     kp, dls_lambda, dls_sigma_th, null_kp = controllers.resolve_osc_tuning(agent_name, args)
     controllers.install_osc_patches(dls_lambda=dls_lambda, dls_sigma_th=dls_sigma_th, null_kp=null_kp)
 
@@ -310,6 +311,8 @@ def main():
         right_tf = controllers.make_pico_arm_transform(
             [-3 * np.pi / 2, 0, 0], [0, 2, 1], [1.0, 1.0, -1.0]
         )
+    elif agent_name == "g1_pick":
+        left_tf = controllers.make_g1_left_pico_transform()
 
     orca_logger.info("Creating left arm controller")
     l_arm = controllers.add_arm_osc_pico_controller(
@@ -340,17 +343,11 @@ def main():
     )
     use_episode_control = args.episode_control or agent_name in ("g1_omnipicker", "g1_pick")
     if use_episode_control:
-        lock_keys = (
-            {PicoJoystickKey.L_TRANSFORM}
-            if agent_name in ("g1_omnipicker", "g1_pick")
-            else None
-        )
         controllers.add_episode_control_pico_controller(
             data_collection_manager,
             env,
             pico_joystick_device,
             agent_conf.base_body,
-            lock_keys=lock_keys,
         )
         scene_manager.show_ui_message(
             2,

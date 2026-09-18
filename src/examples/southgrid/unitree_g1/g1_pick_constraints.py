@@ -34,6 +34,16 @@ def pin_all_joints(env, agent_name: str) -> bool:
     return pin_joints(env, agent_name, specs)
 
 
+def pin_base_and_waist(env, agent_name: str) -> bool:
+    """钉住浮动基座和腰，不钉左臂。"""
+    specs = [
+        PinJointSpec("floating_base_joint", qpos_width=7, dof_width=6),
+    ]
+    for name in g1_pick_osc_conf.locked_waist_joints:
+        specs.append(PinJointSpec(name, qpos_width=1, dof_width=1))
+    return pin_joints(env, agent_name, specs)
+
+
 def pin_waist_joints(env, agent_name: str) -> bool:
     specs = [PinJointSpec(name) for name in g1_pick_osc_conf.locked_waist_joints]
     return pin_joints(env, agent_name, specs)
@@ -67,6 +77,13 @@ def add_joint_strip_args(parser, *, default: str = "on") -> None:
         default="off",
         help="off：关掉已裁部位碰撞；keep：保留完整碰撞",
     )
+    parser.add_argument(
+        "--grasp_stiff",
+        choices=["off", "on"],
+        default="off",
+        help="on：把杯子/夹爪 solref 收到 4ms、condim≥4，去掉 10mm 级穿透锁死；"
+             "旧数据集回放必须 off，新采集再开",
+    )
 
 
 def install_joint_strip(
@@ -79,11 +96,7 @@ def install_joint_strip(
     """在创建 DataCollectionManager 之前安装任务模型补丁。"""
     if getattr(args, "joint_strip", "off") != "on":
         return None
-    keep = (
-        mj_joint_strip.KEEP_DEFAULT
-        + tuple(g1_pick_osc_conf.l_arm["joint_names"])
-        + tuple(g1_pick_osc_conf.gripper_l["joint_names"])
-    )
+    keep = mj_joint_strip.KEEP_DUAL
     emit = log or print
     return mj_joint_strip.install(
         None,
@@ -93,6 +106,18 @@ def install_joint_strip(
         required_cameras=required_cameras,
         log=emit,
     )
+
+
+def apply_grasp_stiff(env, args, log: Callable[[str], None] | None = None) -> int:
+    """按 --grasp_stiff 加硬杯子/夹爪接触。旧 parquet 回放不要开。"""
+    if getattr(args, "grasp_stiff", "off") != "on":
+        return 0
+    gym = getattr(env, "gym", None) or getattr(getattr(env, "unwrapped", env), "gym", None)
+    mj = getattr(gym, "_mjModel", None)
+    md = getattr(gym, "_mjData", None)
+    if mj is None or md is None:
+        return 0
+    return mj_joint_strip.stiffen_grasp_contacts(mj, md, log=log or print)
 
 
 def filter_stripped_joints(env, default_joint_values: dict) -> dict:

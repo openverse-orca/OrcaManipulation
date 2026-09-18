@@ -101,7 +101,7 @@ def wait_ports_open(
                     print(f"  ✓ 端口 {port}（{name}）已就绪", flush=True)
         if pending:
             print(f"  等待端口: {sorted(pending.values())}", flush=True)
-            time.sleep(1.0)
+            time.sleep(0.2)
     if pending:
         _logger.warning(
             "[相机] 以下端口超时未就绪，将跳过：%s\n"
@@ -163,7 +163,7 @@ def bring_up_cameras(
                 cam.start()
                 cameras[name] = cam
         print(f"  等待首帧: {pending}", flush=True)
-        time.sleep(1.0)
+        time.sleep(0.2)
 
     alive = {n: c for n, c in cameras.items() if c.is_first_frame_received()}
     dropped = [n for n in cameras if n not in alive]

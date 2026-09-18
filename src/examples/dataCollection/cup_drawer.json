@@ -1,0 +1,1079 @@
+{
+    "version": "3.0",
+    "viewport_camera_transform": {
+        "position": [
+            -3.510169267654419,
+            -3.331876039505005,
+            1.6970975399017334
+        ],
+        "rotation": [
+            0.6343076813281592,
+            -0.254334121466965,
+            -0.27161106416461045,
+            0.6776395427431087
+        ]
+    },
+    "actors": [
+        {
+            "name": "Group",
+            "path": "/Group",
+            "type": "GroupActor",
+            "transform": {
+                "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "children": [
+                {
+                    "name": "Static_Object",
+                    "path": "/Group/Static_Object",
+                    "type": "GroupActor",
+                    "transform": {
+                        "position": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "rotation": [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "scale": 1.0
+                    },
+                    "children": [
+                        {
+                            "name": "Furnitures",
+                            "path": "/Group/Static_Object/Furnitures",
+                            "type": "GroupActor",
+                            "transform": {
+                                "position": [
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "children": [
+                                {
+                                    "name": "chair_001",
+                                    "path": "/Group/Static_Object/Furnitures/chair_001",
+                                    "type": "AssetActor",
+                                    "transform": {
+                                        "position": [
+                                            0.21176189184188843,
+                                            -3.14876937866211,
+                                            -0.0029121339321136475
+                                        ],
+                                        "rotation": [
+                                            1.0,
+                                            0.0,
+                                            0.0,
+                                            0.0
+                                        ],
+                                        "scale": 1.0
+                                    },
+                                    "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/chair_001"
+                                },
+                                {
+                                    "name": "chair_001_1",
+                                    "path": "/Group/Static_Object/Furnitures/chair_001_1",
+                                    "type": "AssetActor",
+                                    "transform": {
+                                        "position": [
+                                            0.0,
+                                            -2.0103962421417236,
+                                            -0.0029121339321136475
+                                        ],
+                                        "rotation": [
+                                            1.0,
+                                            0.0,
+                                            0.0,
+                                            0.0
+                                        ],
+                                        "scale": 1.0
+                                    },
+                                    "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/chair_001"
+                                },
+                                {
+                                    "name": "chair_001_2",
+                                    "path": "/Group/Static_Object/Furnitures/chair_001_2",
+                                    "type": "AssetActor",
+                                    "transform": {
+                                        "position": [
+                                            1.3586030006408691,
+                                            -2.0103962421417236,
+                                            -0.0029121339321136475
+                                        ],
+                                        "rotation": [
+                                            0.0,
+                                            0.0,
+                                            0.0,
+                                            1.0
+                                        ],
+                                        "scale": 1.0
+                                    },
+                                    "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/chair_001"
+                                },
+                                {
+                                    "name": "chair_001_3",
+                                    "path": "/Group/Static_Object/Furnitures/chair_001_3",
+                                    "type": "AssetActor",
+                                    "transform": {
+                                        "position": [
+                                            1.3586030006408691,
+                                            -3.0900838375091553,
+                                            -0.0029121339321136475
+                                        ],
+                                        "rotation": [
+                                            0.0,
+                                            0.0,
+                                            0.0,
+                                            1.0
+                                        ],
+                                        "scale": 1.0
+                                    },
+                                    "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/chair_001"
+                                },
+                                {
+                                    "name": "desk_dinningroom",
+                                    "path": "/Group/Static_Object/Furnitures/desk_dinningroom",
+                                    "type": "AssetActor",
+                                    "transform": {
+                                        "position": [
+                                            0.7095389366149902,
+                                            -2.56557035446167,
+                                            0.0
+                                        ],
+                                        "rotation": [
+                                            1.0,
+                                            0.0,
+                                            0.0,
+                                            0.0
+                                        ],
+                                        "scale": 1.0
+                                    },
+                                    "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/desk_dinningroom"
+                                },
+                                {
+                                    "name": "Hanger_02",
+                                    "path": "/Group/Static_Object/Furnitures/Hanger_02",
+                                    "type": "AssetActor",
+                                    "transform": {
+                                        "position": [
+                                            -5.237052917480469,
+                                            -2.446648359298706,
+                                            1.6340084075927734
+                                        ],
+                                        "rotation": [
+                                            1.0,
+                                            0.0,
+                                            0.0,
+                                            0.0
+                                        ],
+                                        "scale": 1.0
+                                    },
+                                    "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/hanger_02"
+                                },
+                                {
+                                    "name": "Hanger_01",
+                                    "path": "/Group/Static_Object/Furnitures/Hanger_01",
+                                    "type": "AssetActor",
+                                    "transform": {
+                                        "position": [
+                                            -5.208258628845215,
+                                            -2.927341938018799,
+                                            1.48430597782135
+                                        ],
+                                        "rotation": [
+                                            1.0,
+                                            0.0,
+                                            0.0,
+                                            0.0
+                                        ],
+                                        "scale": 1.0
+                                    },
+                                    "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/hanger_01"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "name": "Interactive_Object",
+                    "path": "/Group/Interactive_Object",
+                    "type": "GroupActor",
+                    "transform": {
+                        "position": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "rotation": [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "scale": 1.0
+                    },
+                    "children": [
+                        {
+                            "name": "Pot_02_b",
+                            "path": "/Group/Interactive_Object/Pot_02_b",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.911467552185059,
+                                    -1.831695795059204,
+                                    1.313053011894226
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/pot_02_b"
+                        },
+                        {
+                            "name": "Pot_02_a",
+                            "path": "/Group/Interactive_Object/Pot_02_a",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.911438465118408,
+                                    -1.830079197883606,
+                                    1.0507535934448242
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/pot_02_a"
+                        },
+                        {
+                            "name": "Pot_01",
+                            "path": "/Group/Interactive_Object/Pot_01",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.900447845458984,
+                                    -2.405799388885498,
+                                    1.0522305965423584
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/pot_01"
+                        },
+                        {
+                            "name": "Coffecup_01",
+                            "path": "/Group/Interactive_Object/Coffecup_01",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.537674903869629,
+                                    -3.172743320465088,
+                                    0.9815444946289062
+                                ],
+                                "rotation": [
+                                    0.7071067513842227,
+                                    0.0,
+                                    0.0,
+                                    0.7071068109888711
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/coffecup_01",
+                            "entity_overrides": [
+                                {
+                                    "entity_path": [],
+                                    "group_overrids": [
+                                        {
+                                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                                            "type_index": 0,
+                                            "property_overrides": [
+                                                {
+                                                    "name": "translate.x",
+                                                    "value": -4.537674903869629,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "translate.y",
+                                                    "value": -3.172743320465088,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "translate.z",
+                                                    "value": 0.9815444946289062,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "rotate.z",
+                                                    "value": 90.00000762939453,
+                                                    "type": "float"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "name": "Basket_Kitchen_01",
+                            "path": "/Group/Interactive_Object/Basket_Kitchen_01",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.8731865882873535,
+                                    -2.9826650619506836,
+                                    0.9867074489593506
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/basket_kitchen_01"
+                        },
+                        {
+                            "name": "Plate_Small_01",
+                            "path": "/Group/Interactive_Object/Plate_Small_01",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.9642133712768555,
+                                    -3.139848232269287,
+                                    1.0215474367141724
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/plate_small_01"
+                        },
+                        {
+                            "name": "Plate_Big_01",
+                            "path": "/Group/Interactive_Object/Plate_Big_01",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.845434665679932,
+                                    -3.463480234146118,
+                                    1.1178370714187622
+                                ],
+                                "rotation": [
+                                    0.8338860792990708,
+                                    0.0,
+                                    0.5519365966768501,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/plate_big_01"
+                        },
+                        {
+                            "name": "Bow_01",
+                            "path": "/Group/Interactive_Object/Bow_01",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.805719375610352,
+                                    -2.850682258605957,
+                                    1.006166934967041
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/bow_01"
+                        },
+                        {
+                            "name": "Platerack_01",
+                            "path": "/Group/Interactive_Object/Platerack_01",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.894304275512695,
+                                    -3.4592409133911133,
+                                    0.9867075085639954
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/platerack_01"
+                        },
+                        {
+                            "name": "Turner_Wood_01",
+                            "path": "/Group/Interactive_Object/Turner_Wood_01",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.902358531951904,
+                                    -2.50410795211792,
+                                    1.0892446041107178
+                                ],
+                                "rotation": [
+                                    -0.3439597665017374,
+                                    -0.3797186166715872,
+                                    -0.6336639100123019,
+                                    0.5796339364883735
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/turner_wood_01"
+                        },
+                        {
+                            "name": "hook_01",
+                            "path": "/Group/Interactive_Object/hook_01",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -5.203127861022949,
+                                    -2.959949254989624,
+                                    1.4827241897583008
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/hook_01"
+                        },
+                        {
+                            "name": "Cup_Glass_01",
+                            "path": "/Group/Interactive_Object/Cup_Glass_01",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.990428447723389,
+                                    -2.802773714065552,
+                                    1.0203917026519775
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/cup_glass_01"
+                        },
+                        {
+                            "name": "Cup_Porcelain_01",
+                            "path": "/Group/Interactive_Object/Cup_Porcelain_01",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.990428447723389,
+                                    -2.9167280197143555,
+                                    1.0203917026519775
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/cup_porcelain_01"
+                        },
+                        {
+                            "name": "hook_01_1",
+                            "path": "/Group/Interactive_Object/hook_01_1",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -5.183492660522461,
+                                    -2.319119453430176,
+                                    1.6370842456817627
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/hook_01"
+                        },
+                        {
+                            "name": "Drawer_01",
+                            "path": "/Group/Interactive_Object/Drawer_01",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.505996227264404,
+                                    -3.566074848175049,
+                                    0.8884392976760864
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/drawer_01",
+                            "entity_overrides": [
+                                {
+                                    "entity_path": [],
+                                    "group_overrids": [
+                                        {
+                                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                                            "type_index": 0,
+                                            "property_overrides": [
+                                                {
+                                                    "name": "translate.x",
+                                                    "value": -4.505996227264404,
+                                                    "type": "float"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "name": "Coffecup_01_1",
+                            "path": "/Group/Interactive_Object/Coffecup_01_1",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -5.184531211853027,
+                                    -2.9681994915008545,
+                                    1.3176511526107788
+                                ],
+                                "rotation": [
+                                    0.9275961388336634,
+                                    -0.3735845328983508,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/coffecup_01"
+                        },
+                        {
+                            "name": "Plate_Big_01_1",
+                            "path": "/Group/Interactive_Object/Plate_Big_01_1",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.971262454986572,
+                                    -3.463480234146118,
+                                    1.1178370714187622
+                                ],
+                                "rotation": [
+                                    0.8338860792990708,
+                                    0.0,
+                                    0.5519365966768501,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/plate_big_01"
+                        },
+                        {
+                            "name": "Bow_01_1",
+                            "path": "/Group/Interactive_Object/Bow_01_1",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.911564350128174,
+                                    -3.974303960800171,
+                                    0.9882769584655762
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/bow_01",
+                            "entity_overrides": [
+                                {
+                                    "entity_path": [],
+                                    "group_overrids": [
+                                        {
+                                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                                            "type_index": 0,
+                                            "property_overrides": [
+                                                {
+                                                    "name": "translate.x",
+                                                    "value": -4.911564350128174,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "translate.y",
+                                                    "value": -3.974303960800171,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "translate.z",
+                                                    "value": 0.9882769584655762,
+                                                    "type": "float"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "name": "Bow_01_2",
+                            "path": "/Group/Interactive_Object/Bow_01_2",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    -4.706851959228516,
+                                    -4.034460067749023,
+                                    0.9861476421356201
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/kitchen_night_2/kitchen_night/prop/prefabs/bow_01",
+                            "entity_overrides": [
+                                {
+                                    "entity_path": [],
+                                    "group_overrids": [
+                                        {
+                                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                                            "type_index": 0,
+                                            "property_overrides": [
+                                                {
+                                                    "name": "translate.x",
+                                                    "value": -4.706851959228516,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "translate.y",
+                                                    "value": -4.034460067749023,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "translate.z",
+                                                    "value": 0.9861476421356201,
+                                                    "type": "float"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "g1_pick",
+            "path": "/g1_pick",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    -4.409717559814453,
+                    -3.336127758026123,
+                    0.0
+                ],
+                "rotation": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda",
+            "entity_overrides": [
+                {
+                    "entity_path": [],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.x",
+                                    "value": -4.409717559814453,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.y",
+                                    "value": -3.336127758026123,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": 180.0,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "waist_yaw_link_rev_1_0",
+                            "index": 0
+                        },
+                        {
+                            "name": "waist_roll_link_rev_1_0",
+                            "index": 1
+                        },
+                        {
+                            "name": "torso_link_rev_1_0",
+                            "index": 0
+                        },
+                        {
+                            "name": "head_camera1",
+                            "index": 10
+                        },
+                        {
+                            "name": "head_camera2",
+                            "index": 0
+                        },
+                        {
+                            "name": "cameras",
+                            "index": 0
+                        },
+                        {
+                            "name": "head_cam",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "NearClipDistance",
+                                    "value": 0.10000000149011612,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "ColorPort",
+                                    "value": 7090,
+                                    "type": "int"
+                                },
+                                {
+                                    "name": "Enable",
+                                    "value": true,
+                                    "type": "bool"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "waist_yaw_link_rev_1_0",
+                            "index": 0
+                        },
+                        {
+                            "name": "waist_roll_link_rev_1_0",
+                            "index": 1
+                        },
+                        {
+                            "name": "torso_link_rev_1_0",
+                            "index": 0
+                        },
+                        {
+                            "name": "left_shoulder_pitch_link",
+                            "index": 4
+                        },
+                        {
+                            "name": "left_shoulder_roll_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "left_shoulder_yaw_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "left_elbow_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "left_wrist_roll_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "left_wrist_pitch_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "left_wrist_yaw_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "arm_l_end_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "camera_left_body1",
+                            "index": 4
+                        },
+                        {
+                            "name": "camera_left_body2",
+                            "index": 0
+                        },
+                        {
+                            "name": "cameras",
+                            "index": 0
+                        },
+                        {
+                            "name": "camera_left",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "NearClipDistance",
+                                    "value": 0.10000000149011612,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "Enable",
+                                    "value": true,
+                                    "type": "bool"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "waist_yaw_link_rev_1_0",
+                            "index": 0
+                        },
+                        {
+                            "name": "waist_roll_link_rev_1_0",
+                            "index": 1
+                        },
+                        {
+                            "name": "torso_link_rev_1_0",
+                            "index": 0
+                        },
+                        {
+                            "name": "right_shoulder_pitch_link",
+                            "index": 2
+                        },
+                        {
+                            "name": "right_shoulder_roll_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "right_shoulder_yaw_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "right_elbow_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "right_wrist_roll_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "right_wrist_pitch_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "right_wrist_yaw_link",
+                            "index": 2
+                        },
+                        {
+                            "name": "arm_r_end_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "camera_right_body1",
+                            "index": 4
+                        },
+                        {
+                            "name": "camera_right_body2",
+                            "index": 1
+                        },
+                        {
+                            "name": "cameras",
+                            "index": 1
+                        },
+                        {
+                            "name": "camera_right",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "NearClipDistance",
+                                    "value": 0.10000000149011612,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "ColorPort",
+                                    "value": 7080,
+                                    "type": "int"
+                                },
+                                {
+                                    "name": "Enable",
+                                    "value": true,
+                                    "type": "bool"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

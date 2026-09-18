@@ -24,7 +24,18 @@ KEEP_RIGHT_ARM = (
     "right_wrist_yaw_joint",
 )
 KEEP_RIGHT_GRIP = ("gripper_r_inner_joint", "gripper_r_outer_joint")
+KEEP_LEFT_ARM = (
+    "left_shoulder_pitch_joint",
+    "left_shoulder_roll_joint",
+    "left_shoulder_yaw_joint",
+    "left_elbow_joint",
+    "left_wrist_roll_joint",
+    "left_wrist_pitch_joint",
+    "left_wrist_yaw_joint",
+)
+KEEP_LEFT_GRIP = ("gripper_l_inner_joint", "gripper_l_outer_joint")
 KEEP_DEFAULT = KEEP_RIGHT_ARM + KEEP_RIGHT_GRIP
+KEEP_DUAL = KEEP_DEFAULT + KEEP_LEFT_ARM + KEEP_LEFT_GRIP
 
 _JNT_NQ = {0: 7, 1: 4, 2: 1, 3: 1}
 _JNT_NV = {0: 6, 1: 3, 2: 1, 3: 1}
@@ -380,6 +391,7 @@ def kill_stripped_collision(mj, md, agent_name: str, keep=KEEP_DEFAULT):
     keep_tokens = tuple(k.replace("_joint", "").replace("joint", "") for k in keep)
     keep_tokens = tuple(t for t in keep_tokens if t) + (
         "right_shoulder", "right_elbow", "right_wrist", "gripper_r", "arm_r_end",
+        "left_shoulder", "left_elbow", "left_wrist", "gripper_l", "arm_l_end",
         "camera", "head",
     )
     n = 0
@@ -397,6 +409,47 @@ def kill_stripped_collision(mj, md, agent_name: str, keep=KEEP_DEFAULT):
             n += 1
     if n:
         mujoco.mj_forward(mj, md)
+    return n
+
+
+_CUP_BODY_KW = ("coffecup",)
+_GRIP_PAD_KW = ("gripper", "finger", "2f85", "pad", "inner_link", "outer_link")
+
+
+def stiffen_grasp_contacts(mj, md, log=print) -> int:
+    """把杯子和夹爪指垫的接触改硬，去掉 10mm 级穿透锁死。
+
+    场景默认 solref=0.02 / solimp≈(0.9,0.95) / condim=3，合爪力下杯子被压进
+    12mm。这里把时间常数收到 4ms、阻抗抬到 (0.95,0.99)，condim=4 补扭转摩擦。
+    """
+    import mujoco
+    import numpy as np
+
+    solref = np.array([0.004, 1.0], dtype=np.float64)
+    solimp = np.array([0.95, 0.99, 0.001, 0.5, 2.0], dtype=np.float64)
+    cup_friction = np.array([1.5, 0.05, 0.001], dtype=np.float64)
+    n = 0
+    for g in range(int(mj.ngeom)):
+        bn = (mujoco.mj_id2name(mj, mujoco.mjtObj.mjOBJ_BODY, int(mj.geom_bodyid[g])) or "").lower()
+        gn = (mujoco.mj_id2name(mj, mujoco.mjtObj.mjOBJ_GEOM, g) or "").lower()
+        blob = f"{bn} {gn}"
+        is_cup = any(k in blob for k in _CUP_BODY_KW)
+        is_pad = any(k in blob for k in _GRIP_PAD_KW)
+        if not (is_cup or is_pad):
+            continue
+        if int(mj.geom_contype[g]) == 0 and int(mj.geom_conaffinity[g]) == 0:
+            continue
+        mj.geom_solref[g] = solref[: mj.geom_solref.shape[1]]
+        nimp = mj.geom_solimp.shape[1]
+        mj.geom_solimp[g] = solimp[:nimp]
+        if is_cup:
+            mj.geom_friction[g] = cup_friction
+        if int(mj.geom_condim[g]) < 4:
+            mj.geom_condim[g] = 4
+        n += 1
+    if n:
+        mujoco.mj_forward(mj, md)
+        log(f"[MODEL] 抓取接触已加硬：{n} 个杯子/夹爪 geom  solref=0.004  condim≥4")
     return n
 
 

@@ -112,7 +112,6 @@ def main():
     controllers.add_task_status_pico_controller(manager, env, pico, g1_omnipicker_conf.base_body)
     controllers.add_episode_control_pico_controller(
         manager, env, pico, g1_omnipicker_conf.base_body,
-        lock_keys={PicoJoystickKey.L_TRANSFORM},
     )
     manager.save_policy = "always"
     manager.save_video = args.camera_source == "mp4"

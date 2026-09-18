@@ -121,7 +121,8 @@ def main():
     )
     env = manager.env
     env.reset()
-    manager.set_disable_actuator_group([agent_conf.positions_group])
+    if args.agent_name != "g1_pick":
+        manager.set_disable_actuator_group([agent_conf.positions_group])
     kp, dls_lambda, dls_sigma_th, null_kp = controllers.resolve_osc_tuning(args.agent_name, args)
     controllers.install_osc_patches(dls_lambda=dls_lambda, dls_sigma_th=dls_sigma_th, null_kp=null_kp)
     l_arm = controllers.create_arm_osc_controller(

@@ -277,6 +277,25 @@ def create_arm_ik_controller(env: OrcaGymLocalEnv,
     controller.set_initial_control(arm_config["neutral_joint_values"])
     return ControllerArm(env, ctrl_name, init_ctrl, base_body, controller)
 
+def make_g1_left_pico_transform():
+    """左手 Pico→腕部：沿用右手同一套 Unity→MJ，再补左 EE 多出来的绕 X 180°。
+
+    右手 ``ee_center_site_r`` 在躯干系接近单位阵，默认右乘 relative_quat 就是
+    Pico 转向。左手 ``ee_center_site_l`` 相对躯干多绕 X 转了 180°（Y/Z 反向），
+    同一套右乘会把 Pico 的俯仰和偏航弄反，故 (w, x, y, z) → (w, x, -y, -z)。
+    """
+
+    def wrap(update_goal):
+        def callback(relative_position, relative_quat):
+            q = np.asarray(relative_quat, dtype=np.float64)
+            q_fix = np.array([q[0], q[1], -q[2], -q[3]], dtype=np.float64)
+            update_goal(np.asarray(relative_position, dtype=np.float64), q_fix)
+
+        return callback
+
+    return wrap
+
+
 def make_pico_arm_transform(rotvec, pos_remap, pos_flip):
     """构造 Pico 手柄到机器人坐标系的位姿回调。不传则使用默认 Unity→MuJoCo 变换。"""
     from scipy.spatial.transform import Rotation as R
