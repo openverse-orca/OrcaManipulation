@@ -5,6 +5,7 @@ import copy
 import json
 import logging
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -37,6 +38,45 @@ from .debug_session import (
 from .xpbd_process import start_xpbd_if_configured
 
 logger = logging.getLogger(__name__)
+
+
+def _signal_process_group(proc, sig: int) -> None:
+    """向 XPBD 进程组发信号，把 taskset/stdbuf 拉起的 OpenGL 窗口进程一起带上。"""
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), sig)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            proc.send_signal(sig)
+        except OSError:
+            pass
+
+
+def _stop_xpbd_and_close_ui(proc) -> None:
+    """联调退出时关掉 XPBD：先 SIGTERM 复原 Studio 布料，再 SIGKILL 拆掉小窗口。
+
+    不改 XPBD 源码。进程收到 SIGTERM 后会把布写回 rest，但事件循环可能卡住，
+    窗口就不退。等最多 3 秒给复原，然后对进程组 SIGKILL，X 窗口会一起消失。
+    """
+    if proc.poll() is None:
+        logger.info("Stopping XPBD: restore cloth, then force-close viewer")
+        _signal_process_group(proc, signal.SIGTERM)
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            logger.info("XPBD still running after restore wait; kill -9 process group")
+            _signal_process_group(proc, signal.SIGKILL)
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+    if proc.poll() is not None:
+        log_handle = getattr(proc, "log_file", None)
+        if log_handle is not None:
+            log_handle.close()
+
 
 
 def _ensure_cloth_3d_import_path() -> None:
@@ -171,20 +211,9 @@ class ClothCouplingHandle:
         # uploads those vertices and closes its OpenGL window.
         proc = self.ctx.process_manager.processes.get("XPBD")
         if proc is not None:
-            if proc.poll() is None:
-                logger.info("Stopping XPBD: restore cloth, then close viewer")
-                try:
-                    proc.terminate()
-                    proc.wait(timeout=15)
-                except subprocess.TimeoutExpired:
-                    logger.error("XPBD restore timed out; forcing viewer closed (restore unconfirmed)")
-                    proc.kill()
-                    proc.wait(timeout=5)
+            _stop_xpbd_and_close_ui(proc)
             if proc.poll() is not None:
                 self.ctx.process_manager.processes.pop("XPBD", None)
-                log_handle = getattr(proc, "log_file", None)
-                if log_handle is not None:
-                    log_handle.close()
         if self.ctx.bridge is not None:
             try:
                 self.ctx.bridge.close()
