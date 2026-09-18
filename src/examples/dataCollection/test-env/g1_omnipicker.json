@@ -1,0 +1,44 @@
+{
+    "version": "3.0",
+    "viewport_camera_transform": {
+        "position": [
+            -2.1895244121551514,
+            -2.1158053874969482,
+            0.6438227891921997
+        ],
+        "rotation": [
+            0.8863260278315388,
+            -0.008718164763943156,
+            0.004553287355978364,
+            -0.4629572696975055
+        ]
+    },
+    "actors": [
+        {
+            "name": "g1_omnipicker",
+            "path": "/g1_omnipicker",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    -1.355056881904602,
+                    -0.901091992855072,
+                    0.0
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/cae3c6559556dd4f/default_project/prefabs/g1_omnipicker_usda"
+        }
+    ],
+    "package_references": [
+        {
+            "id": "1b4c3de1-d472-4b60-8e3b-b39aaa13c404",
+            "name": "智元G1"
+        }
+    ]
+}

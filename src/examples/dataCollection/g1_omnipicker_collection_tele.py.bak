@@ -22,9 +22,6 @@ from dataStorage.g1_omnipicker_data_storage import G1OmniPickerDataStorage
 from scipy.spatial.transform import Rotation as R
 import numpy as np
 
-from controllers.abstract_controller import AbstractController
-from controllers.controller_task import TaskStatusController
-
 ENTRY_POINT = "envs.dataCollection.dataCollection_env:DataCollectionEnv"
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
@@ -44,184 +41,6 @@ orca_logger = get_orca_logger(
 )
 
 
-class BodySlideController(AbstractController):
-    """
-    G1 OmniPicker 腰部升降
-
-    左 Grip 按住  -> 上升
-    右 Grip 按住  -> 下降
-    松开          -> 停在当前位置
-    右摇杆按下    -> 自动复位到最低位置
-    """
-
-    def __init__(self, env, base_body):
-
-        self.joint_name = env.joint("body_slide")
-        actuator_name = env.actuator("body_slide_pctrl")
-
-        # XML 中 body_slide 的范围
-        self.min_position = 0.0
-        self.max_position = 0.54
-
-        # 升降速度 m/s
-        self.move_speed = 0.075
-
-        # 复位速度，可以和升降速度不同
-        self.reset_speed = 0.08
-
-        qpos = env.query_joint_qpos(
-            [self.joint_name]
-        )
-
-        current_position = float(
-            np.asarray(
-                qpos[self.joint_name]
-            ).reshape(-1)[0]
-        )
-
-        # 当前发给电机的位置目标
-        self.command_position = current_position
-
-        # 左右 Grip 状态
-        self.up_pressed = False
-        self.down_pressed = False
-
-        # 是否正在自动复位
-        self.resetting = False
-
-        # 复位按钮上一帧状态
-        self.last_reset_button = False
-
-        init_ctrl = {
-            actuator_name: current_position
-        }
-
-        super().__init__(
-            env=env,
-            ctrl_name=[actuator_name],
-            init_ctrl=init_ctrl,
-            base_body=base_body,
-        )
-
-    # ==============================
-    # 左 Grip
-    # ==============================
-    def update_up_button(self, pressed: bool):
-        self.up_pressed = pressed
-
-        # 人工操作时取消自动复位
-        if pressed:
-            self.resetting = False
-
-    # ==============================
-    # 右 Grip
-    # ==============================
-    def update_down_button(self, pressed: bool):
-        self.down_pressed = pressed
-
-        # 人工操作时取消自动复位
-        if pressed:
-            self.resetting = False
-
-    # ==============================
-    # 复位按钮
-    # ==============================
-    def update_reset_button(self, pressed: bool):
-
-        # 只检测“刚按下”的瞬间
-        if pressed and not self.last_reset_button:
-
-            self.resetting = True
-
-            # 防止同时升降
-            self.up_pressed = False
-            self.down_pressed = False
-
-            orca_logger.info(
-                "Body slide RESET -> 0.000 m"
-            )
-
-        self.last_reset_button = pressed
-
-    # ==============================
-    # 控制循环
-    # ==============================
-    def run_controller(self):
-
-        # 普通升降每帧移动距离
-        step = self.move_speed * self.env.dt
-
-        # ------------------------------
-        # 左 Grip：向上
-        # ------------------------------
-        if self.up_pressed and not self.down_pressed:
-
-            self.command_position += step
-
-        # ------------------------------
-        # 右 Grip：向下
-        # ------------------------------
-        elif self.down_pressed and not self.up_pressed:
-
-            self.command_position -= step
-
-        # ------------------------------
-        # 自动复位
-        # ------------------------------
-        elif self.resetting:
-
-            reset_step = (
-                self.reset_speed * self.env.dt
-            )
-
-            if (
-                self.command_position
-                > self.min_position + reset_step
-            ):
-                self.command_position -= reset_step
-
-            else:
-                self.command_position = self.min_position
-                self.resetting = False
-
-                orca_logger.info(
-                    "Body slide RESET finished"
-                )
-
-        # 限制机械范围
-        self.command_position = float(
-            np.clip(
-                self.command_position,
-                self.min_position,
-                self.max_position,
-            )
-        )
-
-        return {
-            self.ctrl_index[0]:
-                self.command_position
-        }
-
-    def reset(self):
-
-        qpos = self.env.query_joint_qpos(
-            [self.joint_name]
-        )
-
-        current_position = float(
-            np.asarray(
-                qpos[self.joint_name]
-            ).reshape(-1)[0]
-        )
-
-        self.command_position = current_position
-
-        self.up_pressed = False
-        self.down_pressed = False
-        self.resetting = False
-        self.last_reset_button = False
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--level", type=str, default="default", help="场景的名称")
@@ -235,7 +54,7 @@ def main():
     orcagym_addr = "localhost:50051"
     env_name = "DataCollection"
     env_index = 0
-    agent_name = "g1_omnipicker"
+    agent_name = "g1_omnipicker_usda"
     default_joint_values = {}
 
     for joint_name, value in zip(
@@ -249,8 +68,6 @@ def main():
     ):
         default_joint_values[joint_name] = value
 
-     # 腰部升降关节初始位置
-    default_joint_values["body_slide"] = 0.0
     orca_logger.info("Creating device")
     pico_joystick_device = PicoJoystickDevice(PicoJoystick())
 
@@ -388,85 +205,11 @@ def main():
         [PicoJoystickKey.L_JOYSTICK_POSITION, PicoJoystickKey.R_JOYSTICK_POSITION],
     )
 
-    # ==========================================
-    # Body slide controller
-    # Right Grip Button -> waist up / down
-    # ==========================================
-
-    orca_logger.info("Creating body slide controller")
-
-    body_slide_controller = BodySlideController(
-        env,
-        g1_omnipicker_conf.base_body,
-    )
-
-    # 左 Grip：上升
-    pico_joystick_device.bind_grip_button_event(
-        PicoJoystickKey.L_GRIPBUTTON,
-        body_slide_controller.update_up_button,
-    )
-
-# 右 Grip：下降
-    pico_joystick_device.bind_grip_button_event(
-        PicoJoystickKey.R_GRIPBUTTON,
-        body_slide_controller.update_down_button,
-    )
-    data_collection_manager.add_controller(
-        body_slide_controller
-    )   
-    def body_reset_button_callback(transform, key_state):
-
-        if key_state is None:
-            return
-
-        pressed = key_state["rightHand"][
-        "joystickPressed"
-        ]
-
-        body_slide_controller.update_reset_button(
-        pressed
-        )
-
-
-    pico_joystick_device.bind_key_event(
-    PicoJoystickKey.R_JOYSTICK_PRESSED,
-    body_reset_button_callback,
-    )
-
-
     orca_logger.info("Creating pick place task")
-    data_collection_manager.set_task(
-        EmptyTask(env)
-        )
-    # ==========================================
-    # 左摇杆按下：开始 / 结束数据采集
-    # ==========================================
-
-    task_status_controller = TaskStatusController(
-        env,
-        g1_omnipicker_conf.base_body,
+    data_collection_manager.set_task(EmptyTask(env))
+    controllers.add_task_status_pico_controller(
+        data_collection_manager, env, pico_joystick_device, g1_omnipicker_conf.base_body
     )
-
-
-    def task_status_button_callback(transform, key_state):
-        if key_state is None:
-            return
-
-        pressed = key_state["leftHand"]["joystickPressed"]
-
-        task_status_controller.update_task_status(
-            pressed
-        )
-
-
-    pico_joystick_device.bind_key_event(
-    PicoJoystickKey.L_JOYSTICK_PRESSED,
-    task_status_button_callback,
-    )
-
-    data_collection_manager.set_task_status_controller(
-        task_status_controller
-    )   
 
     data_collection_manager.save_video = True
 
