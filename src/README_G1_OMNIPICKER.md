@@ -30,11 +30,6 @@ conda activate orcalab
 
 ### 2.2 进入 OrcaManipulation 工程目录
 
-如果工程位于桌面：
-
-```bash
-cd ~/桌面/OrcaManipulation
-```
 
 ### 2.3 启动 G1 OmniPicker 遥操作程序
 
@@ -82,14 +77,7 @@ python src/examples/dataCollection/g1_omnipicker_collection_tele.py
 2. 加载 `src/examples/dataCollection/test-env` 中对应的 JSON 场景文件。
 3. 打开 PICO 头显。
 4. 启动 PICO 中的 `OrcaGymCtrl`。
-5. 在终端执行：
-
-```bash
-conda activate orcalab
-cd ~/桌面/OrcaManipulation
-python src/examples/dataCollection/g1_omnipicker_collection_tele.py
-```
-
+5. 在终端执行指令
 6. 完成初次摇杆输入初始化。
 7. 先测试底盘前进、后退和转向。
 8. 再测试左右机械臂和夹爪。
@@ -132,71 +120,4 @@ python src/examples/dataCollection/g1_omnipicker_collection_tele.py
 
 复位过程中请避免同时进行其他腰部升降操作。
 
-## 7. 数据采集
 
-按下左摇杆可切换数据采集状态：
-
-```text
-未采集 → 开始采集
-采集中 → 结束采集
-```
-
-建议在机器人姿态稳定、PICO 控制正常后再开始数据采集。
-
-## 8. 停止程序
-
-需要退出遥操作程序时，在运行终端中按：
-
-```text
-Ctrl + C
-```
-
-程序退出后，再根据需要关闭 OrcaLab / OrcaStudio 和 PICO 应用。
-
-## 9. 常见问题
-
-### 机器人没有响应
-
-依次检查：
-
-- OrcaLab / OrcaStudio 是否已启动。
-- JSON 场景是否已正确加载。
-- PICO 是否正常连接。
-- `OrcaGymCtrl` 是否正在运行。
-- 当前 Conda 环境是否为 `orcalab`。
-- `g1_omnipicker_collection_tele.py` 是否正常运行且终端无报错。
-
-### 腰部无法升降
-
-检查当前机器人模型中是否包含：
-
-```text
-body_slide
-body_slide_pctrl
-```
-
-并确认程序没有因控制器初始化失败而退出。
-
-### 数据采集无法切换
-
-确认使用的是“按下左摇杆”，而不是左右推动左摇杆。
-
-## 10. 主要程序位置
-
-遥操作主程序：
-
-```text
-src/examples/dataCollection/g1_omnipicker_collection_tele.py
-```
-
-机器人配置：
-
-```text
-src/conf/g1_omnipicker_conf.py
-```
-
-测试场景：
-
-```text
-src/examples/dataCollection/test-env
-```
