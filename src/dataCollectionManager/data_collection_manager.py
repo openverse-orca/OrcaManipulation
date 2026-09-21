@@ -1,7 +1,10 @@
+import asyncio
 import enum
 import json
 import os
 import signal
+import socket
+import threading
 import time
 import types
 import numpy as np
@@ -17,6 +20,28 @@ from scene.scene_manager import SceneManager
 from dataStorage.abstract_data_storage import AbstractDataStorage
 from sensor.touch_sensor_visualizer import TouchSensorVisualizer
 orca_logger = OrcaLog.get_instance()
+
+
+def _parse_grpc_host_port(addr: str):
+    """'localhost:50051' -> ('localhost', 50051)；解析失败回退默认。"""
+    addr = (addr or "localhost:50051").strip()
+    if "://" in addr:
+        addr = addr.split("://", 1)[1]
+    host, sep, port = addr.rpartition(":")
+    if not sep:
+        return "127.0.0.1", 50051
+    try:
+        return (host or "127.0.0.1"), int(port)
+    except ValueError:
+        return (host or "127.0.0.1"), 50051
+
+
+def _tcp_reachable(host: str, port: int, timeout: float = 1.0) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 
 @runtime_checkable
@@ -331,8 +356,57 @@ class DataCollectionManager:
         self._sigint_first_time = now
         orca_logger.info("Shutdown requested, finishing current operation... (press Ctrl+C again to force exit)")
 
+    def _start_orcagym_watchdog(self) -> None:
+        """启动 OrcaGym 存活看门狗：端口一消失就触发关闭，让整条链路自动收。
+
+        独立 daemon 线程每 1s 用 TCP 探测 OrcaGym 端口；一旦不可达即置
+        ``_shutdown_requested`` 并关闭 gRPC channel（解除主循环可能阻塞在
+        ``run_until_complete`` 上的调用），复用现有退出链清理 XPBD 等。
+        """
+        if getattr(self.env, "_skip_grpc_load", False):
+            return  # 离线短链模式无 OrcaGym gRPC，无需看门狗
+        addr = getattr(self.env, "orcagym_addr", None) or "localhost:50051"
+        host, port = _parse_grpc_host_port(addr)
+
+        def _watch() -> None:
+            while not self._shutdown_requested:
+                if not _tcp_reachable(host, port):
+                    orca_logger.info(f"[watchdog] OrcaGym {host}:{port} 断开，触发关闭")
+                    self._shutdown_requested = True
+                    self._unblock_grpc()
+                    break
+                time.sleep(1.0)
+
+        threading.Thread(target=_watch, name="orcagym-watchdog", daemon=True).start()
+        orca_logger.info(f"[watchdog] OrcaGym 存活看门狗已启动（{host}:{port}）")
+
+    def _unblock_grpc(self) -> None:
+        """关闭 gRPC channel，使可能阻塞在 gRPC 调用上的主循环立刻失败返回。"""
+        try:
+            env = self.env
+            channel = getattr(env, "channel", None)
+            loop = getattr(env, "loop", None)
+            if channel is None:
+                return
+            if loop is not None:
+                try:
+                    asyncio.run_coroutine_threadsafe(channel.close(), loop)
+                    return
+                except Exception:
+                    pass
+            # 兜底：直接关闭底层同步 channel（线程安全，立刻取消在途 RPC）
+            underlying = getattr(channel, "_channel", None)
+            if underlying is not None:
+                try:
+                    underlying.close()
+                except Exception:
+                    pass
+        except Exception as exc:
+            orca_logger.warning(f"[watchdog] 关闭 gRPC channel 失败: {exc}")
+
     def run(self, max_episodes: int | None = None):
         self._shutdown_requested = False
+        self._start_orcagym_watchdog()
         self.env.disable_actuator(self.disable_actuator_group)
         episode_count = 0
         if self.touch_sensor_names:
@@ -371,8 +445,11 @@ class DataCollectionManager:
                         orca_logger.info("Task Failed!")
 
         except Exception as e:
-            orca_logger.error(f"Run error: {e}")
-            raise
+            if self._shutdown_requested:
+                orca_logger.info(f"Run ended by watchdog（OrcaGym 断开）: {e}")
+            else:
+                orca_logger.error(f"Run error: {e}")
+                raise
         finally:
             signal.signal(signal.SIGINT, self._original_sigint)
             orca_logger.info("Cleanup start")
