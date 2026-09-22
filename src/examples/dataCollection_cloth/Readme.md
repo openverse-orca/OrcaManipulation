@@ -7,9 +7,9 @@
 - [1. 目录结构与介绍](#1-目录结构与介绍)
 - [2. 运行流程](#2-运行流程)
   - [2.1 前置准备 克隆依赖仓库](#21-前置准备-克隆依赖仓库)
-  - [2.2 启动 OrcaStudio / OrcaLab 并进入 Play](#22-启动-orcastudio--orcalab-并进入-play)
-  - [2.3 激活 conda 环境](#23-激活-conda-环境)
-  - [2.4 安装依赖](#24-安装依赖)
+  - [2.2 创建 / 激活 conda 环境](#22-创建--激活-conda-环境)
+  - [2.3 安装依赖](#23-安装依赖)
+  - [2.4 启动 OrcaStudio / OrcaLab 并进入 Play](#24-启动-orcastudio--orcalab-并进入-play)
   - [2.5 运行三进程联调](#25-运行三进程联调)
 - [3. 调整参数参考](#3-调整参数参考)
   - [3.1 运行参数（环境变量）](#31-运行参数环境变量)
@@ -21,12 +21,8 @@
 
 | 文件 | 说明 |
 |------|------|
-| `data_collection_cloth_tele.py` | **主入口**（布料遥操 / 轨迹回放）；`--cloth-coupling` 挂载布料耦合 |
+| `data_collection_cloth_tele.py` | **主入口**（布料遥操）；`--cloth-coupling` 挂载布料耦合 |
 | `RunCloth/run_cloth_robot_p23c.sh` | **三进程联调一键脚本**（refresh session → export scene → 起 tele → 自动拉起 OrcaLink + XPBD） |
-| `data_collection_fluid_tele.py` | 流体遥操入口（SPH 链路，另一条，不参与布料） |
-| `generate_pico_replay_data.py` | 轨迹关键帧 → Pico JSON（回放数据） |
-| `generate_cloth_robot_replay_data.py` | 生成 cloth robot 回放数据 |
-| `cloth_replay_paths.py` | 回放路径配置 |
 | `RunCloth/` | 联调辅助脚本（config 解析 / XPBD 构建 / 运行时宿主探测 / 相位校验） |
 | `analyze/` | 联调分析脚本（debug session / 夹爪闭合 / SBT 旋转离线诊断） |
 | `Cloth_Robot_DATA_FLOW.md` | 数据传输链路文档（三通道 + 频率分层） |
@@ -48,11 +44,11 @@
 ```
 2.1 克隆依赖仓库到同级目录（仅一次）
         ↓
-2.2 启动 OrcaStudio / OrcaLab 并进入 Play（手动，仅一次）
+2.2 创建 / 激活 conda 环境
         ↓
-2.3 激活 conda 环境
+2.3 安装依赖
         ↓
-2.4 安装依赖
+2.4 启动 OrcaStudio / OrcaLab 并进入 Play（手动，仅一次）
         ↓
 2.5 运行 bash RunCloth/run_cloth_robot_p23c.sh
 ```
@@ -62,80 +58,42 @@
 
 ### 2.1 前置准备 克隆依赖仓库
 
-> 一次性操作。联调需要 **OrcaGym / OrcaLink / OrcaPlayground / XPBD** 与 OrcaManipulation 放在**同一级目录**（即 OrcaManipulation 的上一级目录下）：
+> 一次性操作。联调需要 **OrcaGym / OrcaPlayground** 与 OrcaManipulation 放在**同一级目录**（即 OrcaManipulation 的上一级目录下）；**orca-link / orca-xpbd 是 pip 包（见 2.4），无需 git 下载**：
 
 ```
 <REPO_ROOT>/                 # OrcaManipulation 的上一级目录（如 ~/Development）
 ├── OrcaGym/                 # ← 克隆到这里（同级）
-├── OrcaLink/
-├── OrcaPlayground/
-├── XPBD/
+├── OrcaPlayground/          # ← 克隆到这里（同级，提供 cloth_sim_config）
 └── OrcaManipulation/
 ```
 
 ```bash
 cd <REPO_ROOT>                                          # OrcaManipulation 的上一级目录
-# OrcaGym 走 LFS skip（GitHub LFS 配额问题，见 2026-09-21 排查），其余正常 clone
+# OrcaGym 走 LFS skip（GitHub LFS 配额问题，见 2026-09-21 排查）
 GIT_LFS_SKIP_SMUDGE=1 git clone git@github.com:openverse-orca/OrcaGym.git && (cd OrcaGym && git checkout dev)
-git clone git@github.com:openverse-orca/OrcaLink.git && (cd OrcaLink && git checkout Dev)
 git clone git@github.com:openverse-orca/OrcaPlayground.git && (cd OrcaPlayground && git checkout dev)
-git clone git@github.com:openverse-orca/XPBD.git && (cd XPBD && git checkout XPBD_mujoco312)
+# orca-link（含 Client/Python）/ orca-xpbd 走 pip（见 2.4），无需 git clone
 ```
 
 > `<REPO_ROOT>` 即 `run_cloth_robot_p23c.sh` 里 `$(dirname "$0")/../../../../..` 定位的目录，也可用环境变量 `REPO_ROOT` 覆盖。
 
-### 2.2 启动 OrcaStudio / OrcaLab 并进入 Play
+### 2.2 创建 / 激活 conda 环境
 
-#### 方式 A：启动 OrcaLab
-
-```bash
-cd <REPO_ROOT>/OrcaLab_2409
-./OrcaLab.sh --scene NursingHome
-```
-
-**OrcaLab 场景准备（G1 遥操布料）**
-
-- 机器人资产实例命名为 **`g1_omnipicker_usda`**
-- 将该实例拖到左侧大纲的 **`Group`** 下，再 **Play**
-
-#### 方式 B：启动 OrcaStudio
-
-```bash
-cd <REPO_ROOT>/OrcaStudio_2409/build
-./OrcaEditor
-```
-
-在界面中打开关卡（如 `NursingHome`），点击 **Play**。
-
-确认以下端口已监听：
-
-```bash
-ss -tlnp | grep -E "50051|50261"
-# OrcaGym  :50051
-# PBDRender:50261
-```
-
-> 布料 gRPC 是 PBDRender Gem **:50261**（不是 MultiPhysicsRender 的 SoftBody :50263）。没点 Play 端口不会起来。
-
-### 2.3 激活 conda 环境
-
-联调 Python 必须是 conda **orca-apr24**（OrcaGym 依赖，`resolve_orca_conda_python.sh` 会定位）：
+联调 Python 由 `resolve_orca_conda_python.sh` 动态解析（优先 `$PYTHON`，其次当前激活的 conda 环境），**环境名任意**：
 
 ```bash
 # 如果 conda 未初始化，先 source
 source ~/miniconda3/etc/profile.d/conda.sh   # 或 /opt/conda/etc/profile.d/conda.sh
 
-# 创建环境（如果不存在）
-CONDA_ENV_NAME="orca-apr24"
-if ! conda env list | grep -qE "^\s*${CONDA_ENV_NAME}\s"; then
-    conda create -n ${CONDA_ENV_NAME} python=3.12 -y
-fi
+# 创建环境（名称任意）
+CONDA_ENV_NAME="<你的环境名>"
+conda create -n ${CONDA_ENV_NAME} python=3.12 -y
 
 # 激活环境
 conda activate ${CONDA_ENV_NAME}
 ```
 
-### 2.4 安装依赖
+### 2.3 安装依赖
 
 ```bash
 # 确认 conda 环境已激活
@@ -155,9 +113,41 @@ orca-link           26.9.1.2
 orca-xpbd           26.9.1.2
 ```
 
-> `requirements.txt` 已内置两个源（官方 PyPI 主源 + test PyPI 次源，`orca-*` 包发布在 test.pypi.org），并通过 `-r ../../../requirements.txt` 引用顶层通用依赖。
+> `requirements.txt` 已内置两个源（官方 PyPI 主源 + test PyPI 次源，`orca-*` 包发布在 test.pypi.org），并通过 `-r ../../../requirements.txt` 引用顶层通用依赖。**orca-link（pip）提供 orcalink server + Client/Python 客户端，orca-xpbd（pip）提供 XPBD 二进制，均无需 git 下载。**
 >
 > 若用 XPBD 源码二进制（推荐联调时，`ORCAXPBD_USE_PIP_PACKAGE=0`），`run_cloth_robot_p23c.sh` 会经 `ensure_xpbd_pip.py` 自动准备/编译 XPBD，不依赖 pip 包。
+
+### 2.4 启动 OrcaStudio / OrcaLab 并进入 Play
+
+#### 方式 A：启动 OrcaLab
+
+1. 启动 OrcaLab（桌面快捷方式，或 conda 环境里输入 `orcalab`）。
+2. 在 OrcaLab 里同步目标资产（资产名 **`NursingHome`**），或打开资产库订阅后在本地同步。
+3. 打开 NursingHome_4cloth 关卡，点击 Play。
+
+**OrcaLab 场景准备（G1 遥操布料）**
+
+- 机器人资产实例命名为 **`g1_omnipicker_usda`**
+- 将该实例拖到左侧大纲的 **`Group`** 外面，再 **Play**
+
+#### 方式 B：启动 OrcaStudio
+
+```bash
+cd <REPO_ROOT>/OrcaStudio_2409/build
+./OrcaEditor
+```
+
+在界面中打开关卡（如 `NursingHome_4cloth`），点击 **Play**。
+
+确认以下端口已监听：
+
+```bash
+ss -tlnp | grep -E "50051|50261"
+# OrcaGym  :50051
+# PBDRender:50261
+```
+
+> 布料 gRPC 是 PBDRender Gem **:50261**（不是 MultiPhysicsRender 的 SoftBody :50263）。没点 Play 端口不会起来。
 
 ### 2.5 运行三进程联调
 
@@ -165,7 +155,7 @@ orca-xpbd           26.9.1.2
 # 确认 conda 环境已激活
 conda activate ${CONDA_ENV_NAME}
 
-# 运行联调脚本（自动完成：编译 XPBD → 刷新 session → 生成 replay → 启动 tele）
+# 运行联调脚本（自动完成：编译 XPBD → 刷新 session → 启动 tele）
 cd <REPO_ROOT>/OrcaManipulation/src/examples/dataCollection_cloth/RunCloth
 bash run_cloth_robot_p23c.sh
 ```
@@ -175,16 +165,22 @@ bash run_cloth_robot_p23c.sh
 ```bash
 cd <REPO_ROOT>/OrcaManipulation/src/examples/dataCollection_cloth/RunCloth
 
-# 回放（第一次先跑）
-REPLAY=1 CLOTH_NO_REALTIME=1 XPBD_UI=1 MAX_MACRO_FRAMES=800 \
-LEVEL=NursingHome AGENT=g1_omnipicker MJC_PREFIX=g1_omnipicker_usda \
-ORCAXPBD_USE_PIP_PACKAGE=0 \
-bash run_cloth_robot_p23c.sh
+export DEBUG=0
+export XPBD_RELEASE_BUILD=1
+export CLOTH_DEBUG=0
+export COLLECT_DATA=0
+export REPLAY=0
+export CLOTH_NO_REALTIME=0
+export XPBD_UI=1
+export MAX_MACRO_FRAMES=20000
+export PBD_GRPC_SBT_ROTATION=from_quat
+export LEVEL=NursingHome_4cloth
+export AGENT=g1_omnipicker
+export MJC_PREFIX=g1_omnipicker_usda
+export CLOTH_SKIP_MASKED_PREFAB_CHECK=1
+export CLOTH_SYNC_STUDIO_VIS=1
+export CLOTH_CONFIG=<REPO_ROOT>/OrcaPlayground/examples/embodied/cloth/cloth_sim_config.NursingHome_g1_omnipicker.json
 
-# PICO 真遥操
-REPLAY=0 CLOTH_NO_REALTIME=0 MAX_MACRO_FRAMES=20000 \
-LEVEL=NursingHome AGENT=g1_omnipicker MJC_PREFIX=g1_omnipicker_usda \
-ORCAXPBD_USE_PIP_PACKAGE=0 \
 bash run_cloth_robot_p23c.sh
 ```
 
@@ -194,17 +190,16 @@ bash run_cloth_robot_p23c.sh
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `LEVEL` | `NursingHome` | 关卡名（省略时由 `detect_studio_level.sh` 自动解析） |
+| `LEVEL` | `NursingHome_4cloth` | 关卡名（省略时由 `detect_studio_level.sh` 自动解析） |
 | `AGENT` | `openloong` | Agent 名称：`openloong` / `g1_omnipicker` / `tiangong2` |
 | `MJC_PREFIX` | `openloong_gripper_2f85_fix_base_usda` | MJCF agent 前缀（g1_omnipicker 用 `g1_omnipicker_usda`） |
 | `DEBUG` | `0` | `1` 开启 debug 模式（CSV + 采集 + 自动分析） |
 | `XPBD_RELEASE_BUILD` | `1` | `0` 用 Debug 编译的 XPBD |
 | `CLOTH_DEBUG` | `0` | `1` 开启 cloth debug CSV 输出 |
 | `COLLECT_DATA` | `0` | `1` 采集数据集 / HDF5 |
-| `REPLAY` | `1` | `1` 回放；`0` 听 PICO 手柄 |
 | `CLOTH_NO_REALTIME` | `1` | `1` 尽快跑完不等实时；`0` 按墙钟跟手 |
 | `XPBD_UI` | `1` | `0` 关闭 XPBD OpenGL 窗口 |
-| `CLOTH_SYNC_STUDIO_VIS` | `1` | `0` 关闭 Studio 刚体跟随（replay 推 qpos） |
+| `CLOTH_SYNC_STUDIO_VIS` | `1` | `0` 关闭 Studio 刚体跟随 |
 | `MAX_MACRO_FRAMES` | `800` | 单回合宏步上限 |
 | `MAX_SEC` | `120` | 单回合时长上限（秒） |
 | `PBD_GRPC_SBT_ROTATION` | `from_quat` | XPBD→Studio 刚体旋转传递方式（`zup_yflip` / `from_quat`） |
@@ -219,8 +214,6 @@ bash run_cloth_robot_p23c.sh
 
 > 端口约定：`8001`(PICO→PicoJoystick)、`50051`(OrcaGym↔Studio)、`50361`(OrcaLink)、`50261`(XPBD→PBDRender)。
 
-> 回放 vs 真遥操关键差异：`REPLAY`（`1` 回放 / `0` 听手柄）、`CLOTH_NO_REALTIME`（`1` 不等实时 / `0` 跟手）、`MAX_MACRO_FRAMES`（回放 `800` / 遥操 `20000`）。
-
 ---
 
 ## 3. 调整参数参考
@@ -229,11 +222,11 @@ bash run_cloth_robot_p23c.sh
 
 ### 3.1 运行参数（环境变量）
 
-见 [2.5.2](#252-运行参数环境变量)。调「回放 vs 遥操」「XPBD 窗口显隐」「实时同步」都在这里。
+见 [2.5.2](#252-运行参数环境变量)。调「XPBD 窗口显隐」「实时同步」等都在这里。
 
 ### 3.2 布料 / 耦合参数（cloth_sim_config）
 
-布料物理与 MjcPBD 耦合参数在 `cloth_sim_config.*.json`（`OrcaPlayground/examples/cloth_3d/` 下），由 `resolve_cloth_config.sh` 按 `LEVEL` + `AGENT` 解析（默认 `cloth_sim_config.orcagym_e2e.json`，继承 `dual_gripper_cross_full.json`）。
+布料物理与 MjcPBD 耦合参数在 `cloth_sim_config.*.json`（`OrcaPlayground/examples/embodied/cloth/` 下），由 `resolve_cloth_config.sh` 按 `LEVEL` + `AGENT` 解析（如 NursingHome_4cloth + g1_omnipicker → `cloth_sim_config.NursingHome_g1_omnipicker.json`）。
 
 | 段 | 内容 | 说明 |
 |---|---|---|
