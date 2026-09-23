@@ -165,22 +165,15 @@ bash run_cloth_robot_p23c.sh
 ```bash
 cd <REPO_ROOT>/OrcaManipulation/src/examples/dataCollection_cloth/RunCloth
 
-export DEBUG=0
-export XPBD_RELEASE_BUILD=1
-export CLOTH_DEBUG=0
-export COLLECT_DATA=0
-export REPLAY=0
-export CLOTH_NO_REALTIME=0
-export XPBD_UI=1
-export MAX_MACRO_FRAMES=20000
-export PBD_GRPC_SBT_ROTATION=from_quat
-export LEVEL=NursingHome_4cloth
-export AGENT=g1_omnipicker
-export MJC_PREFIX=g1_omnipicker_usda
-export CLOTH_SKIP_MASKED_PREFAB_CHECK=1
-export CLOTH_SYNC_STUDIO_VIS=1
-export CLOTH_CONFIG=<REPO_ROOT>/OrcaPlayground/examples/embodied/cloth/cloth_sim_config.NursingHome_g1_omnipicker.json
+export DISPLAY=:1
+xhost +local:root
 
+export REPO_ROOT=<OrcaManipulation 的上一级目录>   # 详见 2.1
+
+export DEBUG=0 XPBD_RELEASE_BUILD=1 CLOTH_DEBUG=0
+export COLLECT_DATA=0 REPLAY=0 CLOTH_NO_REALTIME=0 XPBD_UI=1
+export MAX_MACRO_FRAMES=20000 PBD_GRPC_SBT_ROTATION=from_quat
+export CLOTH_SYNC_STUDIO_VIS=1 LEVEL=NursingHome AGENT=g1_omnipicker MJC_PREFIX=g1_omnipicker_usda GRIP_ANCHOR=inner
 bash run_cloth_robot_p23c.sh
 ```
 
