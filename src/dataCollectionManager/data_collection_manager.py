@@ -215,22 +215,29 @@ class DataCollectionManager:
         orcagym_addr_str = orcagym_addr.replace(":", "-")
         env_id = env_name + "-OrcaGym-" + orcagym_addr_str + f"-{env_index:03d}"
         agent_names = [f"{self._mjc_agent_prefix or agent_name}"]
-        kwargs = {'frame_skip': frame_skip,   
-                    'orcagym_addr': orcagym_addr, 
-                    'agent_names': agent_names, 
-                    'time_step': time_step,
-                    'default_joint_values': default_joint_values,
-                    'obs_callback': obs_callback}     
-        orca_logger.info(f"Creating env {env_name} with kwargs {kwargs}")
+        env_kwargs = {
+            'frame_skip': frame_skip,
+            'orcagym_addr': orcagym_addr,
+            'agent_names': agent_names,
+            'time_step': time_step,
+            'default_joint_values': default_joint_values,
+            'obs_callback': obs_callback,
+        }
+        # 合并 Manager 额外参数（例如 sim_device），不要整表覆盖丢掉。
+        env_kwargs.update(kwargs)
+        sim_device = env_kwargs.pop("sim_device", None)
+        if sim_device is not None:
+            env_kwargs["device"] = sim_device
+        orca_logger.info(f"Creating env {env_name} with kwargs {env_kwargs}")
 
         gym.register(
             id=env_id,
             entry_point=entry_point,
-            kwargs=kwargs,
+            kwargs=env_kwargs,
             max_episode_steps= max_episode_steps,
             reward_threshold=0.0,
         )
-        env = gym.make(env_id, **kwargs)
+        env = gym.make(env_id, **env_kwargs)
 
         if self.scene_manager is not None:
             self.scene_manager.set_env(env.unwrapped)

@@ -11,6 +11,20 @@ from devices.abstract_device import AbstractDevice, PicoJoystickDevice
 from devices.data_device import DataDevice
 from controllers.controller_2f85_reverse import Controller2F85Reverse
 
+
+def _controller_sim(env):
+    """选出 OSC/IK 要用的仿真句柄。
+
+    做什么：CPU 环境有 ``env.gym``，用它；Euler 环境没有无前缀 ``gym``，用 ``env`` 自身。
+    为什么：robosuite 控制器需要 ``query_site_pos_and_mat`` / ``mj_fullM`` / ``data.qvel``。
+    禁止写 ``env._gym``。
+    """
+    gym_backend = getattr(env, "gym", None)
+    if gym_backend is not None:
+        return gym_backend
+    return env
+
+
 def create_arm_osc_controller(env: OrcaGymLocalEnv,
                           arm_config: dict,
                           base_body: str,
@@ -28,7 +42,7 @@ def create_arm_osc_controller(env: OrcaGymLocalEnv,
                     [range[1] for range in arm_config["motors_ranges"]]]
 
     osc_config = controller_config.load_config("osc_pose")
-    osc_config["sim"] = env.gym
+    osc_config["sim"] = _controller_sim(env)
     osc_config["eef_name"] = env.site(arm_config["ee_site_name"])
     osc_config["joint_indexes"] = joint_indexes
     osc_config["actuator_range"] = motors_ranges
@@ -61,7 +75,7 @@ def create_arm_ik_controller(env: OrcaGymLocalEnv,
                         [r[1] for r in arm_config["positions_ranges"]]]
 
     ik_config = controller_config.load_config("custom_ik_pose")
-    ik_config["sim"] = env.gym
+    ik_config["sim"] = _controller_sim(env)
     ik_config["eef_name"] = env.site(arm_config["ee_site_name"])
     ik_config["joint_indexes"] = joint_indexes
     ik_config["actuator_range"] = positions_ranges
