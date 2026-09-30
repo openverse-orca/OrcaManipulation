@@ -11,6 +11,35 @@ Pico VR 双手柄遥操作系统。
   - 本目录是**自包含快照**；实际运行用的文件在 `~/dual_robot/dual_arm_robot/` 下
     （OrcaStudio 从其 `urdf/` 导入、脚本也从那里运行）。
 
+## 相较原始模型，XML 做了哪些改动
+
+原始模型 `dual_arm.urdf`：固定基座，双 E05 装在车身上，车身升降四连杆
+（XT/DT/XB/TB）为**活动 revolute 关节**，末端仅 dummy 空夹爪，**无执行器、
+无轮式底盘**。本 MJCF 相对它的改动：
+
+1. **URDF → MJCF 重构**：radian 单位、obj/stl mesh 引用、inertial 按 mesh 几何重算；
+2. **轮式浮动底盘**：固定基座 → 3 个自由关节（世界 x/y 平移 + 车体偏航，高度锁定
+   0.58m，joint damping 0.5）；4 个轮子为视觉模型（2 前轮带转向铰链 + 4 滚动铰链），
+   后轮滚动角用 equality 与同侧前轮耦合；3 个 velocity 执行器（kv=600，±2m/s / ±3rad/s）
+   供遥操驱动底盘；
+3. **车身升降四连杆 bake 固定**：XT/DT/XB/TB 四个 revolute 按固定角度焊死
+   （XT -0.39 / DT 0.02 / XB 0.08 / TB -0.28 rad），无关节无执行器，防止遥操中车身晃动；
+4. **双臂 12 个 position 执行器**（原始无执行器）：joint1-4 kp=110/kv=13、
+   joint5-6 kp=55/kv=1，actuatorfrcrange 按电机规格限力；
+5. **真实 M20 夹爪替换 dummy 末端**：每爪 jaw_a/jaw_b 双 slide 关节
+   （行程 [-0.0135, 0]，0=全开），equality 对称耦合，每爪 1 个 velocity
+   执行器，开度由脚本速度闭环决定（不用位置伺服）；
+6. **新增末端 TCP site**：`left_eef_site` / `right_eef_site`（M20 法兰前 0.155m），
+   IK 与遥操绑定直接以 site 世界位姿为目标；
+7. **腕部数值稳定**（9-30）：joint5/6 加 `damping="2"`、执行器 kv 7→1——腕部
+   惯量极小，OrcaStudio 1ms 步长下 kv=7 的显式积分项会自持振荡（现象：夹爪
+   自己转动）；MuJoCo 对 joint damping 隐式积分、无条件稳定；
+8. **底盘 mesh 去外露方块**：`base_link_mobile.obj` 为删除两个外露连通域的
+   版本（几何层面修改，XML 引用名不变）。
+
+注意：OrcaStudio 导入会**丢弃 armature、重算 inertial**，但**保留 kp/kv/damping**
+——因此物理调参只用这三类属性（详见常见问题）。
+
 ## 前置条件
 
 1. OrcaStudio 已打开含本机器人的场景，且**仿真已启动**（gRPC 50051 就绪）；
