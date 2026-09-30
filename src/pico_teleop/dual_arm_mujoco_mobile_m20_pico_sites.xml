@@ -1,0 +1,197 @@
+<mujoco model="bolt_sorting_dual_e05">
+  <compiler angle="radian" />
+  <option timestep="0.001">
+    <flag warmstart="enable" />
+  </option>
+  <asset>
+    <mesh name="base_link" content_type="model/obj" file="../meshes/body/base_link_mobile.obj" />
+    <mesh name="XT_Link" content_type="model/obj" file="../meshes/body/XT_Link.obj" />
+    <mesh name="DT_Link" content_type="model/obj" file="../meshes/body/DT_Link.obj" />
+    <mesh name="XB_Link" content_type="model/obj" file="../meshes/body/XB_Link.obj" />
+    <mesh name="TB_Link" content_type="model/obj" file="../meshes/body/TB_Link.obj" />
+    <mesh name="elfin_base" content_type="model/stl" file="../meshes/e05/elfin_base.STL" />
+    <mesh name="elfin_link1" content_type="model/stl" file="../meshes/e05/elfin_link1.STL" />
+    <mesh name="elfin_link2" content_type="model/stl" file="../meshes/e05/elfin_link2.STL" />
+    <mesh name="elfin_link3" content_type="model/stl" file="../meshes/e05/elfin_link3.STL" />
+    <mesh name="elfin_link4" content_type="model/stl" file="../meshes/e05/elfin_link4.STL" />
+    <mesh name="elfin_link5" content_type="model/stl" file="../meshes/e05/elfin_link5.STL" />
+    <mesh name="elfin_link6" content_type="model/stl" file="../meshes/e05/elfin_link6.STL" />
+    <mesh name="m20_base" content_type="model/obj" file="../meshes/gripper/m20_base.obj" />
+    <mesh name="m20_jaw_a" content_type="model/obj" file="../meshes/gripper/m20_jaw_a.obj" />
+    <mesh name="m20_jaw_b" content_type="model/obj" file="../meshes/gripper/m20_jaw_b.obj" />
+  </asset>
+  <worldbody>
+    <!-- ===================== 可移动轮式底盘（浮动底座：世界x/y平移 + 车体偏航，高度锁定） ===================== -->
+    <!-- 三层 1-DOF 关节组成平面移动底盘，物理稳定、不侧翻；原模型 mesh/外观完全不变。 -->
+    <!-- 关节锚点取在车身箱体内部 (0,0.62,0.30)：base_link mesh 资产自带 (0,0.616,-0.597) -->
+    <!-- 偏移、视觉轮子贴地（世界 z≈0）；若把锚点放在 (0,0,0.58) 会悬在车头前方 0.23m， -->
+    <!-- 查看器里底盘关节/执行器坐标轴会显示在车身外。下方 geom/上身/惯性均按锚点平移做了补偿，外观不变。 -->
+    <body name="base_slide_x" pos="0 0.62 0.30">
+      <joint name="base_slide_x" type="slide" axis="1 0 0" damping="0.5" />
+      <inertial pos="0 -0.62 0.28" mass="45" diaginertia="1.2 1.6 1.6" />
+      <body name="base_slide_y" pos="0 0 0">
+        <joint name="base_slide_y" type="slide" axis="0 1 0" damping="0.5" />
+        <inertial pos="0 0 0" mass="0.01" diaginertia="0.0001 0.0001 0.0001" />
+        <body name="mobile_base_visual" pos="0 0 0">
+          <joint name="base_yaw" type="hinge" axis="0 0 1" damping="0.5" />
+          <inertial pos="0 0 0" mass="0.01" diaginertia="0.0001 0.0001 0.0001" />
+          <geom name="mobile_base_mesh" type="mesh" rgba="0.69804 0.69804 0.69804 1" mesh="base_link" pos="0 -0.62 0.28" contype="0" conaffinity="0" />
+
+      <!-- ===================== 上身（固定姿态，bake 自截图 XT-0.39/DT0.02/XB0.08/TB-0.28） ===================== -->
+      <!-- pos 已按新底盘锚点 (0,0.62,0.30) 补偿，上身世界位姿与旧模型完全一致（0,0.625,0.21883）。 -->
+      <body name="XT_Link" pos="0 0.005 -0.08117" quat="0 0 0.699109 0.715015">
+        <inertial pos="0.02493 0.14574 -1.1857e-07" quat="0.707107 0.707107 7.18701e-07 7.18701e-07" mass="9.0777" diaginertia="0.11015 0.094627 0.024575" />
+        <geom type="mesh" rgba="0.69804 0.69804 0.69804 1" mesh="XT_Link" />
+        <body name="DT_Link" pos="0 0.3 0" quat="0 0 0.999954 0.009569">
+          <inertial pos="-0.0045966 0.14351 -0.00012385" quat="0.51589 0.482278 -0.517596 0.483073" mass="13.101" diaginertia="0.0961412 0.0676344 0.0446564" />
+          <geom type="mesh" rgba="0.69804 0.69804 0.69804 1" mesh="DT_Link" />
+          <body name="XB_Link" pos="0 0.3 0" quat="-0.70674 0.022764 0.706741 -0.022764">
+            <inertial pos="0.0136019 0.307179 -0.00406956" quat="0.998119 -0.0605842 0.00101224 -0.00927828" mass="24.4624" diaginertia="0.449501 0.264656 0.244349" />
+            <geom type="mesh" rgba="0.69804 0.69804 0.69804 1" mesh="XB_Link" />
+            <geom pos="0.02 0.42 0.119" quat="0.95955 0 0 0.28154" type="mesh" rgba="0.866667 0.866667 0.890196 1" mesh="elfin_base" />
+            <geom pos="0.02 0.42 -0.119" quat="0 0.28154 -0.95955 0" type="mesh" rgba="0.866667 0.866667 0.890196 1" mesh="elfin_base" />
+            <body name="TB_Link" pos="0.008 0.58425 0" quat="0.707107 -0.001026 -0.707105 -0.001025">
+              <inertial pos="0.0002934 0.12167 -0.011162" quat="0.952338 -0.305042 -0.000596868 -0.000880246" mass="2.8593" diaginertia="0.011558 0.00955084 0.00646275" />
+              <geom type="mesh" rgba="0.69804 0.69804 0.69804 1" mesh="TB_Link" />
+            </body>
+            <!-- E05 腕部消振（"夹爪自己转动"的根因）：joint5/6 惯量极小(~6e-4)，
+                 执行器 kv 是显式积分项，kv=7 时 kv*dt/I≈12 >> 2 → 1ms 步长下
+                 数值失稳，位置伺服自持振荡（实测腕部持续 10-24rad/s、摆幅可达
+                 90°+，夹爪跟着甩）。修复：kv 7→1（显式阻尼降到稳定区），
+                 关节 damping=2（MuJoCo 对 joint damping 隐式积分、无条件稳定，
+                 补足伺服阻尼）。离线实测：锁定 0 振荡、关节阶跃 0.3rad 响应
+                 ~125ms，遥操手感无感。
+                 注意：kp/kv/damping 是 OrcaStudio 导入后保留的属性；armature
+                 与手工 inertial 会被导入管道丢弃/重算（勿再用）。 -->
+            <body name="left_elfin_link1" pos="0.02 0.42 0.1925" quat="0.95955 0 0 0.28154">
+              <inertial pos="-0.021815 -1.1609e-05 0.095394" quat="0.392802 0.587585 -0.393382 0.587964" mass="7.96223" diaginertia="0.0473608 0.0438151 0.0186054" />
+              <joint name="left_elfin_joint1" range="-3.14 3.14" actuatorfrcrange="-200 200" />
+              <geom type="mesh" rgba="0.768627 0.74902 0.729412 1" mesh="elfin_link1" />
+              <body name="left_elfin_link2" pos="-0.078 0 0.1465" quat="0.0696743 0.703665 -0.0696795 -0.703665">
+                <inertial pos="-0.15508 0.031021 0.052499" quat="0.706899 0.706958 -0.0157384 -0.0160155" mass="3.7346" diaginertia="0.0921331 0.090991 0.00502043" />
+                <joint name="left_elfin_joint2" range="-2.35 2.35" actuatorfrcrange="-200 200" />
+                <geom type="mesh" rgba="0.501961 0.501961 0.501961 1" mesh="elfin_link2" />
+                <body name="left_elfin_link3" pos="-0.37262 0.074541 -0.0060028" quat="0.773342 0 0 0.633989">
+                  <inertial pos="1.1184e-05 0.041481 -0.052586" quat="0.380275 0.595918 -0.380723 0.59609" mass="4.71498" diaginertia="0.0201631 0.01809 0.00804197" />
+                  <joint name="left_elfin_joint3" range="-2.61 2.61" actuatorfrcrange="-200 200" axis="0 0 -1" />
+                  <geom type="mesh" rgba="0.768627 0.74902 0.729412 1" mesh="elfin_link3" />
+                  <body name="left_elfin_link4" pos="0 0.119 -0.072" quat="0.499998 -0.500002 0.5 0.5">
+                    <inertial pos="-0.058961 3.7945e-05 0.13807" quat="0.413301 0.574062 -0.412628 0.57391" mass="1.46783" diaginertia="0.0187714 0.0183679 0.00246549" />
+                    <joint name="left_elfin_joint4" range="-3.14 3.14" actuatorfrcrange="-104 104" />
+                    <geom type="mesh" rgba="0.501961 0.501961 0.501961 1" mesh="elfin_link4" />
+                    <body name="left_elfin_link5" pos="-0.0605 0 0.301" quat="0.499998 -0.5 -0.500002 0.5">
+                      <inertial pos="3.4043e-06 -0.036593 -0.044531" quat="0.381322 0.595439 -0.381431 0.595447" mass="2.49795" diaginertia="0.00762182 0.00668146 0.00282474" />
+                      <joint name="left_elfin_joint5" range="-2.56 2.56" damping="2" actuatorfrcrange="-34 34" axis="0 0 -1" />
+                      <geom type="mesh" rgba="0.768627 0.74902 0.729412 1" mesh="elfin_link5" />
+                      <body name="left_elfin_link6" pos="0 -0.1005 -0.0605" quat="0.499998 0.5 0.5 -0.500002">
+                        <inertial pos="-0.007255 -3.2028e-05 0.033062" quat="-0.15942 0.393069 -0.205827 0.881883" mass="0.455194" diaginertia="0.000611425 0.000604883 0.000591187" />
+                        <joint name="left_elfin_joint6" range="-3.14 3.14" damping="2" actuatorfrcrange="-34 34" />
+                        <geom type="mesh" rgba="0.866667 0.866667 0.890196 1" mesh="elfin_link6" />
+                        <body name="left_m20_gripper" pos="0 0 0.045">
+                          <site name="left_eef_site" pos="0 0 0.155" size="0.008" rgba="1 0 0 1" />
+                          <inertial pos="0 0 0.05" mass="0.45" diaginertia="0.0015 0.0015 0.0005" />
+                          <geom name="left_m20_base_visual" type="mesh" mesh="m20_base" rgba="0.68 0.7 0.73 1" contype="0" conaffinity="0" mass="0" />
+                          <body name="left_m20_jaw_a">
+                            <inertial pos="0 0 0" mass="0.06" diaginertia="0.00003 0.00003 0.00003" />
+                            <joint name="left_m20_jaw_a_slide" type="slide" axis="0.299 -0.954 0" range="-0.0135 0" damping="2" />
+                            <geom name="left_m20_jaw_a_visual" type="mesh" mesh="m20_jaw_a" rgba="0.68 0.7 0.73 1" contype="0" conaffinity="0" mass="0" />
+                            <geom name="left_m20_jaw_a_pad" type="box" pos="0.007 -0.020 0.155" size="0.008 0.007 0.012" rgba="0.5 0.6 0.7 0.15" contype="1" conaffinity="1" mass="0" />
+                          </body>
+                          <body name="left_m20_jaw_b">
+                            <inertial pos="0 0 0" mass="0.06" diaginertia="0.00003 0.00003 0.00003" />
+                            <joint name="left_m20_jaw_b_slide" type="slide" axis="-0.299 0.954 0" range="-0.0135 0" damping="2" />
+                            <geom name="left_m20_jaw_b_visual" type="mesh" mesh="m20_jaw_b" rgba="0.68 0.7 0.73 1" contype="0" conaffinity="0" mass="0" />
+                            <geom name="left_m20_jaw_b_pad" type="box" pos="-0.007 0.020 0.155" size="0.008 0.007 0.012" rgba="0.5 0.6 0.7 0.15" contype="1" conaffinity="1" mass="0" />
+                          </body>
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+            <body name="right_elfin_link1" pos="0.02 0.42 -0.1925" quat="0 0.28154 -0.95955 0">
+              <inertial pos="-0.021815 -1.1609e-05 0.095394" quat="0.392802 0.587585 -0.393382 0.587964" mass="7.96223" diaginertia="0.0473608 0.0438151 0.0186054" />
+              <joint name="right_elfin_joint1" range="-3.14 3.14" actuatorfrcrange="-200 200" />
+              <geom type="mesh" rgba="0.768627 0.74902 0.729412 1" mesh="elfin_link1" />
+              <body name="right_elfin_link2" pos="-0.078 0 0.1465" quat="0.0696743 0.703665 -0.0696795 -0.703665">
+                <inertial pos="-0.15508 0.031021 0.052499" quat="0.706899 0.706958 -0.0157384 -0.0160155" mass="3.7346" diaginertia="0.0921331 0.090991 0.00502043" />
+                <joint name="right_elfin_joint2" range="-2.35 2.35" actuatorfrcrange="-200 200" />
+                <geom type="mesh" rgba="0.501961 0.501961 0.501961 1" mesh="elfin_link2" />
+                <body name="right_elfin_link3" pos="-0.37262 0.074541 -0.0060028" quat="0.773342 0 0 0.633989">
+                  <inertial pos="1.1184e-05 0.041481 -0.052586" quat="0.380275 0.595918 -0.380723 0.59609" mass="4.71498" diaginertia="0.0201631 0.01809 0.00804197" />
+                  <joint name="right_elfin_joint3" range="-2.61 2.61" actuatorfrcrange="-200 200" axis="0 0 -1" />
+                  <geom type="mesh" rgba="0.768627 0.74902 0.729412 1" mesh="elfin_link3" />
+                  <body name="right_elfin_link4" pos="0 0.119 -0.072" quat="0.499998 -0.500002 0.5 0.5">
+                    <inertial pos="-0.058961 3.7945e-05 0.13807" quat="0.413301 0.574062 -0.412628 0.57391" mass="1.46783" diaginertia="0.0187714 0.0183679 0.00246549" />
+                    <joint name="right_elfin_joint4" range="-3.14 3.14" actuatorfrcrange="-104 104" />
+                    <geom type="mesh" rgba="0.501961 0.501961 0.501961 1" mesh="elfin_link4" />
+                    <body name="right_elfin_link5" pos="-0.0605 0 0.301" quat="0.499998 -0.5 -0.500002 0.5">
+                      <inertial pos="3.4043e-06 -0.036593 -0.044531" quat="0.381322 0.595439 -0.381431 0.595447" mass="2.49795" diaginertia="0.00762182 0.00668146 0.00282474" />
+                      <joint name="right_elfin_joint5" range="-2.56 2.56" damping="2" actuatorfrcrange="-34 34" axis="0 0 -1" />
+                      <geom type="mesh" rgba="0.768627 0.74902 0.729412 1" mesh="elfin_link5" />
+                      <body name="right_elfin_link6" pos="0 -0.1005 -0.0605" quat="0.499998 0.5 0.5 -0.500002">
+                        <inertial pos="-0.007255 -3.2028e-05 0.033062" quat="-0.15942 0.393069 -0.205827 0.881883" mass="0.455194" diaginertia="0.000611425 0.000604883 0.000591187" />
+                        <joint name="right_elfin_joint6" range="-3.14 3.14" damping="2" actuatorfrcrange="-34 34" />
+                        <geom type="mesh" rgba="0.866667 0.866667 0.890196 1" mesh="elfin_link6" />
+                        <body name="right_m20_gripper" pos="0 0 0.045">
+                          <site name="right_eef_site" pos="0 0 0.155" size="0.008" rgba="0 0 1 1" />
+                          <inertial pos="0 0 0.05" mass="0.45" diaginertia="0.0015 0.0015 0.0005" />
+                          <geom name="right_m20_base_visual" type="mesh" mesh="m20_base" rgba="0.68 0.7 0.73 1" contype="0" conaffinity="0" mass="0" />
+                          <body name="right_m20_jaw_a">
+                            <inertial pos="0 0 0" mass="0.06" diaginertia="0.00003 0.00003 0.00003" />
+                            <joint name="right_m20_jaw_a_slide" type="slide" axis="0.299 -0.954 0" range="-0.0135 0" damping="2" />
+                            <geom name="right_m20_jaw_a_visual" type="mesh" mesh="m20_jaw_a" rgba="0.68 0.7 0.73 1" contype="0" conaffinity="0" mass="0" />
+                            <geom name="right_m20_jaw_a_pad" type="box" pos="0.007 -0.020 0.155" size="0.008 0.007 0.012" rgba="0.5 0.6 0.7 0.15" contype="1" conaffinity="1" mass="0" />
+                          </body>
+                          <body name="right_m20_jaw_b">
+                            <inertial pos="0 0 0" mass="0.06" diaginertia="0.00003 0.00003 0.00003" />
+                            <joint name="right_m20_jaw_b_slide" type="slide" axis="-0.299 0.954 0" range="-0.0135 0" damping="2" />
+                            <geom name="right_m20_jaw_b_visual" type="mesh" mesh="m20_jaw_b" rgba="0.68 0.7 0.73 1" contype="0" conaffinity="0" mass="0" />
+                            <geom name="right_m20_jaw_b_pad" type="box" pos="-0.007 0.020 0.155" size="0.008 0.007 0.012" rgba="0.5 0.6 0.7 0.15" contype="1" conaffinity="1" mass="0" />
+                          </body>
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <!-- 底盘平面速度（浮动底座，原模型外观不变）：世界系 vx / vy / 偏航角速度 -->
+    <velocity name="drive_base_x" joint="base_slide_x" kv="600" ctrlrange="-2 2" forcerange="-500 500" />
+    <velocity name="drive_base_y" joint="base_slide_y" kv="600" ctrlrange="-2 2" forcerange="-500 500" />
+    <velocity name="drive_base_yaw" joint="base_yaw" kv="600" ctrlrange="-3 3" forcerange="-500 500" />
+    <!-- 双臂 -->
+    <position name="drive_left_elfin_joint1" joint="left_elfin_joint1" kp="110" kv="13" ctrlrange="-3.14 3.14" forcerange="-500 500" />
+    <position name="drive_left_elfin_joint2" joint="left_elfin_joint2" kp="110" kv="13" ctrlrange="-2.35 2.35" forcerange="-500 500" />
+    <position name="drive_left_elfin_joint3" joint="left_elfin_joint3" kp="110" kv="13" ctrlrange="-2.61 2.61" forcerange="-500 500" />
+    <position name="drive_left_elfin_joint4" joint="left_elfin_joint4" kp="110" kv="13" ctrlrange="-3.14 3.14" forcerange="-104 104" />
+    <position name="drive_left_elfin_joint5" joint="left_elfin_joint5" kp="55" kv="1" ctrlrange="-2.56 2.56" forcerange="-34 34" />
+    <position name="drive_left_elfin_joint6" joint="left_elfin_joint6" kp="55" kv="1" ctrlrange="-3.14 3.14" forcerange="-34 34" />
+    <position name="drive_right_elfin_joint1" joint="right_elfin_joint1" kp="110" kv="13" ctrlrange="-3.14 3.14" forcerange="-500 500" />
+    <position name="drive_right_elfin_joint2" joint="right_elfin_joint2" kp="110" kv="13" ctrlrange="-2.35 2.35" forcerange="-500 500" />
+    <position name="drive_right_elfin_joint3" joint="right_elfin_joint3" kp="110" kv="13" ctrlrange="-2.61 2.61" forcerange="-500 500" />
+    <position name="drive_right_elfin_joint4" joint="right_elfin_joint4" kp="110" kv="13" ctrlrange="-3.14 3.14" forcerange="-104 104" />
+    <position name="drive_right_elfin_joint5" joint="right_elfin_joint5" kp="55" kv="1" ctrlrange="-2.56 2.56" forcerange="-34 34" />
+    <position name="drive_right_elfin_joint6" joint="right_elfin_joint6" kp="55" kv="1" ctrlrange="-3.14 3.14" forcerange="-34 34" />
+    <!-- M20 夹爪电机：每爪 1 个 velocity 电机驱动 jaw_a（单电机双指机构），
+         jaw_b 由下方 equality 机械耦合跟随、相向对称闭合。
+         不用 position 位置伺服：开度位置由脚本 M20TriggerController 读 qpos
+         做速度闭环决定；夹持力上限由 forcerange ±35N 限住。 -->
+    <velocity name="drive_left_m20_motor" joint="left_m20_jaw_a_slide" kv="20" ctrlrange="-0.05 0.05" forcerange="-35 35" />
+    <velocity name="drive_right_m20_motor" joint="right_m20_jaw_a_slide" kv="20" ctrlrange="-0.05 0.05" forcerange="-35 35" />
+  </actuator>
+  <equality>
+    <!-- M20 单电机双指传动：jaw_b 与 jaw_a 等值耦合（两爪轴向相反 -> 相向对称闭合/张开） -->
+    <joint joint1="left_m20_jaw_a_slide" joint2="left_m20_jaw_b_slide" polycoef="0 1 0 0 0" />
+    <joint joint1="right_m20_jaw_a_slide" joint2="right_m20_jaw_b_slide" polycoef="0 1 0 0 0" />
+  </equality>
+</mujoco>
