@@ -6,16 +6,20 @@ Pico VR 双手柄遥操作系统。
 - **文件**
   - `orcastudio_pico_dual_e05_m20_sites.py` — 遥操作主脚本（数据采集 Manager + 全部控制器）
   - `dual_arm_mujoco_mobile_m20_pico_sites.xml` — MuJoCo 模型（双臂 + 双夹爪 + 浮动底盘）
-  - `../meshes/`（body / e05 / gripper 共 15 个文件，34MB）— 模型引用的全部 mesh，
+  - `dual_arm_mujoco.xml` — **原始模型参照**（由 `dual_arm.urdf` 转换的第一版 MJCF：
+    无执行器、无轮式底盘、无 M20 夹爪、无 eef site，双臂 16 DOF），供对照下述改动
+  - `../meshes/`（body / e05 / gripper 共 16 个文件）— 模型引用的全部 mesh，
     XML 内相对路径 `../meshes/...`，克隆本分支后模型可直接打开
+    （含原始车身 `body/base_link.obj`，原始 MJCF 也因此可加载）
   - 本目录是**自包含快照**；实际运行用的文件在 `~/dual_robot/dual_arm_robot/` 下
     （OrcaStudio 从其 `urdf/` 导入、脚本也从那里运行）。
 
 ## 相较原始模型，XML 做了哪些改动
 
-原始模型 `dual_arm.urdf`：固定基座，双 E05 装在车身上，车身升降四连杆
+原始模型 `dual_arm.urdf`（其第一版 MJCF 转换 `dual_arm_mujoco.xml` 已随包提供，
+可直接打开对照）：固定基座，双 E05 装在车身上，车身升降四连杆
 （XT/DT/XB/TB）为**活动 revolute 关节**，末端仅 dummy 空夹爪，**无执行器、
-无轮式底盘**。本 MJCF 相对它的改动：
+无轮式底盘**。本 MJCF（`dual_arm_mujoco_mobile_m20_pico_sites.xml`）相对它的改动：
 
 1. **URDF → MJCF 重构**：radian 单位、obj/stl mesh 引用、inertial 按 mesh 几何重算；
 2. **轮式浮动底盘**：固定基座 → 3 个自由关节（世界 x/y 平移 + 车体偏航，高度锁定

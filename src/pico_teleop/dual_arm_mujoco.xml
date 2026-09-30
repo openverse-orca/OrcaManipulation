@@ -1,0 +1,104 @@
+<mujoco model="bolt_sorting_dual_e05">
+  <compiler angle="radian"/>
+
+  <asset>
+    <mesh name="base_link" content_type="model/obj" file="../meshes/body/base_link.obj"/>
+    <mesh name="XT_Link" content_type="model/obj" file="../meshes/body/XT_Link.obj"/>
+    <mesh name="DT_Link" content_type="model/obj" file="../meshes/body/DT_Link.obj"/>
+    <mesh name="XB_Link" content_type="model/obj" file="../meshes/body/XB_Link.obj"/>
+    <mesh name="TB_Link" content_type="model/obj" file="../meshes/body/TB_Link.obj"/>
+    <mesh name="elfin_base" content_type="model/stl" file="../meshes/e05/elfin_base.STL"/>
+    <mesh name="elfin_link1" content_type="model/stl" file="../meshes/e05/elfin_link1.STL"/>
+    <mesh name="elfin_link2" content_type="model/stl" file="../meshes/e05/elfin_link2.STL"/>
+    <mesh name="elfin_link3" content_type="model/stl" file="../meshes/e05/elfin_link3.STL"/>
+    <mesh name="elfin_link4" content_type="model/stl" file="../meshes/e05/elfin_link4.STL"/>
+    <mesh name="elfin_link5" content_type="model/stl" file="../meshes/e05/elfin_link5.STL"/>
+    <mesh name="elfin_link6" content_type="model/stl" file="../meshes/e05/elfin_link6.STL"/>
+  </asset>
+
+  <worldbody>
+    <geom type="mesh" rgba="0.69804 0.69804 0.69804 1" mesh="base_link"/>
+    <body name="XT_Link" pos="0 0.625 -0.36117" quat="-2.07904e-06 -3.02821e-06 0.824405 0.566">
+      <inertial pos="0.02493 0.14574 -1.1857e-07" quat="0.707107 0.707107 7.18701e-07 7.18701e-07" mass="9.0777" diaginertia="0.11015 0.094627 0.024575"/>
+      <joint name="XT_Link" range="-1 1" actuatorfrcrange="-300 300" damping="120" frictionloss="0.9" axis="1 0 0"/>
+      <geom type="mesh" rgba="0.69804 0.69804 0.69804 1" mesh="XT_Link"/>
+      <body name="DT_Link" pos="0 0.3 0" quat="0 0 -0.999809 -0.0195679">
+        <inertial pos="-0.0045966 0.14351 -0.00012385" quat="0.51589 0.482278 -0.517596 0.483073" mass="13.101" diaginertia="0.0961412 0.0676344 0.0446564"/>
+        <joint name="DT_Link" range="-1 1" actuatorfrcrange="-300 300" damping="120" frictionloss="0.9" axis="1 0 0"/>
+        <geom type="mesh" rgba="0.69804 0.69804 0.69804 1" mesh="DT_Link"/>
+        <body name="XB_Link" pos="0 0.3 0" quat="0.705264 -0.0510075 -0.705265 0.0510075">
+          <inertial pos="0.0136019 0.307179 -0.00406956" quat="0.998119 -0.0605842 0.00101224 -0.00927828" mass="24.4624" diaginertia="0.449501 0.264656 0.244349"/>
+          <joint name="XB_Link" range="-1 1" actuatorfrcrange="-300 300" damping="120" frictionloss="0.9" axis="0 0 -1"/>
+          <geom type="mesh" rgba="0.69804 0.69804 0.69804 1" mesh="XB_Link"/>
+          <geom pos="0.02 0.42 0.119" quat="0.95955 0 0 0.28154" type="mesh" rgba="0.866667 0.866667 0.890196 1" mesh="elfin_base"/>
+          <geom pos="0.02 0.42 -0.119" quat="0 0.28154 -0.95955 0" type="mesh" rgba="0.866667 0.866667 0.890196 1" mesh="elfin_base"/>
+          <body name="TB_Link" pos="0.008 0.58425 0" quat="0.700332 0.0976559 -0.70033 0.0976571">
+            <inertial pos="0.0002934 0.12167 -0.011162" quat="0.952338 -0.305042 -0.000596868 -0.000880246" mass="2.8593" diaginertia="0.011558 0.00955084 0.00646275"/>
+            <joint name="TB_Link" range="-1 1" actuatorfrcrange="-300 300" damping="120" frictionloss="0.9" axis="1 0 0"/>
+            <geom type="mesh" rgba="0.69804 0.69804 0.69804 1" mesh="TB_Link"/>
+          </body>
+          <body name="left_elfin_link1" pos="0.02 0.42 0.1925" quat="0.95955 0 0 0.28154">
+            <inertial pos="-0.021815 -1.1609e-05 0.095394" quat="0.392802 0.587585 -0.393382 0.587964" mass="7.96223" diaginertia="0.0473608 0.0438151 0.0186054"/>
+            <joint name="left_elfin_joint1" range="-3.14 3.14" actuatorfrcrange="-200 200"/>
+            <geom type="mesh" rgba="0.768627 0.74902 0.729412 1" mesh="elfin_link1"/>
+            <body name="left_elfin_link2" pos="-0.078 0 0.1465" quat="0.0696743 0.703665 -0.0696795 -0.703665">
+              <inertial pos="-0.15508 0.031021 0.052499" quat="0.706899 0.706958 -0.0157384 -0.0160155" mass="3.7346" diaginertia="0.0921331 0.090991 0.00502043"/>
+              <joint name="left_elfin_joint2" range="-2.35 2.35" actuatorfrcrange="-200 200"/>
+              <geom type="mesh" rgba="0.501961 0.501961 0.501961 1" mesh="elfin_link2"/>
+              <body name="left_elfin_link3" pos="-0.37262 0.074541 -0.0060028" quat="0.773342 0 0 0.633989">
+                <inertial pos="1.1184e-05 0.041481 -0.052586" quat="0.380275 0.595918 -0.380723 0.59609" mass="4.71498" diaginertia="0.0201631 0.01809 0.00804197"/>
+                <joint name="left_elfin_joint3" range="-2.61 2.61" actuatorfrcrange="-200 200" axis="0 0 -1"/>
+                <geom type="mesh" rgba="0.768627 0.74902 0.729412 1" mesh="elfin_link3"/>
+                <body name="left_elfin_link4" pos="0 0.119 -0.072" quat="0.499998 -0.500002 0.5 0.5">
+                  <inertial pos="-0.058961 3.7945e-05 0.13807" quat="0.413301 0.574062 -0.412628 0.57391" mass="1.46783" diaginertia="0.0187714 0.0183679 0.00246549"/>
+                  <joint name="left_elfin_joint4" range="-3.14 3.14" actuatorfrcrange="-104 104"/>
+                  <geom type="mesh" rgba="0.501961 0.501961 0.501961 1" mesh="elfin_link4"/>
+                  <body name="left_elfin_link5" pos="-0.0605 0 0.301" quat="0.499998 -0.5 -0.500002 0.5">
+                    <inertial pos="3.4043e-06 -0.036593 -0.044531" quat="0.381322 0.595439 -0.381431 0.595447" mass="2.49795" diaginertia="0.00762182 0.00668146 0.00282474"/>
+                    <joint name="left_elfin_joint5" range="-2.56 2.56" actuatorfrcrange="-34 34" axis="0 0 -1"/>
+                    <geom type="mesh" rgba="0.768627 0.74902 0.729412 1" mesh="elfin_link5"/>
+                    <body name="left_elfin_link6" pos="0 -0.1005 -0.0605" quat="0.499998 0.5 0.5 -0.500002">
+                      <inertial pos="-0.007255 -3.2028e-05 0.033062" quat="-0.15942 0.393069 -0.205827 0.881883" mass="0.455194" diaginertia="0.000611425 0.000604883 0.000591187"/>
+                      <joint name="left_elfin_joint6" range="-3.14 3.14" actuatorfrcrange="-34 34"/>
+                      <geom type="mesh" rgba="0.866667 0.866667 0.890196 1" mesh="elfin_link6"/>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+          <body name="right_elfin_link1" pos="0.02 0.42 -0.1925" quat="0 0.28154 -0.95955 0">
+            <inertial pos="-0.021815 -1.1609e-05 0.095394" quat="0.392802 0.587585 -0.393382 0.587964" mass="7.96223" diaginertia="0.0473608 0.0438151 0.0186054"/>
+            <joint name="right_elfin_joint1" range="-3.14 3.14" actuatorfrcrange="-200 200"/>
+            <geom type="mesh" rgba="0.768627 0.74902 0.729412 1" mesh="elfin_link1"/>
+            <body name="right_elfin_link2" pos="-0.078 0 0.1465" quat="0.0696743 0.703665 -0.0696795 -0.703665">
+              <inertial pos="-0.15508 0.031021 0.052499" quat="0.706899 0.706958 -0.0157384 -0.0160155" mass="3.7346" diaginertia="0.0921331 0.090991 0.00502043"/>
+              <joint name="right_elfin_joint2" range="-2.35 2.35" actuatorfrcrange="-200 200"/>
+              <geom type="mesh" rgba="0.501961 0.501961 0.501961 1" mesh="elfin_link2"/>
+              <body name="right_elfin_link3" pos="-0.37262 0.074541 -0.0060028" quat="0.773342 0 0 0.633989">
+                <inertial pos="1.1184e-05 0.041481 -0.052586" quat="0.380275 0.595918 -0.380723 0.59609" mass="4.71498" diaginertia="0.0201631 0.01809 0.00804197"/>
+                <joint name="right_elfin_joint3" range="-2.61 2.61" actuatorfrcrange="-200 200" axis="0 0 -1"/>
+                <geom type="mesh" rgba="0.768627 0.74902 0.729412 1" mesh="elfin_link3"/>
+                <body name="right_elfin_link4" pos="0 0.119 -0.072" quat="0.499998 -0.500002 0.5 0.5">
+                  <inertial pos="-0.058961 3.7945e-05 0.13807" quat="0.413301 0.574062 -0.412628 0.57391" mass="1.46783" diaginertia="0.0187714 0.0183679 0.00246549"/>
+                  <joint name="right_elfin_joint4" range="-3.14 3.14" actuatorfrcrange="-104 104"/>
+                  <geom type="mesh" rgba="0.501961 0.501961 0.501961 1" mesh="elfin_link4"/>
+                  <body name="right_elfin_link5" pos="-0.0605 0 0.301" quat="0.499998 -0.5 -0.500002 0.5">
+                    <inertial pos="3.4043e-06 -0.036593 -0.044531" quat="0.381322 0.595439 -0.381431 0.595447" mass="2.49795" diaginertia="0.00762182 0.00668146 0.00282474"/>
+                    <joint name="right_elfin_joint5" range="-2.56 2.56" actuatorfrcrange="-34 34" axis="0 0 -1"/>
+                    <geom type="mesh" rgba="0.768627 0.74902 0.729412 1" mesh="elfin_link5"/>
+                    <body name="right_elfin_link6" pos="0 -0.1005 -0.0605" quat="0.499998 0.5 0.5 -0.500002">
+                      <inertial pos="-0.007255 -3.2028e-05 0.033062" quat="-0.15942 0.393069 -0.205827 0.881883" mass="0.455194" diaginertia="0.000611425 0.000604883 0.000591187"/>
+                      <joint name="right_elfin_joint6" range="-3.14 3.14" actuatorfrcrange="-34 34"/>
+                      <geom type="mesh" rgba="0.866667 0.866667 0.890196 1" mesh="elfin_link6"/>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+</mujoco>
