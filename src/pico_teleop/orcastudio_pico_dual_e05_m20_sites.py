@@ -58,6 +58,9 @@ from scipy.spatial.transform import Rotation as R
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 for candidate in (
     THIS_DIR,
+    # 本脚本位于 <仓库>/src/pico_teleop/ 下，仓库模块都在上一级 src/ 里：
+    # 覆盖"克隆到任意路径"的场景（sys.path 逐个 insert(0)，越后越优先）。
+    os.path.abspath(os.path.join(THIS_DIR, "..")),
     os.path.abspath(os.path.join(THIS_DIR, "src")),
     os.path.expanduser("~/OrcaManipulation/src"),
     os.path.expanduser("~/桌面/OrcaManipulation/src"),
