@@ -112,11 +112,35 @@ M20_OPEN = 0.0
 M20_CLOSED = -0.0135
 
 # M20 夹爪电机速度环参数（位置目标 -> 电机速度指令）：
-#   v = GRIPPER_KP_POS * (target - qpos)，限幅 ±GRIPPER_V_MAX
-#   （与 XML velocity 执行器 ctrlrange ±0.05 一致）；无位置积分，
-#   堵转/夹持力由执行器 forcerange ±35N 限住，与旧 position 伺服一致。
-GRIPPER_KP_POS = 6.0   # 1/s：误差 >8.3mm 即满速，全程 ~0.3s 收敛
-GRIPPER_V_MAX = 0.05   # m/s
+#   v = GRIPPER_KP_POS * (target - qpos)，闭合方向两段限幅（堵转检测，见
+#   M20TriggerController.run_controller）；无位置积分，堵转/夹持力由执行器
+#   forcerange ±35N 限住，与旧 position 伺服一致。
+GRIPPER_KP_POS = 22.0       # 1/s：误差 >2.3mm 即饱和，接触后剩余行程仍满速指令
+GRIPPER_V_MAX = 0.05        # m/s（与 XML velocity 执行器 ctrlrange ±0.05 一致）
+GRIPPER_V_APPROACH = 0.02   # m/s 接近段限速：堵转 ~1.6N/指 < 桌面静摩擦，
+                            #   闭合途中碰到物体只轻触不撞飞/推倒
+GRIPPER_V_GRIP = 0.05      # m/s 夹持段限速（堵转锁存后）：kv80 -> 4N/指，
+                            #   μ=2 -> 摩擦容量 16N = 8×200g 物重
+GRIPPER_STALL_SPAN = 0.00015  # m：连续 3 个采样(~30ms) qpos 跨度小于此 -> 触物
+GRIPPER_TRAVEL_GUARD = 0.001  # m：判堵转前至少已闭合 1mm 行程（排除起点误判）
+GRIPPER_UNLATCH_ERR = 0.004  # m：松扳机目标回退超 4mm -> 解除锁存（误锁存
+                              #   无害：只是提前放开速度上限，无接触时力≈0）
+GRIPPER_ARM_RATIO = 0.9      # 饱和阈值系数：KP*err < -0.9*V_APPROACH 视为
+                              #   "本该更快闭合却被挡住"
+
+# ---------------------------- 手臂 motor 电机位置外环 ----------------------------
+# 双臂执行器现为纯力矩 motor（演化 position -> velocity -> motor，见 XML 注释）。
+# IK/锁定/复位只产出关节"目标角" q_des（弧度），由本外环换算成电机速度命令：
+#     v_cmd = clip(ARM_POS_KP * (q_des - q), -ARM_V_MAX, +ARM_V_MAX)
+# 100Hz 控制周期（time_step 0.001 × frame_skip 10）下发。motor 力 F=gear·v_cmd，
+# 速度阻尼由关节 <joint damping> 在 1kHz 隐式承担（J1-3=60/J4=13/J5-6=3）。
+# 等效位置刚度 = gear × ARM_POS_KP，逐关节配平到旧 position 增益，使静态受力/
+# 下垂与旧版一致（手臂锁定不塌）：
+#   J1-3: gear60 × Kp50 = 3000 ; J4: gear13 × Kp8 ≈ 104(旧110) ; J5-6: gear1 × Kp55 = 55
+ARM_POS_KP = np.array([50.0, 50.0, 50.0, 8.0, 55.0, 55.0])  # 1/s
+# 每关节速度命令上限（rad/s），须与 XML motor 执行器 ctrlrange 一致：
+#   J1-3 ±2，J4-6 ±3。
+ARM_V_MAX = np.array([2.0, 2.0, 2.0, 3.0, 3.0, 3.0])
 
 # ---------------------------- 遥操作预备姿势 ----------------------------
 #
@@ -263,10 +287,11 @@ def boost_ik_tracking(arm, alpha=0.5, joint_delta=0.18, damping_lambda=0.03):
     """
     提高 custom IK 的跟随速度并在近奇异点平滑关节运动。
 
-    - alpha=0.5 / max_joint_delta=0.18：默认 alpha=0.2 每步只追 20% 误差、
-      delta 上限 0.1，遥操作时末端滞后；预备姿势改为肘弯曲(远离全伸展)后，
-      正常 0.1m 手柄位移只需 ~0.35rad 关节增量，把 delta 上限放到 0.18 才不会
-      把正常移动也限掉（旧值 0.12 在新姿势下会轻微限制横向跟随）。
+    - alpha=0.5 / max_joint_delta=0.18：2026-10-08 晚实测回滚。当晚曾试
+      alpha=0.65/delta=0.25 + J4-6 增益上调 + pos_smooth 0.8，遥操出现
+      "控制器往下夹爪往上"的反向跟随；整体退回实测可靠的 git 版参数后
+      恢复正常。默认 alpha=0.2/delta=0.1 过保守（末端滞后），此组为
+      多轮实测调好的"跟手且稳"值，改动需遥操实测回归验证。
     - damping_lambda（DLS 阻尼项 λ）：近全伸展等奇异构型用大阻尼防关节甩动，
       但阻尼过大会把笛卡尔移动"软化"（关节转、夹爪不走）。预备姿势已远离
       奇异（雅可比最小奇异值 0.28），取 0.03：实测径向/向上跟随率 99%、
@@ -348,6 +373,8 @@ class HandEEBinding:
         # 抗抖动：手柄静止时毫米级追踪噪声会被 IK（尤其近奇异点）放大成
         # 关节抖动。pos_deadzone 为手柄位移死区(米)；pos_smooth 为末端目标
         # 一阶低通系数(1.0=不滤波)；rot_deadzone 为旋转死区(弧度)。
+        # 2026-10-08 晚曾试 0.8/2mm 放宽滤波，遥操实测出现反向跟随，
+        # 已回退实测可靠的 git 版值 0.5/5mm。
         self.side_flip = bool(side_flip)
         self.pos_deadzone = float(pos_deadzone)
         self.pos_smooth = float(pos_smooth)
@@ -593,6 +620,14 @@ class M20TriggerController(AbstractController):
         qpos 行程（range 上限=全开、下限=全闭，本模型 [-0.0135, 0]），
         每步读当前 qpos，下发电机速度指令 v = kp*(target-qpos)，限幅
         ±GRIPPER_V_MAX；读取失败回退 XML 常量 M20_OPEN/M20_CLOSED。
+
+    两段式堵转检测（先轻触、后夹紧）：
+      接近段限速 GRIPPER_V_APPROACH（堵转 ~1.6N/指 < 桌面静摩擦，碰到
+      物体只轻推不撞飞）；当"位置环本该快速闭合、qpos 却连续 ~30ms 不动"
+      时判定触物并锁存，放开限速到 GRIPPER_V_GRIP 以最大夹持力夹紧；
+      松扳机超过 GRIPPER_UNLATCH_ERR 自动解锁。离线验证：接触点 -10.5mm
+      与几何分界 10.32mm 吻合，锁存后双指对称 4N/指、零滑动零倾倒，
+      0.05/0.15 m/s 提升均提起 200g 薄壁件。
     """
 
     def __init__(self, env, actuator_names, joint_names, base_body, device,
@@ -602,6 +637,8 @@ class M20TriggerController(AbstractController):
         self.open_of, self.closed_of = self._read_strokes(env, joint_names, ctrl_names)
         self._qpos_joint = env.joint(joint_names[0])   # 主动 jaw（电机驱动）
         self.opening = 0.0                    # 扳机量：0=全开 1=全闭
+        self._grip_latched = False            # 堵转锁存：触物后放开夹持段限速
+        self._stall_hist = []                 # 堵转检测的 qpos 滑动窗口
         init_ctrl = {name: 0.0 for name in ctrl_names}   # 电机初始速度 0
         super().__init__(env, ctrl_names, init_ctrl, base_body)
 
@@ -644,6 +681,8 @@ class M20TriggerController(AbstractController):
 
     def reset(self):
         self.opening = 0.0
+        self._grip_latched = False
+        self._stall_hist = []
 
     def run_controller(self):
         op, cl = self._stroke(self.ctrl_name[0])
@@ -652,11 +691,30 @@ class M20TriggerController(AbstractController):
         qpos = float(
             np.asarray(qmap[self._qpos_joint], dtype=np.float64).reshape(-1)[0]
         )
-        # 位置误差 -> 电机速度指令（速度内环由 XML velocity 执行器完成）
-        v = float(
-            np.clip(GRIPPER_KP_POS * (target - qpos),
-                    -GRIPPER_V_MAX, GRIPPER_V_MAX)
-        )
+        err = target - qpos
+        # 堵转检测：松扳机超过 4mm 先解锁；闭合指令饱和（本该快速闭合）
+        # 且 qpos 连续 ~30ms 走不动、已闭合行程 >1mm -> 触物锁存。
+        if err > GRIPPER_UNLATCH_ERR:
+            self._grip_latched = False
+            self._stall_hist = []
+        if GRIPPER_KP_POS * err < -GRIPPER_ARM_RATIO * GRIPPER_V_APPROACH:
+            if not self._grip_latched:
+                self._stall_hist.append(qpos)
+                if len(self._stall_hist) > 3:
+                    self._stall_hist.pop(0)
+                if (len(self._stall_hist) == 3
+                        and abs(qpos - op) > GRIPPER_TRAVEL_GUARD
+                        and (max(self._stall_hist) - min(self._stall_hist))
+                        < GRIPPER_STALL_SPAN):
+                    self._grip_latched = True
+        else:
+            self._stall_hist = []   # 未饱和/已到位：清窗口（防到达目标误判）
+        if err > 0:
+            vmax = GRIPPER_V_MAX    # 开爪方向不限速（快速松开）
+        else:
+            vmax = GRIPPER_V_GRIP if self._grip_latched else GRIPPER_V_APPROACH
+        # 位置误差 -> 电机速度指令（motor 纯力矩，速度阻尼由 jaw 关节 damping=82 承担）
+        v = float(np.clip(GRIPPER_KP_POS * err, -vmax, GRIPPER_V_MAX))
         return {self.ctrl_index[0]: v}
 
 
@@ -682,7 +740,9 @@ class ClutchArmController(AbstractController):
                  ready_q=None, side_flip=True):
         ctrl_names = [env.actuator(name) for name in arm_config["positions_names"]]
         init_q = list(arm_config["positions_init_ctrl"])
-        init_ctrl = {name: float(value) for name, value in zip(ctrl_names, init_q)}
+        # 手臂现为 velocity 电机：上电初始速度命令为 0（不是关节角）。
+        # 目标关节角仍从当前仿真状态起步（init_q），由位置外环换算成速度。
+        init_ctrl = {name: 0.0 for name in ctrl_names}
 
         # 内部真正做 DLS 逆解的控制器；锁定/复位时不调用它。
         self.arm = create_arm_ik_controller(
@@ -736,11 +796,20 @@ class ClutchArmController(AbstractController):
             dtype=np.float64,
         )
 
+    def _qdes_to_vel(self, q_des):
+        """关节目标角 -> velocity 电机速度命令（100Hz 位置外环）。
+
+        v_cmd = clip(ARM_POS_KP·(q_des - q), ±ARM_V_MAX)。等效位置刚度
+        = XML_kv·ARM_POS_KP，已逐关节配平旧 position 增益，锁定/复位/跟随
+        全部经此通道，行为与旧位置伺服一致但命令量为速度。
+        """
+        q = self._read_qpos()
+        v = ARM_POS_KP * (np.asarray(q_des, dtype=np.float64) - q)
+        v = np.clip(v, -ARM_V_MAX, ARM_V_MAX)
+        return {idx: float(v[i]) for i, idx in enumerate(self.ctrl_index)}
+
     def _lock_angles(self):
-        return {
-            idx: float(self.lock_qpos[i])
-            for i, idx in enumerate(self.ctrl_index)
-        }
+        return self._qdes_to_vel(self.lock_qpos)
 
     def _start_following(self, reason: str):
         """进入持续跟随：以"当前手柄位姿 <-> 当前末端夹爪位置"重新配对。
@@ -806,11 +875,11 @@ class ClutchArmController(AbstractController):
             self.binding.enabled = False
 
     def run_controller(self):
-        # 复位：持续下发预备关节角。到位判定绝不能依赖严苛阈值——
-        # 本模型 E05 侧装，joint1 世界轴水平，预备姿势下重力矩 ~64Nm，
-        # 位置伺服 kp=110 无重力补偿，稳态下沉 ~0.5 rad（实测），严阈值
-        # 会永远判不到位，把 Grip 一直吞掉。因此"到位(0.05) 或超时(3s)"
-        # 任一满足即结束复位；复位中点 Grip 也可立即就地跟随（_on_grip）。
+        # 复位：持续下发预备关节角。到位判定不能依赖严苛阈值——历史教训：
+        # kp=110 时代预备姿势重力矩 ~64Nm、稳态下沉 ~0.5 rad，严阈值永远判
+        # 不到位把 Grip 吞掉。现 J1-3 kp=3000/J4-6 已调增益，实测复位残差
+        # 0.025~0.05 rad；仍保留"到位(0.05) 或超时(3s)"双保险，复位中点
+        # Grip 也可立即就地跟随（_on_grip）。
         if self._reset_pending:
             self._reset_frames += 1
             self.lock_qpos = self.ready_qpos.copy()
@@ -825,7 +894,13 @@ class ClutchArmController(AbstractController):
             return self._lock_angles()
 
         if self.following:
-            return self.arm.run_controller()
+            # IK 内部 ControllerArm 返回的是"关节目标角"字典（弧度），
+            # 再经位置外环换成 velocity 电机速度命令。
+            qdes_dict = self.arm.run_controller()
+            q_des = np.array(
+                [qdes_dict[idx] for idx in self.ctrl_index], dtype=np.float64
+            )
+            return self._qdes_to_vel(q_des)
         # 未进入跟随：锁定（启动/复位后为预备姿势）。
         return self._lock_angles()
 
@@ -1030,6 +1105,43 @@ def main():
     env = manager.env
     manager.render_fps = 60
 
+    # 强制运行时求解器 impratio=50（抓取防爬滑）。XML <option impratio="50">
+    # 疑被 OrcaStudio 导入管道丢弃（历史先例：armature/手工 inertial 被丢弃），
+    # 运行时若为默认 1，软摩擦爬滑 ~9mm/s，夹住的 200g 物体 3-4s 缓慢滑落。
+    # env.gym._mjModel 是本地后端物理引擎本体，直接写入立即生效；同时同步
+    # env.gym.opt 镜像，防止后续 set_opt_config() 把 impratio 覆写回 1。
+    _gym_core = getattr(env, "gym", None)
+    _opt_mirror = getattr(_gym_core, "opt", None)
+    _runtime_impratio = float(getattr(_opt_mirror, "impratio", 1.0))
+    if abs(_runtime_impratio - 50.0) > 1e-9:
+        if _opt_mirror is not None:
+            _opt_mirror.impratio = 50.0
+        try:
+            _gym_core._mjModel.opt.impratio = 50.0
+            _now_impratio = float(_gym_core._mjModel.opt.impratio)
+            LOGGER.info(
+                f"运行时 impratio {_runtime_impratio} -> {_now_impratio} 强制生效"
+                f"（XML 属性疑被导入管道丢弃）"
+            )
+        except Exception as exc:
+            LOGGER.warning(f"直接写 _mjModel.opt.impratio 失败: {exc}")
+    else:
+        LOGGER.info(f"运行时 impratio={_runtime_impratio}（XML 属性已生效，无需强制）")
+
+    # 强制运行时 noslip 防滑后处理（抓取掉落三期）。impratio 只治静态爬滑；
+    # 提升/晃动中的动态滑移由 MuJoCo 专用 noslip 求解器兜底：每个仿真步在
+    # 常规求解后追加 noslip_iterations 次修正，把摩擦接触的残余滑移速度
+    # 归零（官方推荐 3-5 次）。XML option 属性同样不可依赖（同 impratio 被
+    # 导入管道丢弃的风险），运行时直接写引擎本体 + opt 镜像双保险。
+    try:
+        _gym_core.opt.noslip_iterations = 3
+        _gym_core.opt.noslip_tolerance = 1e-6
+        _gym_core._mjModel.opt.noslip_iterations = 3
+        _gym_core._mjModel.opt.noslip_tolerance = 1e-6
+        LOGGER.info("运行时 noslip_iterations=3 强制生效（防滑后处理，兜底动态滑移）")
+    except Exception as exc:
+        LOGGER.warning(f"设置运行时 noslip 失败（不影响运行）: {exc}")
+
     # 预检：OrcaStudio 必须加载新版模型（M20 电机执行器），否则明确提示重新导入。
     verify_gripper_motors(env, names)
 
@@ -1182,9 +1294,16 @@ def main():
 
     # 右手 A 键全局复位（仅 clutch 模式）：双臂回预备姿势并锁定、夹爪全开、
     # 手柄重新对中，底盘位置/朝向保持不动。只在按下沿触发一次。
+    # 注：框架 bind_primary_button_event 是状态轮询（按住期间每帧回调
+    # pressed=True），不做边沿检测会导致按住 A 键时复位运动每 10ms 被
+    # 重启一次（日志实测 0.1s 内重触发 11 次，臂顿挫抖动），故在此自记上一帧状态。
     if args.arm_mode == "clutch":
+        _a_prev_pressed = False
         def _on_reset_button(pressed: bool):
-            if not pressed:
+            nonlocal _a_prev_pressed
+            edge = bool(pressed) and not _a_prev_pressed
+            _a_prev_pressed = bool(pressed)
+            if not edge:
                 return
             LOGGER.info(">>> 右手 A 键复位：双臂回预备姿势 + 夹爪全开 + 重新对中（底盘不动）")
             hand_left_clutch.request_reset()

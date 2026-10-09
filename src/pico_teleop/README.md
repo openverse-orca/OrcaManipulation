@@ -23,26 +23,34 @@ Pico VR 双手柄遥操作系统。
 
 1. **URDF → MJCF 重构**：radian 单位、obj/stl mesh 引用、inertial 按 mesh 几何重算；
 2. **轮式浮动底盘**：固定基座 → 3 个自由关节（世界 x/y 平移 + 车体偏航，高度锁定
-   0.58m，joint damping 0.5）；4 个轮子为视觉模型（2 前轮带转向铰链 + 4 滚动铰链），
-   后轮滚动角用 equality 与同侧前轮耦合；3 个 velocity 执行器（kv=600，±2m/s / ±3rad/s）
-   供遥操驱动底盘；
+   0.58m）；4 个轮子为视觉模型（2 前轮带转向铰链 + 4 滚动铰链），
+   后轮滚动角用 equality 与同侧前轮耦合；3 个 motor 执行器（gear=600，
+   ±2m/s / ±3rad/s）供遥操驱动底盘，关节 damping=600 承担速度阻尼；
 3. **车身升降四连杆 bake 固定**：XT/DT/XB/TB 四个 revolute 按固定角度焊死
    （XT -0.39 / DT 0.02 / XB 0.08 / TB -0.28 rad），无关节无执行器，防止遥操中车身晃动；
-4. **双臂 12 个 position 执行器**（原始无执行器）：joint1-4 kp=110/kv=13、
-   joint5-6 kp=55/kv=1，actuatorfrcrange 按电机规格限力；
+4. **双臂 12 个 motor 执行器**（原始无执行器，演化 position → velocity → motor）：
+   gear joint1-3=60 / joint4=13 / joint5-6=1，actuatorfrcrange 按电机规格限力；
+   速度阻尼配平在关节 damping（J1-3=60 / J4=13 / J5-6=3，MuJoCo 隐式积分、
+   无条件稳定），脚本以 100Hz 位置外环下发速度命令，等效位置刚度
+   = gear×Kp 逐关节复现旧 position 增益（3000 / ~104 / 55）；
 5. **真实 M20 夹爪替换 dummy 末端**：每爪 jaw_a/jaw_b 双 slide 关节
-   （行程 [-0.0135, 0]，0=全开），equality 对称耦合，每爪 1 个 velocity
-   执行器，开度由脚本速度闭环决定（不用位置伺服）；
+   （行程 [-0.0135, 0]，0=全开），equality 对称耦合，每爪 1 个 motor
+   执行器（gear=80，jaw_a damping=82），开度由脚本速度闭环决定
+   （不用位置伺服）；夹持失速力 4N/指；pad 摩擦 μ=5（摩擦锥 20N/指，
+   治提升/晃动中的动态滑移）+ 全局 impratio=50（治静态爬滑，见 `<option>`）；
 6. **新增末端 TCP site**：`left_eef_site` / `right_eef_site`（M20 法兰前 0.155m），
    IK 与遥操绑定直接以 site 世界位姿为目标；
-7. **腕部数值稳定**（9-30）：joint5/6 加 `damping="2"`、执行器 kv 7→1——腕部
-   惯量极小，OrcaStudio 1ms 步长下 kv=7 的显式积分项会自持振荡（现象：夹爪
-   自己转动）；MuJoCo 对 joint damping 隐式积分、无条件稳定；
+7. **腕部数值稳定**（9-30）：腕部惯量极小，OrcaStudio 1ms 步长下执行器显式
+   速度项 kv=7 会自持振荡（现象：夹爪自己转动）；改为执行器 kv=1 + 关节
+   damping（现 motor 化后为 damping=3=旧 kv1+原关节2，MuJoCo 隐式积分、
+   无条件稳定）；
 8. **底盘 mesh 去外露方块**：`base_link_mobile.obj` 为删除两个外露连通域的
    版本（几何层面修改，XML 引用名不变）。
 
-注意：OrcaStudio 导入会**丢弃 armature、重算 inertial**，但**保留 kp/kv/damping**
-——因此物理调参只用这三类属性（详见常见问题）。
+注意：OrcaStudio 导入会**丢弃 armature、重算 inertial**，但**保留 gear/damping**
+（position 时代则是保留 kp/kv/damping）——因此物理调参只用这几类属性
+（详见常见问题）。XML 的 `impratio` 属性疑似也被导入管道丢弃，脚本启动时
+会运行时强制 impratio=50 + noslip_iterations=3 双保险。
 
 ## 前置条件
 
@@ -104,15 +112,15 @@ cd ~/dual_robot/dual_arm_robot/urdf
 
 **`MuJoCo has not been initialized`** — 仿真刚启动还在初始化，等几秒重试。
 
-**启动后夹爪自己转动（腕部摆动/旋转）** — 腕部关节惯量极小，位置伺服显式
-阻尼 `kv=7` 在 1ms 步长下数值失稳导致自持振荡。修复：模型里 joint5/6
-`damping="2"` + 执行器 `kv="1"`（MuJoCo 对 joint damping 隐式积分，无条件
-稳定）。**注意 OrcaStudio 导入特性**：
+**启动后夹爪自己转动（腕部摆动/旋转）** — 腕部关节惯量极小，执行器显式
+速度项 `kv=7` 在 1ms 步长下数值失稳导致自持振荡。修复：速度阻尼改到关节
+damping（现 J5/6 `damping="3"`，motor 执行器无速度项；MuJoCo 对 joint
+damping 隐式积分，无条件稳定）。**注意 OrcaStudio 导入特性**：
 
 - 修改 XML 后，仅"重新导入文件"只更新**资产库**，**场景里的实体不会自动换新**
   ——需要"删除场景中的机器人实体 → 重新把资产放入场景 → 重启仿真"；
 - 导入管道会**丢弃** `armature`、按 mesh 几何**重算** `inertial`，但**保留**
-  `kp/kv/damping`——调物理参数只用这三类；
+  `gear/damping`（position 时代为 kp/kv/damping）——调物理参数只用这几类；
 - 可从 `~/Orca/OrcaStudio/<工程>/tmp/out.xml` 查看当前仿真实际生效的参数。
 
 **把夹爪往外推不跟随/关节乱转** — 旧版预备姿势顶在可达边界（距肩 1.086m，
@@ -121,6 +129,16 @@ cd ~/dual_robot/dual_arm_robot/urdf
 
 ## 已调好的内部参数（改前先看注释）
 
-- IK：DLS 阻尼 λ=0.03、步长 α=0.5、单步关节增量上限 0.18（配合新预备姿势）；
-- 夹爪电机：`v = 6.0 * (目标开度 - 当前开度)`，限幅 ±0.05 m/s；
+- IK：DLS 阻尼 λ=0.03、步长 α=0.5、单步关节增量上限 0.18（配合肘弯预备姿势，
+  多轮遥操实测调好的"跟手且稳"值，改动需实测回归）；
+- 手臂位置外环（motor 速度命令）：`v = ARM_POS_KP·(q_des - q)`，
+  Kp=[50,50,50,8,55,55]，限幅 ±2/±3 rad/s；上电初始速度命令为 0，
+  锁定/复位/跟随统一走此外环；
+- 夹爪电机（两段式堵转）：`v = 22.0 * (目标开度 - 当前开度)`；接近段限速
+  0.02 m/s（碰物只轻推不撞飞），检测到堵转（~30ms 不动）锁存后放开到
+  0.05 m/s 全力夹紧（4N/指），松扳机自动解锁；开爪方向不限速；
+- 防滑三保险：XML `<option> impratio=50`（静态爬滑）+ pad μ=5（动态滑移
+  摩擦锥 20N/指）+ 脚本运行时强制 impratio=50、noslip_iterations=3（XML
+  属性疑被导入管道丢弃，双保险）；
+- A 键复位：按住期间每帧回调 pressed=True，已做边沿检测防复位每 10ms 重启；
 - 目标死区/低通：位置死区 5mm、姿态死区 0.02rad、平滑 0.5（防手柄噪声抖动）。
