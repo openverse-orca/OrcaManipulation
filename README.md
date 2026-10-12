@@ -1,8 +1,8 @@
 # OrcaManipulation（Suzhou_industrial_park 分支）
 
-机器人遥操作与数据采集框架 —— 面向苏州工业园场景的演示数据采集与回放。
+机器人遥操作与数据采集框架 —— 面向苏州工业园吧台抓杯子场景的演示数据采集与回放。
 
-本分支在框架主干基础上，面向 **D12（青龙）人形机器人 + 传送带场景** 的遥操作数据采集做了专项适配，并已完成对 **OrcaLab 26.9.1 新相机接口** 的兼容改造。
+本分支在框架主干基础上，面向 **D12（青龙）人形机器人 + 吧台抓杯子场景** 的遥操作数据采集做了专项适配，并已完成对 **OrcaLab 26.9.1 新相机接口** 的兼容改造。
 
 ---
 
@@ -10,17 +10,17 @@
 
 - 🦾 **D12 青龙机器人全链路支持**：双臂 OSC 遥操作、双 2F85 夹爪、腰部关节控制与记录
 - 🎮 **Pico VR 遥操作**：手柄双臂控制、任务状态切换（开始/结束采集）
-- 🚚 **传送带场景**：板件按时间函数直线移动、任务状态门控启停、运行时调速与动画速度同步
-- � **视频录制双版本兼容**：
+- 🥤 **吧台抓杯子场景**：D12 双臂在吧台完成杯子抓取/放置，物体/灯光随机化可配置
+- 🎬 **视频录制双版本兼容**：
   - OrcaLab ≥ 26.9.1：客户端 WebSocket 推流 + 按仿真步区间 remux 落盘，**每相机一个 mp4**
   - OrcaLab ≤ 26.7.3：走引擎侧 `BeginSaveMp4File` 录制
 - 💾 **HDF5 数据落盘**：关节角、末端位姿、夹爪、腰部、时间戳与任务/场景元数据
-- � **数据回放**：`data_collection_aug.py` 将已采数据回放到仿真场景，可用于质检与数据增强
-- 🧪 **多传送带联调脚本**：`run_conveyor_multi_env.py` 支持多 env / 单 env 驱动多条传送带
+- 🔁 **数据回放**：`data_collection_aug.py` 将已采数据回放到仿真场景，可用于质检与数据增强
+- 🧪 **多传送带联调脚本**（附带工具）：`run_conveyor_multi_env.py` 支持多 env / 单 env 驱动多条传送带，适用于传送带类场景
 
 ---
 
-## �️ 环境要求
+## 🖥️ 环境要求
 
 | 组件 | 要求 |
 |------|------|
@@ -61,10 +61,10 @@ OrcaManipulation/
 │       └── dataCollection/
 │           ├── data_collection_tele.py      # 遥操作数采入口（主脚本）
 │           ├── data_collection_aug.py       # 数据回放/增强入口
-│           ├── run_conveyor_multi_env.py    # 多传送带联调脚本
-│           ├── conveyor_collect.yaml       # 传送带场景数采配置（主用）
+│           ├── run_conveyor_multi_env.py    # 多传送带联调脚本（附带工具）
+│           ├── conveyor_collect.yaml       # 场景数采配置（文件名沿用历史命名）
 │           ├── example.yaml                # 通用场景配置模板
-│           ├── dataset/                    # 采集数据落盘目录 dataset/<agent_name>/<uuid>/
+│           ├── dataset/                    # 采集数据落盘目录（仓库默认为空，运行时自动创建）
 │           └── logs/                        # 运行日志
 │       └── 超市场景青龙机器人数采案例/     # 超市场景参考（含 OrcaLab 数采示例文档）
 ├── QUICK_START.md               # 快速开始（自定义机器人接入五步法）
@@ -79,7 +79,7 @@ OrcaManipulation/
 
 ### 1. 启动仿真端
 
-1. 打开 OrcaLab，加载目标场景（如传送带场景），进入运行时；
+1. 打开 OrcaLab，加载目标场景（吧台抓杯子场景），进入运行时；
 2. 确认 gRPC 地址为 `localhost:50051`（脚本默认值）。
 
 ### 2. 遥操作数采
@@ -113,7 +113,7 @@ python data_collection_tele.py --agent_name d12
 | X / Y / 左扳机 | 左夹爪控制 |
 | A / B / 右扳机 | 右夹爪控制 |
 | 左手 Grip | 任务状态切换（开始/结束采集） |
-| X+Y / A+B | 传送带停止/继续（需 `use_pico_buttons: true`） |
+| X+Y / A+B | 传送带停止/继续（仅传送带场景，需 `use_pico_buttons: true`） |
 
 ### 4. 数据回放
 
@@ -133,25 +133,30 @@ python data_collection_aug.py
 
 ## ⚙️ 场景配置（conveyor_collect.yaml）
 
-传送带场景主配置文件，要点如下：
+数采脚本启动时读取该 yaml（文件名沿用历史命名，当前吧台抓杯子场景同样使用此文件）。当前场景相关要点：
 
 ```yaml
-level_name: "conveyor_collect"
-type: "collect_only"        # collect_only 等模式使用 EmptyTask（不做成功判定）
+level_name: "conveyor_collect"   # 场景标识（当前代码未使用，实际场景在 OrcaLab 中手动加载）
+type: "collect_only"             # collect_only 等模式使用 EmptyTask（不做成功判定）
 
 collection:
-  always_save: true        # 无论任务成功与否都保存本条数据
+  always_save: true              # 无论任务成功与否都保存本条数据
+```
 
+- `type: "collect_only"`：采集模式不做抓取成功判定，按手柄 Grip 控制起止即可；
+- `collection.always_save`：true 时每条 episode 无论成功与否都落盘；
+- 物体随机摆放、灯光随机等通过 `actor` / `light` 段配置（可参考 [example.yaml](src/examples/dataCollection/example.yaml)）。
+
+### 传送带配置（可选，当前吧台场景未使用）
+
+文件中的 `conveyor` 段为传送带类场景保留的能力，当前吧台抓杯子场景不涉及传送带，无需修改：
+
+```yaml
 conveyor:
   enable: true
   board_joint_name: "Geom_Track_Geom_Track_Joint"  # 按场景实际 joint 名填写
-  start_pos: [13.984, -3.767, 0.676]
-  end_pos:   [20.000, -3.767, 0.676]
-  speed: 0.05              # m/s
-  settle_steps: 50         # 物品落稳后再启动
-  start_mode: "task_status" # auto=脚本启动即动；task_status=RUNNING 才动
-  stop_at_end: true        # 到终点停止
-  use_pico_buttons: true   # X+Y 停止，A+B 继续
+  start_mode: "task_status"  # RUNNING 才动；auto=脚本启动即动
+  speed: 0.05               # m/s
 ```
 
 - 传送带板件按时间函数直线移动，物品被动摩擦跟随（不直接写物品 qpos/qvel）；
@@ -183,6 +188,8 @@ OrcaLab 26.9.1 起，引擎侧 MP4 录制 RPC（`BeginSaveMp4File`/`StopSaveMp4F
 ---
 
 ## 📊 数据格式
+
+> 仓库中的 `dataset/` 目录刻意保持为空：克隆后自行运行数采即可生成数据，目录由脚本自动创建。
 
 每条 episode 一个 uuid 目录：
 
@@ -217,7 +224,7 @@ with h5py.File("dataset/d12/{uuid}/record/proprio_stats.hdf5", "r") as f:
 
 ---
 
-## 🧪 多传送带联调
+## 🧪 多传送带联调（附带工具，传送带类场景适用）
 
 ```bash
 # 单进程多 env（每条传送带一个 env）
