@@ -15,7 +15,7 @@
   - OrcaLab ≥ 26.9.1：客户端 WebSocket 推流 + 按仿真步区间 remux 落盘，**每相机一个 mp4**
   - OrcaLab ≤ 26.7.3：走引擎侧 `BeginSaveMp4File` 录制
 - 💾 **HDF5 数据落盘**：关节角、末端位姿、夹爪、腰部、时间戳与任务/场景元数据
-- 🔁 **数据回放**：`data_collection_aug.py` 将已采数据回放到仿真场景，可用于质检与数据增强
+- 🔁 **数据回放**：`data_collection_replay.py` 按记录的关节角一比一回放已采数据；`data_collection_aug.py` 按末端位姿重执行，可用于质检与数据增强
 - 🧪 **多传送带联调脚本**（附带工具）：`run_conveyor_multi_env.py` 支持多 env / 单 env 驱动多条传送带，适用于传送带类场景
 
 ---
@@ -76,7 +76,8 @@ OrcaManipulation/
 │   └── examples/
 │       └── dataCollection/
 │           ├── data_collection_tele.py      # 遥操作数采入口（主脚本）
-│           ├── data_collection_aug.py       # 数据回放/增强入口
+│           ├── data_collection_replay.py   # 一比一数据回放入口（推荐）
+│           ├── data_collection_aug.py       # 末端轨迹回放/数据增强入口
 │           ├── run_conveyor_multi_env.py    # 多传送带联调脚本（附带工具）
 │           ├── conveyor_collect.yaml       # 场景数采配置（文件名沿用历史命名）
 │           ├── example.yaml                # 通用场景配置模板
@@ -137,17 +138,31 @@ python data_collection_tele.py --agent_name d12
 
 ### 4. 数据回放
 
-回放脚本读取已采 hdf5，在仿真中重演动作序列（场景/物体姿态由 `scene_info` 还原）：
+提供两个回放脚本（均需 OrcaLab 加载与采集时相同的场景/布局）：
+
+**方式一：一比一回放（推荐，data_collection_replay.py）**
+
+读取 hdf5 中记录的关节角与夹爪原始控制量，直接驱动关节复现原始轨迹（不经过末端逆解）：
 
 ```bash
 cd src/examples/dataCollection
 conda activate orcalab_lerobot
-python data_collection_aug.py
+python data_collection_replay.py                                   # 回放 dataset/d12/ 全部 episode，循环
+python data_collection_replay.py --episode <uuid>                  # 只回放指定一条
+python data_collection_replay.py --no-loop                         # 播完退出
 ```
 
-- 回放数据目录：`dataset/d12/`（须与采集时场景一致）；
-- 默认 `loop_playback=True`，顺序循环回放全部 episode，Ctrl+C 退出；
-- 当前默认 `save_video = False`，即回放过程不重新录制。
+- 回放目标为记录的 15 关节 qpos（左臂 7 + 右臂 7 + 腰 1）与夹爪原始 ctrl 值，动作保真度高；
+- 控制链路：双臂关节空间 PD 力矩跟踪（含重力补偿）+ 腰部/手指执行器直写；右臂内置积分补偿，缓解持物（如酒瓶）时腕部负载下垂；
+- 可调参数：`--kp`（关节 PD 刚度，默认 300，过高会抽动）、`--right-ki`（右臂积分补偿增益，默认 5）；
+- 回放过程终端每 25 步打印左右臂 `[跟踪]` 最大关节误差（rad），可据此核对跟踪质量。
+
+**方式二：末端轨迹回放（data_collection_aug.py）**
+
+按记录的末端位姿走 OSC 逆解重执行（该脚本主要用于数据增强场景），`save_video = False` 不重新录制，`loop_playback=True` 循环回放，Ctrl+C 退出。
+
+- 两种回放的数据目录均为 `dataset/d12/`；
+- 两种回放的场景/物体姿态均由 episode 中的 `scene_info` 还原。
 
 ---
 

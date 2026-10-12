@@ -4,7 +4,7 @@ import os
 import shutil
 import h5py
 from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
-from orca_gym.log.orca_log import OrcaLog
+from orca_gym.log import OrcaLog
 import uuid
 import numpy as np
 
@@ -31,9 +31,10 @@ class AbstractDataStorage(metaclass=abc.ABCMeta):
         self.metadata_path = metadata_path
         self.data = {}
 
-        # 相机录制状态（OrcaLab 26.9.1+ 客户端推流录制）
-        self._video_cameras: list[str] = []
-        self._record_start_index = None
+        # 客户端 PyAV remux 录制状态（orcalab 26.9+ 路径使用）
+        self._video_dir = None
+        self._video_start_index = 0
+        self._video_cameras = []
 
         self.get_next_unit_path()
 
@@ -67,108 +68,96 @@ class AbstractDataStorage(metaclass=abc.ABCMeta):
         '''
         return os.path.join(self.get_current_unit_path(), self.video_path)
 
-    def prepare_video_streams(self, env: OrcaGymLocalEnv):
+    def begin_save_video(self, env: OrcaGymLocalEnv, simulate_index: int = 0):
         '''
-        @description: 预先开启所有相机的推流与录制缓冲。
-            OrcaLab 26.9.1 移除了引擎侧 MP4 录制 RPC（BeginSaveMp4File），
-            需客户端通过 WebSocket 接收相机 H.264 流，停止时按仿真步区间
-            remux 落盘。旧版本（<=26.7.3）走引擎侧录制，此方法为 no-op。
-        @param:
-            env: 环境
-        '''
-        if not hasattr(env, "start_streaming"):
-            orca_logger.info("当前 orca_gym < 26.9.1，使用引擎侧 MP4 录制")
-            return
-        try:
-            cameras = env.get_camera_names()
-        except Exception as e:
-            orca_logger.warning(f"获取相机列表失败: {e}")
-            cameras = []
-        self._video_cameras = [str(camera) for camera in cameras]
-        if not self._video_cameras:
-            orca_logger.warning("场景中没有已注册的相机，本次运行将无法录制视频")
-            return
-        orca_logger.info(f"开启相机推流与录制缓冲: {self._video_cameras}")
-        for camera in self._video_cameras:
-            try:
-                env.start_streaming(camera)
-            except Exception as e:
-                orca_logger.warning(f"相机 '{camera}' 开启推流失败: {e}")
-        # 官方建议：录制时开启同步渲染，保证每步渲染并透传 simulate_index
-        try:
-            env.set_sync_render(True)
-        except Exception:
-            pass
+        @description: 开始保存视频
 
-    def begin_save_video(self, env: OrcaGymLocalEnv, start_simulate_index: int = None):
-        '''
-        @description: 开始保存视频（任务状态切换到 RUNNING 时调用）
-            - 旧版（<=26.7.3）：直接调用引擎侧录制接口
-            - 新版（>=26.9.1）：记录区间起始仿真步，并渲染 IDR 关键帧，
-              视频在 stop_save_video 时按 [start, end] 区间 remux 落盘
+        orcalab 26.9+ 已移除引擎侧 MP4 录制 RPC（env.begin_save_video 变为 no-op），
+        改用客户端 PyAV remux 录制：start_streaming 启动各相机推流与录制器，
+        主循环通过 render(simulate_index=...) 驱动帧对齐，区间结束时再
+        save_streaming 导出 MP4。26.7.x 及更早仍走旧引擎侧录制接口。
         @param:
             env: 环境
-            start_simulate_index: 录制区间起始仿真步（新版接口需要）
+            simulate_index: 录制起始帧的模拟步索引（仅客户端录制路径使用）
         '''
         video_path = self.get_video_absolute_path()
         if not os.path.exists(video_path):
             os.makedirs(video_path, exist_ok=True)
-        if hasattr(env, "save_streaming"):
-            if not self._video_cameras:
-                orca_logger.warning("没有已启动的相机录制器，跳过视频录制")
-                return
-            self._record_start_index = start_simulate_index
-            if self._record_start_index is None:
-                self._record_start_index = getattr(env, "_current_simulate_index", -1)
-            # 段起点渲染 IDR 关键帧，配合 save_streaming 前向截断，保证视频可播放
-            try:
-                env.render(simulate_index=self._record_start_index, request_idr=True)
-            except TypeError:
-                pass
-        else:
-            env.begin_save_video(video_path)
 
-    def stop_save_video(self, env: OrcaGymLocalEnv, end_simulate_index: int = None):
+        if not hasattr(env, "start_streaming"):
+            # 26.7.x 及更早：引擎侧录制
+            env.begin_save_video(video_path)
+            return
+
+        self._video_dir = video_path
+        self._video_start_index = max(int(simulate_index), 0)
+        self._video_cameras = []
+
+        manager = env.get_recorder_manager()
+        try:
+            camera_names = list(env.get_camera_names())
+        except Exception as e:
+            orca_logger.warning(f"Failed to enumerate cameras: {e}")
+            camera_names = []
+
+        for camera_name in camera_names:
+            try:
+                props = manager.get_camera_properties(camera_name)
+                if not props.color_port or props.color_port <= 0:
+                    continue
+                env.start_streaming(camera_name, capture_rgb=True, color_port=props.color_port)
+                self._video_cameras.append(camera_name)
+            except Exception as e:
+                orca_logger.warning(f"Failed to start streaming for camera '{camera_name}': {e}")
+
+        if not self._video_cameras:
+            orca_logger.warning("No camera with a valid color port found; video will not be recorded")
+        else:
+            orca_logger.info(f"Video recording started for cameras {self._video_cameras} at frame {self._video_start_index}")
+
+    def stop_save_video(self, env: OrcaGymLocalEnv, simulate_index: int = -1):
         '''
-        @description: 停止保存视频（任务状态切换到 END 时调用）
-            - 旧版（<=26.7.3）：调用引擎侧停止录制接口
-            - 新版（>=26.9.1）：对每个相机调用 save_streaming，
-              将 [start, end] 区间流保存为 MP4，并阻塞等待写盘完成
+        @description: 停止保存视频
+
+        orcalab 26.9+：对本次录制涉及的每个相机调用 save_streaming 导出
+        [start_simulate_index, end_simulate_index] 区间的 MP4，等待完成后停止录制器。
+        26.7.x 及更早：调用旧引擎侧停止接口。
         @param:
             env: 环境
-            end_simulate_index: 录制区间结束仿真步（新版接口需要）
+            simulate_index: 录制结束帧的模拟步索引（仅客户端录制路径使用）
         '''
-        if hasattr(env, "save_streaming"):
-            if not self._video_cameras or self._record_start_index is None:
-                self._record_start_index = None
-                return
-            if end_simulate_index is None:
-                end_simulate_index = getattr(env, "_current_simulate_index", self._record_start_index)
-            video_dir = self.get_video_absolute_path()
-            os.makedirs(video_dir, exist_ok=True)
-            futures = []
-            for camera in self._video_cameras:
-                file_path = os.path.join(video_dir, f"{camera}.mp4")
-                try:
-                    future = env.save_streaming(
-                        camera_name=camera,
-                        camera_type="color",
-                        file_path=file_path,
-                        start_simulate_index=self._record_start_index,
-                        end_simulate_index=end_simulate_index,
-                    )
-                    futures.append((camera, future))
-                except Exception as e:
-                    orca_logger.warning(f"相机 '{camera}' 提交视频保存任务失败: {e}")
-            for camera, future in futures:
-                try:
-                    result = future.result(timeout=60)
-                    orca_logger.info(f"相机 '{camera}' 视频已保存: {result}")
-                except Exception as e:
-                    orca_logger.warning(f"相机 '{camera}' 视频保存失败: {e}")
-            self._record_start_index = None
-        else:
+        cameras = getattr(self, "_video_cameras", None)
+        if not hasattr(env, "start_streaming"):
+            # 26.7.x 及更早：引擎侧录制
             env.stop_save_video()
+            return
+        if not cameras:
+            return
+
+        end_index = max(int(simulate_index), self._video_start_index)
+        manager = env.get_recorder_manager()
+        for camera_name in cameras:
+            file_path = os.path.join(self._video_dir, f"{camera_name}_color.mp4")
+            try:
+                future = env.save_streaming(
+                    camera_name=camera_name,
+                    camera_type="color",
+                    file_path=file_path,
+                    start_simulate_index=self._video_start_index,
+                    end_simulate_index=end_index,
+                )
+                result = future.result()
+                orca_logger.info(f"Video saved to {getattr(result, 'file_path', file_path)}")
+            except Exception as e:
+                orca_logger.error(f"Failed to save video for camera '{camera_name}': {e}")
+            finally:
+                try:
+                    manager.stop_recorder(camera_name)
+                except Exception:
+                    pass
+
+        self._video_cameras = []
+        self._video_dir = None
 
     def set_hdf5_path(self, hdf5_path: str):
         '''

@@ -12,15 +12,15 @@
     },
     "viewport_camera_transform": {
         "position": [
-            7.654826641082764,
-            3.504216432571411,
-            1.8520087003707886
+            6.365377902984619,
+            4.104100227355957,
+            1.6528137922286987
         ],
         "rotation": [
-            0.47605470966075353,
-            -0.3098957419019526,
-            -0.44899759944158124,
-            0.6897374125394035
+            0.22699226843065487,
+            -0.11102044779993159,
+            0.42509675782649764,
+            -0.8691615020975147
         ]
     },
     "actors": [
@@ -278,6 +278,11 @@
                                                     "name": "friction.y",
                                                     "value": 0.5,
                                                     "type": "float"
+                                                },
+                                                {
+                                                    "name": "friction.z",
+                                                    "value": 0.5,
+                                                    "type": "float"
                                                 }
                                             ]
                                         }
@@ -339,8 +344,8 @@
                             "type": "AssetActor",
                             "transform": {
                                 "position": [
-                                    7.067865371704102,
-                                    3.3672146797180176,
+                                    7.1063737869262695,
+                                    3.401139974594116,
                                     0.9471083879470825
                                 ],
                                 "rotation": [
@@ -362,12 +367,12 @@
                                             "property_overrides": [
                                                 {
                                                     "name": "translate.x",
-                                                    "value": 7.067865371704102,
+                                                    "value": 7.1063737869262695,
                                                     "type": "float"
                                                 },
                                                 {
                                                     "name": "translate.y",
-                                                    "value": 3.3672146797180176,
+                                                    "value": 3.401139974594116,
                                                     "type": "float"
                                                 }
                                             ]
@@ -382,9 +387,9 @@
                             "type": "AssetActor",
                             "transform": {
                                 "position": [
-                                    7.00344705581665,
-                                    3.489474058151245,
-                                    0.8377681374549866
+                                    7.039225101470947,
+                                    3.524514675140381,
+                                    0.8294084668159485
                                 ],
                                 "rotation": [
                                     1.0,
@@ -405,12 +410,17 @@
                                             "property_overrides": [
                                                 {
                                                     "name": "translate.x",
-                                                    "value": 7.00344705581665,
+                                                    "value": 7.039225101470947,
                                                     "type": "float"
                                                 },
                                                 {
                                                     "name": "translate.y",
-                                                    "value": 3.489474058151245,
+                                                    "value": 3.524514675140381,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "translate.z",
+                                                    "value": 0.8294084668159485,
                                                     "type": "float"
                                                 }
                                             ]
@@ -425,8 +435,8 @@
                             "type": "AssetActor",
                             "transform": {
                                 "position": [
-                                    7.205972671508789,
-                                    3.0255751609802246,
+                                    7.255295753479004,
+                                    3.0486087799072266,
                                     0.8364918231964111
                                 ],
                                 "rotation": [
@@ -448,12 +458,12 @@
                                             "property_overrides": [
                                                 {
                                                     "name": "translate.x",
-                                                    "value": 7.205972671508789,
+                                                    "value": 7.255295753479004,
                                                     "type": "float"
                                                 },
                                                 {
                                                     "name": "translate.y",
-                                                    "value": 3.0255751609802246,
+                                                    "value": 3.0486087799072266,
                                                     "type": "float"
                                                 }
                                             ]
@@ -472,8 +482,8 @@
             "type": "AssetActor",
             "transform": {
                 "position": [
-                    6.506189346313477,
-                    3.0778703689575195,
+                    6.542550563812256,
+                    3.1845993995666504,
                     -0.16516748070716858
                 ],
                 "rotation": [
@@ -495,12 +505,12 @@
                             "property_overrides": [
                                 {
                                     "name": "translate.x",
-                                    "value": 6.506189346313477,
+                                    "value": 6.542550563812256,
                                     "type": "float"
                                 },
                                 {
                                     "name": "translate.y",
-                                    "value": 3.0778703689575195,
+                                    "value": 3.1845993995666504,
                                     "type": "float"
                                 },
                                 {
@@ -512,6 +522,251 @@
                                     "name": "rotate.z",
                                     "value": 26.69947624206543,
                                     "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 3
+                        },
+                        {
+                            "name": "base_link",
+                            "index": 3
+                        },
+                        {
+                            "name": "base_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "waist_yaw_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "head_yaw_link",
+                            "index": 4
+                        },
+                        {
+                            "name": "head_pitch_link",
+                            "index": 2
+                        },
+                        {
+                            "name": "neck_center_body",
+                            "index": 0
+                        },
+                        {
+                            "name": "camera_head",
+                            "index": 3
+                        },
+                        {
+                            "name": "cameras",
+                            "index": 0
+                        },
+                        {
+                            "name": "camera_head",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "Enable",
+                                    "value": true,
+                                    "type": "bool"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 3
+                        },
+                        {
+                            "name": "base_link",
+                            "index": 3
+                        },
+                        {
+                            "name": "base_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "waist_yaw_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "left_shoulder_pitch_link",
+                            "index": 2
+                        },
+                        {
+                            "name": "left_shoulder_roll_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "left_shoulder_yaw_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "left_elbow_pitch_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "left_wrist_roll_link",
+                            "index": 3
+                        },
+                        {
+                            "name": "left_wrist_pitch_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "left_wrist_yaw_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "camera_wrist_l",
+                            "index": 0
+                        },
+                        {
+                            "name": "cameras",
+                            "index": 0
+                        },
+                        {
+                            "name": "camera_wrist_l",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "Enable",
+                                    "value": true,
+                                    "type": "bool"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 3
+                        },
+                        {
+                            "name": "base_link",
+                            "index": 3
+                        },
+                        {
+                            "name": "base_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "waist_yaw_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "right_shoulder_pitch_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "right_shoulder_roll_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "right_shoulder_yaw_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "right_elbow_pitch_link",
+                            "index": 3
+                        },
+                        {
+                            "name": "right_wrist_roll_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "right_wrist_pitch_link",
+                            "index": 1
+                        },
+                        {
+                            "name": "right_wrist_yaw_link",
+                            "index": 0
+                        },
+                        {
+                            "name": "camera_wrist_r",
+                            "index": 1
+                        },
+                        {
+                            "name": "cameras",
+                            "index": 0
+                        },
+                        {
+                            "name": "camera_wrist_r",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "Enable",
+                                    "value": true,
+                                    "type": "bool"
                                 }
                             ]
                         }

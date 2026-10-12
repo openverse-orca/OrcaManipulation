@@ -69,8 +69,12 @@ class DataCollectionManager:
         self._save_video = False
         self._saving = False
         self._mode = self.DataCollectionMode.TELECONTROL
-        # 仿真步计数器（跨 episode 单调递增，用于 26.9.1 相机录制的帧对齐）
-        self._simulate_index = -1
+
+        # orcalab 26.9+ 客户端 PyAV remux 录制需要递增的 simulate_index 做帧对齐
+        self._supports_streaming = hasattr(self.env, "start_streaming")
+        self._simulate_index = 0
+        self._idr_pending = False
+        self._prev_sync_render = False
 
     @property
     def save_video(self) -> bool:
@@ -243,10 +247,6 @@ class DataCollectionManager:
     def run(self):
         self.env.disable_actuator(self.disable_actuator_group)
 
-        if self.save_video and self.data_storage is not None:
-            # 26.9.1+: 提前开启相机推流与录制缓冲（旧版本为 no-op）
-            self.data_storage.prepare_video_streams(self.env)
-
         try:
             while True:
                 self.env.reset()  # self.env.mj_forward()
@@ -327,13 +327,14 @@ class DataCollectionManager:
         )
 
         while True:
-            self._simulate_index += 1
             start_time = time.time()
             action = self.run_controllers()
             obs, reward, terminated, truncated, info = self.env.step(action)
-            if hasattr(self.env, "save_streaming"):
-                # 26.9.1+: 显式传仿真步索引，用于相机录制帧对齐
-                self.env.render(simulate_index=self._simulate_index)
+            if self._supports_streaming:
+                # orcalab 26.9+：透传递增 simulate_index 驱动客户端录制帧对齐；
+                # 录制起始帧请求 IDR 关键帧，配合 save_streaming 的前向截断保证可播放。
+                self.env.render(simulate_index=self._simulate_index, request_idr=self._idr_pending)
+                self._idr_pending = False
             else:
                 self.env.render()
 
@@ -361,12 +362,21 @@ class DataCollectionManager:
                     if self.data_storage is not None:
                         self.data_storage.collection_data(obs, self.env)
                     if self.save_video and not self.saving and self.data_storage is not None:
-                        self.data_storage.begin_save_video(self.env, start_simulate_index=self._simulate_index)
-                        self.saving = True
+                        # 从下一帧开始录制（begin 后首帧请求 IDR）。
+                        # 启用同步渲染，保证每个控制周期都渲染并透传 simulate_index，
+                        # 供客户端录制器按帧索引对齐区间。
+                        self._idr_pending = True
+                        if self._supports_streaming:
+                            self._prev_sync_render = self.env.sync_render
+                            self.env.set_sync_render(True)
+                        self.data_storage.begin_save_video(self.env, self._simulate_index + 1)
+                        self.saving = True                   
                 if task_status == TaskStatus.END or terminated or truncated:
                     if self.save_video and self.saving and self.data_storage is not None:
-                        self.data_storage.stop_save_video(self.env, end_simulate_index=self._simulate_index)
+                        self.data_storage.stop_save_video(self.env, self._simulate_index)
                         self.saving = False
+                        if self._supports_streaming:
+                            self.env.set_sync_render(self._prev_sync_render)
                     orca_logger.info("Task end")
                     task_is_success = self.task.is_success()
                     return task_is_success
@@ -374,4 +384,5 @@ class DataCollectionManager:
             elapsed_time = time.time() - start_time
             if elapsed_time < self.real_time_step:
                 time.sleep(self.real_time_step - elapsed_time)
+            self._simulate_index += 1
 
