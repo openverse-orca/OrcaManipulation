@@ -93,10 +93,14 @@ OrcaManipulation/
 
 ## 🚀 快速开始
 
-### 1. 启动仿真端
+### 1. 启动仿真端（加载 JSON 布局）
 
-1. 打开 OrcaLab，完成[资产订阅](#资产订阅必做)后，加载场景 `sip_hotelreception`（苏州工业园吧台场景），进入运行时；
-2. 确认 gRPC 地址为 `localhost:50051`（脚本默认值）。
+1. 打开 OrcaLab，完成[资产订阅](#资产订阅必做)；
+2. 加载仓库自带的布局文件 [pick bottle.json](src/examples/dataCollection/pick%20bottle.json)（OrcaLab 菜单 → 打开/加载布局，选择该文件）。布局会自动还原：吧台场景 `sip_hotelreception` + 已摆好位的 `d12_waist_motor_usda` 机器人 + 视角，无需手动摆放机器人；
+3. 进入运行时；
+4. 确认 gRPC 地址为 `localhost:50051`（脚本默认值）。
+
+> ⚠️ 请通过加载 JSON 布局的方式启动场景，而不是只手动加载 `sip_hotelreception` 场景——布局中包含机器人在吧台前的正确摆位，手动加载场景会导致场景里没有机器人（或机器人位置不对），脚本启动时会报 `KeyError: 'd12_waist_motor_usda_l_fingers_actuator'` 之类的执行器找不到错误。
 
 ### 2. 遥操作数采
 
@@ -162,7 +166,7 @@ collection:
 - `type: "collect_only"`：采集模式不做抓取成功判定，按手柄 Grip 控制起止即可；
 - `collection.always_save`：true 时每条 episode 无论成功与否都落盘；
 - 物体随机摆放、灯光随机等通过 `actor` / `light` 段配置（可参考 [example.yaml](src/examples/dataCollection/example.yaml)）；
-- 吧台场景（`sip_hotelreception`）的 OrcaLab 布局参考：[pick bottle.json](src/examples/dataCollection/pick%20bottle.json)。
+- 吧台场景（`sip_hotelreception`）须通过加载 OrcaLab 布局文件 [pick bottle.json](src/examples/dataCollection/pick%20bottle.json) 启动（见[快速开始](#-快速开始)第 1 步），布局内含机器人在吧台前的摆位；
 
 ### 传送带配置（可选，当前吧台场景未使用）
 
