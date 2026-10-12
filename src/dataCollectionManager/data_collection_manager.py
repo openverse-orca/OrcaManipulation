@@ -69,6 +69,8 @@ class DataCollectionManager:
         self._save_video = False
         self._saving = False
         self._mode = self.DataCollectionMode.TELECONTROL
+        # 仿真步计数器（跨 episode 单调递增，用于 26.9.1 相机录制的帧对齐）
+        self._simulate_index = -1
 
     @property
     def save_video(self) -> bool:
@@ -241,6 +243,10 @@ class DataCollectionManager:
     def run(self):
         self.env.disable_actuator(self.disable_actuator_group)
 
+        if self.save_video and self.data_storage is not None:
+            # 26.9.1+: 提前开启相机推流与录制缓冲（旧版本为 no-op）
+            self.data_storage.prepare_video_streams(self.env)
+
         try:
             while True:
                 self.env.reset()  # self.env.mj_forward()
@@ -321,10 +327,15 @@ class DataCollectionManager:
         )
 
         while True:
+            self._simulate_index += 1
             start_time = time.time()
             action = self.run_controllers()
             obs, reward, terminated, truncated, info = self.env.step(action)
-            self.env.render()
+            if hasattr(self.env, "save_streaming"):
+                # 26.9.1+: 显式传仿真步索引，用于相机录制帧对齐
+                self.env.render(simulate_index=self._simulate_index)
+            else:
+                self.env.render()
 
             if self.task_status_controller is not None:
                 task_status = self.task_status_controller.run_controller()
@@ -350,11 +361,11 @@ class DataCollectionManager:
                     if self.data_storage is not None:
                         self.data_storage.collection_data(obs, self.env)
                     if self.save_video and not self.saving and self.data_storage is not None:
-                        self.data_storage.begin_save_video(self.env)
-                        self.saving = True                   
+                        self.data_storage.begin_save_video(self.env, start_simulate_index=self._simulate_index)
+                        self.saving = True
                 if task_status == TaskStatus.END or terminated or truncated:
                     if self.save_video and self.saving and self.data_storage is not None:
-                        self.data_storage.stop_save_video(self.env)
+                        self.data_storage.stop_save_video(self.env, end_simulate_index=self._simulate_index)
                         self.saving = False
                     orca_logger.info("Task end")
                     task_is_success = self.task.is_success()

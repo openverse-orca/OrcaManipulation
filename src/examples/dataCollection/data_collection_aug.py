@@ -60,7 +60,8 @@ def main():
         
     orca_logger.info("Creating device")
     # data_device = DataDevice(os.path.join(base_dir, "dataset"), "record/proprio_stats.hdf5", interpolator=OpenLoongInterpolator(noise_value=0.03), loop_playback=True)
-    data_device = DataDevice(os.path.join(base_dir, "dataset"), "record/proprio_stats.hdf5", interpolator=None, loop_playback=True)
+    # 数据集路径须与 data_collection_tele.py 的保存路径一致（dataset/<agent_name>）
+    data_device = DataDevice(os.path.join(base_dir, "dataset", "d12"), "record/proprio_stats.hdf5", interpolator=None, loop_playback=True)
     orca_logger.info("Creating scene manager")
     # 须与 data_collection_tele.py 使用的 yaml 一致（此处避免 example.yaml 内 spawnable 在引擎侧不存在）
     with open(os.path.join(base_dir, "conveyor_collect.yaml"), "r") as f:
