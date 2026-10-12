@@ -145,7 +145,8 @@ collection:
 
 - `type: "collect_only"`：采集模式不做抓取成功判定，按手柄 Grip 控制起止即可；
 - `collection.always_save`：true 时每条 episode 无论成功与否都落盘；
-- 物体随机摆放、灯光随机等通过 `actor` / `light` 段配置（可参考 [example.yaml](src/examples/dataCollection/example.yaml)）。
+- 物体随机摆放、灯光随机等通过 `actor` / `light` 段配置（可参考 [example.yaml](src/examples/dataCollection/example.yaml)）；
+- 吧台场景（`sip_hotelreception`）的 OrcaLab 布局参考：[pick bottle.json](src/examples/dataCollection/pick%20bottle.json)。
 
 ### 传送带配置（可选，当前吧台场景未使用）
 

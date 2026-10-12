@@ -1,0 +1,537 @@
+{
+    "version": "4.0",
+    "level": {
+        "name": "sip_hotelreception",
+        "path": "levels/e071469a36d3c8aa/suzhou_industrial_park/sip_hotelreception/sip_hotelreception.spawnable",
+        "package_reference": {
+            "name": "Suzhou_Industrial_Park",
+            "tech_name": "suzhou_industrial_park",
+            "author": "Orca",
+            "project_name": "suzhou_industrial_park"
+        }
+    },
+    "viewport_camera_transform": {
+        "position": [
+            7.654826641082764,
+            3.504216432571411,
+            1.8520087003707886
+        ],
+        "rotation": [
+            0.47605470966075353,
+            -0.3098957419019526,
+            -0.44899759944158124,
+            0.6897374125394035
+        ]
+    },
+    "actors": [
+        {
+            "name": "Group",
+            "path": "/Group",
+            "type": "GroupActor",
+            "transform": {
+                "position": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "rotation": [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "scale": 1.0
+            },
+            "children": [
+                {
+                    "name": "Static",
+                    "path": "/Group/Static",
+                    "type": "GroupActor",
+                    "transform": {
+                        "position": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "rotation": [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "scale": 1.0
+                    },
+                    "children": [
+                        {
+                            "name": "Bar",
+                            "path": "/Group/Static/Bar",
+                            "type": "GroupActor",
+                            "transform": {
+                                "position": [
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "children": [
+                                {
+                                    "name": "Cabinet_A",
+                                    "path": "/Group/Static/Bar/Cabinet_A",
+                                    "type": "AssetActor",
+                                    "transform": {
+                                        "position": [
+                                            5.115161418914795,
+                                            4.73411226272583,
+                                            0.0
+                                        ],
+                                        "rotation": [
+                                            0.7615646550256147,
+                                            0.0,
+                                            0.0,
+                                            0.6480889415934487
+                                        ],
+                                        "scale": 1.0
+                                    },
+                                    "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/bu/bardeck/cabinet_a"
+                                },
+                                {
+                                    "name": "Cabinet_B2",
+                                    "path": "/Group/Static/Bar/Cabinet_B2",
+                                    "type": "AssetActor",
+                                    "transform": {
+                                        "position": [
+                                            5.829432964324951,
+                                            4.130870342254639,
+                                            0.0
+                                        ],
+                                        "rotation": [
+                                            0.8248835499546765,
+                                            0.0,
+                                            0.0,
+                                            0.5653026879594425
+                                        ],
+                                        "scale": 1.0
+                                    },
+                                    "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/bu/bardeck/cabinet_b2"
+                                },
+                                {
+                                    "name": "Bar_A_simplized",
+                                    "path": "/Group/Static/Bar/Bar_A_simplized",
+                                    "type": "AssetActor",
+                                    "transform": {
+                                        "position": [
+                                            4.25,
+                                            3.0399999618530273,
+                                            0.0
+                                        ],
+                                        "rotation": [
+                                            0.7071067811865476,
+                                            0.0,
+                                            0.0,
+                                            0.7071067811865475
+                                        ],
+                                        "scale": 1.0
+                                    },
+                                    "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/bu/bardeck/bar_a_simplized"
+                                }
+                            ]
+                        },
+                        {
+                            "name": "SinkerTap",
+                            "path": "/Group/Static/SinkerTap",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    4.25,
+                                    3.0399999618530273,
+                                    0.0
+                                ],
+                                "rotation": [
+                                    0.7071070165789166,
+                                    0.0,
+                                    0.0,
+                                    0.7071065457941
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/bu/sinkertap/sinkertap"
+                        },
+                        {
+                            "name": "Saucer_01_static",
+                            "path": "/Group/Static/Saucer_01_static",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    5.057433128356934,
+                                    4.483248233795166,
+                                    0.8431029319763184
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/cup_01/saucer_01_static"
+                        }
+                    ]
+                },
+                {
+                    "name": "Interactive",
+                    "path": "/Group/Interactive",
+                    "type": "GroupActor",
+                    "transform": {
+                        "position": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "rotation": [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "scale": 1.0
+                    },
+                    "children": [
+                        {
+                            "name": "Bottle04a",
+                            "path": "/Group/Interactive/Bottle04a",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    7.162909030914307,
+                                    3.228545665740967,
+                                    0.8558856248855591
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/bottle/bottle04a",
+                            "entity_overrides": [
+                                {
+                                    "entity_path": [],
+                                    "group_overrids": [
+                                        {
+                                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                                            "type_index": 0,
+                                            "property_overrides": [
+                                                {
+                                                    "name": "translate.x",
+                                                    "value": 7.162909030914307,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "translate.y",
+                                                    "value": 3.228545665740967,
+                                                    "type": "float"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    "entity_path": [
+                                        {
+                                            "name": "Bottle04",
+                                            "index": 0
+                                        },
+                                        {
+                                            "name": "Bodyjoint",
+                                            "index": 0
+                                        },
+                                        {
+                                            "name": "Phy",
+                                            "index": 1
+                                        },
+                                        {
+                                            "name": "1",
+                                            "index": 0
+                                        }
+                                    ],
+                                    "group_overrids": [
+                                        {
+                                            "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                            "type_index": 0,
+                                            "property_overrides": [
+                                                {
+                                                    "name": "condim",
+                                                    "value": 6,
+                                                    "type": "int"
+                                                },
+                                                {
+                                                    "name": "friction.y",
+                                                    "value": 0.5,
+                                                    "type": "float"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "name": "None_slip_mat",
+                            "path": "/Group/Interactive/None_slip_mat",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    7.112918853759766,
+                                    3.389897346496582,
+                                    0.8364918231964111
+                                ],
+                                "rotation": [
+                                    0.9783020325938079,
+                                    0.0,
+                                    0.0,
+                                    0.20718381457735544
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/mat_shelf/none-slip_mat",
+                            "entity_overrides": [
+                                {
+                                    "entity_path": [],
+                                    "group_overrids": [
+                                        {
+                                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                                            "type_index": 0,
+                                            "property_overrides": [
+                                                {
+                                                    "name": "translate.x",
+                                                    "value": 7.112918853759766,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "translate.y",
+                                                    "value": 3.389897346496582,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "rotate.z",
+                                                    "value": 23.91473388671875,
+                                                    "type": "float"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "name": "MarkCup_02",
+                            "path": "/Group/Interactive/MarkCup_02",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    7.067865371704102,
+                                    3.3672146797180176,
+                                    0.9471083879470825
+                                ],
+                                "rotation": [
+                                    0.0,
+                                    1.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/markcup/markcup_02",
+                            "entity_overrides": [
+                                {
+                                    "entity_path": [],
+                                    "group_overrids": [
+                                        {
+                                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                                            "type_index": 0,
+                                            "property_overrides": [
+                                                {
+                                                    "name": "translate.x",
+                                                    "value": 7.067865371704102,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "translate.y",
+                                                    "value": 3.3672146797180176,
+                                                    "type": "float"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "name": "MarkCup_01_1",
+                            "path": "/Group/Interactive/MarkCup_01_1",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    7.00344705581665,
+                                    3.489474058151245,
+                                    0.8377681374549866
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/markcup/markcup_01",
+                            "entity_overrides": [
+                                {
+                                    "entity_path": [],
+                                    "group_overrids": [
+                                        {
+                                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                                            "type_index": 0,
+                                            "property_overrides": [
+                                                {
+                                                    "name": "translate.x",
+                                                    "value": 7.00344705581665,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "translate.y",
+                                                    "value": 3.489474058151245,
+                                                    "type": "float"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "name": "black_metal_ice_bucket_1",
+                            "path": "/Group/Interactive/black_metal_ice_bucket_1",
+                            "type": "AssetActor",
+                            "transform": {
+                                "position": [
+                                    7.205972671508789,
+                                    3.0255751609802246,
+                                    0.8364918231964111
+                                ],
+                                "rotation": [
+                                    1.0,
+                                    0.0,
+                                    0.0,
+                                    0.0
+                                ],
+                                "scale": 1.0
+                            },
+                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/icebucket/icebucket_b",
+                            "entity_overrides": [
+                                {
+                                    "entity_path": [],
+                                    "group_overrids": [
+                                        {
+                                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                                            "type_index": 0,
+                                            "property_overrides": [
+                                                {
+                                                    "name": "translate.x",
+                                                    "value": 7.205972671508789,
+                                                    "type": "float"
+                                                },
+                                                {
+                                                    "name": "translate.y",
+                                                    "value": 3.0255751609802246,
+                                                    "type": "float"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "d12_waist_motor_usda",
+            "path": "/d12_waist_motor_usda",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    6.506189346313477,
+                    3.0778703689575195,
+                    -0.16516748070716858
+                ],
+                "rotation": [
+                    0.9729787929623671,
+                    0.0,
+                    0.0,
+                    0.23089449635167825
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/d12_waist_usda",
+            "entity_overrides": [
+                {
+                    "entity_path": [],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.x",
+                                    "value": 6.506189346313477,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.y",
+                                    "value": 3.0778703689575195,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "translate.z",
+                                    "value": -0.16516748070716858,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": 26.69947624206543,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "package_references": [
+        {
+            "name": "Suzhou_Industrial_Park",
+            "tech_name": "suzhou_industrial_park",
+            "author": "Orca",
+            "project_name": "suzhou_industrial_park"
+        },
+        {
+            "name": "d12_waist",
+            "tech_name": "d12_waist",
+            "author": "Orca",
+            "project_name": "default_project"
+        }
+    ]
+}
