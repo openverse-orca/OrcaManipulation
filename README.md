@@ -16,7 +16,6 @@
   - OrcaLab ≤ 26.7.3：走引擎侧 `BeginSaveMp4File` 录制
 - 💾 **HDF5 数据落盘**：关节角、末端位姿、夹爪、腰部、时间戳与任务/场景元数据
 - 🔁 **数据回放**：`data_collection_replay.py` 按记录的关节角一比一回放已采数据；`data_collection_aug.py` 按末端位姿重执行，可用于质检与数据增强
-- 🧪 **多传送带联调脚本**（附带工具）：`run_conveyor_multi_env.py` 支持多 env / 单 env 驱动多条传送带，适用于传送带类场景
 
 ---
 
@@ -78,7 +77,6 @@ OrcaManipulation/
 │           ├── data_collection_tele.py      # 遥操作数采入口（主脚本）
 │           ├── data_collection_replay.py   # 一比一数据回放入口（推荐）
 │           ├── data_collection_aug.py       # 末端轨迹回放/数据增强入口
-│           ├── run_conveyor_multi_env.py    # 多传送带联调脚本（附带工具）
 │           ├── conveyor_collect.yaml       # 场景数采配置（文件名沿用历史命名）
 │           ├── example.yaml                # 通用场景配置模板
 │           ├── dataset/                    # 采集数据落盘目录（仓库默认为空，运行时自动创建）
@@ -134,7 +132,6 @@ python data_collection_tele.py --agent_name d12
 | X / Y / 左扳机 | 左夹爪控制 |
 | A / B / 右扳机 | 右夹爪控制 |
 | 左手 Grip | 任务状态切换（开始/结束采集） |
-| X+Y / A+B | 传送带停止/继续（仅传送带场景，需 `use_pico_buttons: true`） |
 
 ### 4. 数据回放
 
@@ -159,10 +156,19 @@ python data_collection_replay.py --no-loop                         # 播完退�
 
 **方式二：末端轨迹回放（data_collection_aug.py）**
 
-按记录的末端位姿走 OSC 逆解重执行（该脚本主要用于数据增强场景），`save_video = False` 不重新录制，`loop_playback=True` 循环回放，Ctrl+C 退出。
+读取 hdf5 中记录的双臂末端位姿，走 OSC 逆解重执行轨迹（不直接复刻关节角，接触扰动下末端行为可能与原始动作略有差异）：
 
-- 两种回放的数据目录均为 `dataset/d12/`；
-- 两种回放的场景/物体姿态均由 episode 中的 `scene_info` 还原。
+```bash
+cd src/examples/dataCollection
+conda activate orcalab_lerobot
+python data_collection_aug.py
+```
+
+- 数据目录为 `dataset/d12/`，依 episode 中的 `scene_info` 还原场景后逐条回放；
+- 脚本内 `save_video = False`，回放过程不重新录制视频；
+- `loop_playback = True` 循环回放，Ctrl+C 退出。
+
+两种回放的数据目录均为 `dataset/d12/`，场景/物体姿态均由 episode 中的 `scene_info` 还原。
 
 ---
 
@@ -182,21 +188,6 @@ collection:
 - `collection.always_save`：true 时每条 episode 无论成功与否都落盘；
 - 物体随机摆放、灯光随机等通过 `actor` / `light` 段配置（可参考 [example.yaml](src/examples/dataCollection/example.yaml)）；
 - 吧台场景（`sip_hotelreception`）须通过加载 OrcaLab 布局文件 [pick bottle.json](src/examples/dataCollection/pick%20bottle.json) 启动（见[快速开始](#-快速开始)第 1 步），布局内含机器人在吧台前的摆位；
-
-### 传送带配置（可选，当前吧台场景未使用）
-
-文件中的 `conveyor` 段为传送带类场景保留的能力，当前吧台抓杯子场景不涉及传送带，无需修改：
-
-```yaml
-conveyor:
-  enable: true
-  board_joint_name: "Geom_Track_Geom_Track_Joint"  # 按场景实际 joint 名填写
-  start_mode: "task_status"  # RUNNING 才动；auto=脚本启动即动
-  speed: 0.05               # m/s
-```
-
-- 传送带板件按时间函数直线移动，物品被动摩擦跟随（不直接写物品 qpos/qvel）；
-- 运行时可通过 `DataCollectionManager.set_conveyor_speed()` 调速，物理速度与动画速度自动同步。
 
 ---
 
@@ -260,22 +251,7 @@ with h5py.File("dataset/d12/{uuid}/record/proprio_stats.hdf5", "r") as f:
 
 ---
 
-## 🧪 多传送带联调（附带工具，传送带类场景适用）
-
-```bash
-# 单进程多 env（每条传送带一个 env）
-python run_conveyor_multi_env.py --track-names "Geom_Track1,Geom_Track2,Geom_Track3"
-
-# 规范命名自动生成：Geom_Track1_Joint, Geom_Track2_Joint, ...
-python run_conveyor_multi_env.py --track-prefix Geom_Track --track-suffix _Joint --num-tracks 3
-
-# 单 env 模式（推荐：一个 env 同时驱动多条传送带，只渲染/步进一套仿真）
-python run_conveyor_multi_env.py --track-prefix Geom_Track --track-suffix _Joint --num-tracks 3 --single-env
-```
-
----
-
-## 🧩 核心组件与扩展
+##  核心组件与扩展
 
 本分支沿用主干的分层架构：
 
@@ -286,7 +262,7 @@ DataCollectionManager (核心调度器)
     │   └── DataDevice           (数据回放)
     ├── Controller Layer      # 控制器
     │   ├── Arm OSC / Gripper 2F85 / Waist / TaskStatus
-    ├── Scene Layer           # SceneManager（物体/灯光随机化、传送带同步）
+    ├── Scene Layer           # SceneManager（物体/灯光随机化）
     ├── Task Layer            # AbstractTask（任务目标/成功判定）
     └── Storage Layer         # AbstractDataStorage（HDF5 + 双版本视频录制）
 ```
