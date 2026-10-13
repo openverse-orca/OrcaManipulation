@@ -12,15 +12,15 @@
     },
     "viewport_camera_transform": {
         "position": [
-            6.365377902984619,
-            4.104100227355957,
-            1.6528137922286987
+            8.713412284851074,
+            3.8252711296081543,
+            1.74674654006958
         ],
         "rotation": [
-            0.22699226843065487,
-            -0.11102044779993159,
-            0.42509675782649764,
-            -0.8691615020975147
+            0.5839845267925803,
+            -0.09184357098951816,
+            -0.1253112943602634,
+            0.7967583764482772
         ]
     },
     "actors": [
@@ -225,27 +225,6 @@
                             "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/bottle/bottle04a",
                             "entity_overrides": [
                                 {
-                                    "entity_path": [],
-                                    "group_overrids": [
-                                        {
-                                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
-                                            "type_index": 0,
-                                            "property_overrides": [
-                                                {
-                                                    "name": "translate.x",
-                                                    "value": 7.162909030914307,
-                                                    "type": "float"
-                                                },
-                                                {
-                                                    "name": "translate.y",
-                                                    "value": 3.228545665740967,
-                                                    "type": "float"
-                                                }
-                                            ]
-                                        }
-                                    ]
-                                },
-                                {
                                     "entity_path": [
                                         {
                                             "name": "Bottle04",
@@ -301,42 +280,14 @@
                                     0.8364918231964111
                                 ],
                                 "rotation": [
-                                    0.9783020325938079,
+                                    0.9783020351523452,
                                     0.0,
                                     0.0,
-                                    0.20718381457735544
+                                    0.20718380249618884
                                 ],
                                 "scale": 1.0
                             },
-                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/mat_shelf/none-slip_mat",
-                            "entity_overrides": [
-                                {
-                                    "entity_path": [],
-                                    "group_overrids": [
-                                        {
-                                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
-                                            "type_index": 0,
-                                            "property_overrides": [
-                                                {
-                                                    "name": "translate.x",
-                                                    "value": 7.112918853759766,
-                                                    "type": "float"
-                                                },
-                                                {
-                                                    "name": "translate.y",
-                                                    "value": 3.389897346496582,
-                                                    "type": "float"
-                                                },
-                                                {
-                                                    "name": "rotate.z",
-                                                    "value": 23.91473388671875,
-                                                    "type": "float"
-                                                }
-                                            ]
-                                        }
-                                    ]
-                                }
-                            ]
+                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/mat_shelf/none-slip_mat"
                         },
                         {
                             "name": "MarkCup_02",
@@ -356,30 +307,7 @@
                                 ],
                                 "scale": 1.0
                             },
-                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/markcup/markcup_02",
-                            "entity_overrides": [
-                                {
-                                    "entity_path": [],
-                                    "group_overrids": [
-                                        {
-                                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
-                                            "type_index": 0,
-                                            "property_overrides": [
-                                                {
-                                                    "name": "translate.x",
-                                                    "value": 7.1063737869262695,
-                                                    "type": "float"
-                                                },
-                                                {
-                                                    "name": "translate.y",
-                                                    "value": 3.401139974594116,
-                                                    "type": "float"
-                                                }
-                                            ]
-                                        }
-                                    ]
-                                }
-                            ]
+                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/markcup/markcup_02"
                         },
                         {
                             "name": "MarkCup_01_1",
@@ -399,35 +327,7 @@
                                 ],
                                 "scale": 1.0
                             },
-                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/markcup/markcup_01",
-                            "entity_overrides": [
-                                {
-                                    "entity_path": [],
-                                    "group_overrids": [
-                                        {
-                                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
-                                            "type_index": 0,
-                                            "property_overrides": [
-                                                {
-                                                    "name": "translate.x",
-                                                    "value": 7.039225101470947,
-                                                    "type": "float"
-                                                },
-                                                {
-                                                    "name": "translate.y",
-                                                    "value": 3.524514675140381,
-                                                    "type": "float"
-                                                },
-                                                {
-                                                    "name": "translate.z",
-                                                    "value": 0.8294084668159485,
-                                                    "type": "float"
-                                                }
-                                            ]
-                                        }
-                                    ]
-                                }
-                            ]
+                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/markcup/markcup_01"
                         },
                         {
                             "name": "black_metal_ice_bucket_1",
@@ -447,30 +347,7 @@
                                 ],
                                 "scale": 1.0
                             },
-                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/icebucket/icebucket_b",
-                            "entity_overrides": [
-                                {
-                                    "entity_path": [],
-                                    "group_overrids": [
-                                        {
-                                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
-                                            "type_index": 0,
-                                            "property_overrides": [
-                                                {
-                                                    "name": "translate.x",
-                                                    "value": 7.255295753479004,
-                                                    "type": "float"
-                                                },
-                                                {
-                                                    "name": "translate.y",
-                                                    "value": 3.0486087799072266,
-                                                    "type": "float"
-                                                }
-                                            ]
-                                        }
-                                    ]
-                                }
-                            ]
+                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/icebucket/icebucket_b"
                         }
                     ]
                 }
@@ -487,46 +364,15 @@
                     -0.16516748070716858
                 ],
                 "rotation": [
-                    0.9729787929623671,
+                    0.9729787994876523,
                     0.0,
                     0.0,
-                    0.23089449635167825
+                    0.23089446885442433
                 ],
                 "scale": 1.0
             },
             "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/d12_waist_usda",
             "entity_overrides": [
-                {
-                    "entity_path": [],
-                    "group_overrids": [
-                        {
-                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
-                            "type_index": 0,
-                            "property_overrides": [
-                                {
-                                    "name": "translate.x",
-                                    "value": 6.542550563812256,
-                                    "type": "float"
-                                },
-                                {
-                                    "name": "translate.y",
-                                    "value": 3.1845993995666504,
-                                    "type": "float"
-                                },
-                                {
-                                    "name": "translate.z",
-                                    "value": -0.16516748070716858,
-                                    "type": "float"
-                                },
-                                {
-                                    "name": "rotate.z",
-                                    "value": 26.69947624206543,
-                                    "type": "float"
-                                }
-                            ]
-                        }
-                    ]
-                },
                 {
                     "entity_path": [
                         {
@@ -586,6 +432,11 @@
                                 },
                                 {
                                     "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "IsRecording",
                                     "value": true,
                                     "type": "bool"
                                 },
@@ -677,6 +528,11 @@
                                     "type": "bool"
                                 },
                                 {
+                                    "name": "IsRecording",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
                                     "name": "Enable",
                                     "value": true,
                                     "type": "bool"
@@ -760,6 +616,11 @@
                                 },
                                 {
                                     "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "IsRecording",
                                     "value": true,
                                     "type": "bool"
                                 },
