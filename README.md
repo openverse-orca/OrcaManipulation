@@ -145,7 +145,7 @@ python data_collection_tele.py --agent_name d12
 cd src/examples/dataCollection
 conda activate orcalab_lerobot
 python data_collection_replay.py                                   # 回放 dataset/d12/ 全部 episode，循环
-python data_collection_replay.py --episode <uuid>                  # 只回放指定一条
+python data_collection_replay.py --episode 3                       # 只回放指定一条（目录名）
 python data_collection_replay.py --no-loop                         # 播完退出
 ```
 
@@ -153,6 +153,28 @@ python data_collection_replay.py --no-loop                         # 播完退�
 - 控制链路：双臂关节空间 PD 力矩跟踪（含重力补偿）+ 腰部/手指执行器直写；右臂内置积分补偿，缓解持物（如酒瓶）时腕部负载下垂；
 - 可调参数：`--kp`（关节 PD 刚度，默认 300，过高会抽动）、`--right-ki`（右臂积分补偿增益，默认 5）；
 - 回放过程终端每 25 步打印左右臂 `[跟踪]` 最大关节误差（rad），可据此核对跟踪质量。
+
+**episode 重命名与回放顺序**
+
+`dataset/d12/` 下每条 episode 默认是随机 uuid 目录名。为便于管理，可把 uuid 目录重命名为数字编号（1、2、3……），回放时即**按编号顺序播放**：
+
+```bash
+cd src/examples/dataCollection/dataset/d12
+mv 7dbb3e20-d9c6-4260-9596-2bd86f3c58b5 1   # 将 uuid 目录重命名为编号（示例）
+```
+
+- 全量回放按编号从小到大依次播放（循环模式下播完最后一条回到第 1 条）；
+- 单条回放：`python data_collection_replay.py --episode 1`（参数即目录名）。
+
+**查看已采集视频**
+
+每条 episode 的视频直接用播放器打开即可：
+
+```
+dataset/d12/<编号>/video/camera_head.mp4      # 头部相机
+dataset/d12/<编号>/video/camera_wrist_l.mp4    # 左腕相机
+dataset/d12/<编号>/video/camera_wrist_r.mp4    # 右腕相机
+```
 
 **方式二：末端轨迹回放（data_collection_aug.py）**
 
@@ -218,12 +240,12 @@ OrcaLab 26.9.1 起，引擎侧 MP4 录制 RPC（`BeginSaveMp4File`/`StopSaveMp4F
 
 > 仓库中的 `dataset/` 目录刻意保持为空：克隆后自行运行数采即可生成数据，目录由脚本自动创建。
 
-每条 episode 一个 uuid 目录：
+每条 episode 一个目录（采集时为随机 uuid，可重命名为数字编号便于按序回放）：
 
 ```
 dataset/
 └── d12/                                 # 按 agent_name 分目录
-    └── {episode_uuid}/
+    └── {episode_uuid 或 编号}/
         ├── record/
         │   └── proprio_stats.hdf5
         │       ├── /action/joint/position      # (N, 15) 关节角（双臂 7+7 + 腰 1）

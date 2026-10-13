@@ -119,8 +119,10 @@ class DataDevice(AbstractDevice):
         @description: 加载数据集下的所有单元数据集
         '''
         self.unit_datasets_path.clear()
-        # 收集dataset_path下的子目录
-        for subdir in sorted(os.listdir(self.dataset_path)):
+        # 收集dataset_path下的子目录（纯数字命名按数字序排，如 1,2,...,12；其余按字典序）
+        def _sort_key(name: str):
+            return (0, int(name)) if name.isdigit() else (1, name)
+        for subdir in sorted(os.listdir(self.dataset_path), key=_sort_key):
             dir_path = os.path.join(self.dataset_path, subdir)
             if os.path.isdir(dir_path):
                 self.unit_datasets_path.append(dir_path)
