@@ -24,11 +24,37 @@
 | 组件 | 要求 |
 |------|------|
 | OrcaLab | 26.9.1（推荐，当前分支已适配）或 26.7.3 |
-| Python 环境 | conda 环境 `orcalab_lerobot`（26.9.1，内含 `orca-gym`、`av` 等）或 `orcalab`（26.7.3） |
+| Python | 3.12（建议用 conda 创建独立环境，环境名可自定） |
+| 客户端依赖 | `orca-gym`、`av`、`h5py` 等（见下方环境搭建） |
 | VR 设备 | Pico 手柄（可选，遥操作模式需要） |
 | 资产包 | 须从**测试库（测试资产库）** 订阅以下两个资产包（详见下方说明） |
 
-> ⚠️ **版本匹配很重要**：客户端 Python 环境里的 `orca-gym` 版本必须与正在运行的 OrcaLab 版本一致，否则 gRPC proto 不匹配会报错（详见 [常见问题](#-常见问题)）。
+> ⚠️ **版本匹配很重要**：Python 环境里的 `orca-gym` 版本必须与正在运行的 OrcaLab 版本**完全一致**，否则 gRPC proto 不匹配会报 `UNIMPLEMENTED` 等错误（详见 [常见问题](#-常见问题)）。
+
+### 环境搭建（从零开始）
+
+本仓库不依赖任何特定名称的 conda 环境，只要环境内的 `orca-gym` 版本与 OrcaLab 一致即可。以 OrcaLab 26.9.1 为例：
+
+```bash
+# 1. 创建环境（名字自定，这里以 orcalab_26_9_1 为例）
+conda create -n orcalab_26_9_1 python=3.12 -y
+conda activate orcalab_26_9_1
+
+# 2. 安装依赖（在仓库根目录执行，requirements.txt 已含 orca-gym）
+pip install -r requirements.txt
+
+# 3. 视频录制依赖（26.9.1 客户端推流 remux 需要 av 库）
+pip install av
+
+# 4. 验证版本
+python -c "import orca_gym; print(orca_gym.__version__)"   # 应输出 26.9.1
+```
+
+> 💡 orca-gym 已在 requirements.txt 中，安装后请按第 4 步核对版本；若与 OrcaLab 版本不一致，执行 `pip install orca-gym==<OrcaLab 版本号>` 覆盖安装。
+
+> 💡 若你的 OrcaLab 是 26.7.3，无需 `av`（26.7.3 走引擎侧录制）。
+
+> 💡 本仓库 README 命令示例中的 `conda activate <你的环境名>` 均指代"包含正确版本 orca-gym 的环境"，请替换为你自己创建的环境名。
 
 ### 资产订阅（必做）
 
@@ -44,12 +70,6 @@
 1. 打开 OrcaLab，进入资产库，切换到**测试库（测试资产库）**；
 2. 搜索并订阅上述两个资产包；
 3. 订阅完成后，即可在场景加载列表中找到 `sip_hotelreception` 场景与 D12 机器人资产。
-
-安装依赖：
-
-```bash
-pip install -r requirements.txt
-```
 
 ---
 
@@ -104,8 +124,8 @@ OrcaManipulation/
 ### 2. 遥操作数采
 
 ```bash
+conda activate <你的环境名>       # 内含与 OrcaLab 版本一致的 orca-gym（见环境搭建）
 cd src/examples/dataCollection
-conda activate orcalab_lerobot   # OrcaLab 26.9.1；若用 26.7.3 则 activate orcalab
 python data_collection_tele.py --agent_name d12
 ```
 
@@ -140,8 +160,8 @@ python data_collection_tele.py --agent_name d12
 读取 hdf5 中记录的关节角与夹爪原始控制量，直接驱动关节复现原始轨迹（不经过末端逆解）：
 
 ```bash
+conda activate <你的环境名>
 cd src/examples/dataCollection
-conda activate orcalab_lerobot
 python data_collection_replay.py                                   # 回放 dataset/d12/ 全部 episode，循环
 python data_collection_replay.py --episode 3                       # 只回放指定一条（目录名）
 python data_collection_replay.py --no-loop                         # 播完退出
@@ -287,7 +307,7 @@ DataCollectionManager (核心调度器)
 
 这是**客户端 orca-gym 版本与运行中的 OrcaLab 版本不匹配**导致：
 - 26.7.3 的客户端对 26.9.1 的 OrcaLab 调用已删除的 `BeginSaveMp4File` RPC → UNIMPLEMENTED；
-- 解决：用与 OrcaLab 版本一致的 conda 环境运行脚本（26.9.1 → `orcalab_lerobot`）。
+- 解决：在环境内安装与 OrcaLab 版本一致的 orca-gym（`pip install orca-gym==<OrcaLab 版本号>`），并用该环境运行脚本。验证：`python -c "import orca_gym; print(orca_gym.__version__)"`。
 
 **Q: OrcaLab 26.9.1 下不报错但也没有视频？**
 
@@ -299,7 +319,7 @@ DataCollectionManager (核心调度器)
 
 **Q: 回放时提示找不到 hdf5 / 场景对不上？**
 
-- 回放数据目录须为 `dataset/d12/`（含 uuid 子目录），脚本与采集时的场景必须一致；
+- 回放数据目录须为 `dataset/d12/`（含 episode 子目录），脚本与采集时的场景必须一致；
 - 必须用与 OrcaLab 版本一致的 Python 环境运行回放脚本。
 
 **Q: VR 手柄连接不上 / 控制器不响应？**
