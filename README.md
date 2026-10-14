@@ -15,7 +15,7 @@
   - OrcaLab ≥ 26.9.1：客户端 WebSocket 推流 + 按仿真步区间 remux 落盘，**每相机一个 mp4**
   - OrcaLab ≤ 26.7.3：走引擎侧 `BeginSaveMp4File` 录制
 - 💾 **HDF5 数据落盘**：关节角、末端位姿、夹爪、腰部、时间戳与任务/场景元数据
-- 🔁 **数据回放**：`data_collection_replay.py` 按记录的关节角一比一回放已采数据；`data_collection_aug.py` 按末端位姿重执行，可用于质检与数据增强
+- 🔁 **数据回放**：`data_collection_replay.py` 按记录的关节角一比一回放已采数据，episode 按编号顺序循环播放
 
 ---
 
@@ -76,7 +76,7 @@ OrcaManipulation/
 │       └── dataCollection/
 │           ├── data_collection_tele.py      # 遥操作数采入口（主脚本）
 │           ├── data_collection_replay.py   # 一比一数据回放入口（推荐）
-│           ├── data_collection_aug.py       # 末端轨迹回放/数据增强入口
+│           ├── data_collection_aug.py       # 末端轨迹回放/数据增强（附带工具，未用于本项目流程）
 │           ├── conveyor_collect.yaml       # 场景数采配置（文件名沿用历史命名）
 │           ├── example.yaml                # 通用场景配置模板
 │           ├── dataset/                    # 采集数据落盘目录（仓库默认为空，运行时自动创建）
@@ -135,9 +135,7 @@ python data_collection_tele.py --agent_name d12
 
 ### 4. 数据回放
 
-提供两个回放脚本（均需 OrcaLab 加载与采集时相同的场景/布局）：
-
-**方式一：一比一回放（推荐，data_collection_replay.py）**
+使用一比一回放脚本 `data_collection_replay.py`（需 OrcaLab 加载与采集时相同的场景/布局）。
 
 读取 hdf5 中记录的关节角与夹爪原始控制量，直接驱动关节复现原始轨迹（不经过末端逆解）：
 
@@ -154,17 +152,18 @@ python data_collection_replay.py --no-loop                         # 播完退�
 - 可调参数：`--kp`（关节 PD 刚度，默认 300，过高会抽动）、`--right-ki`（右臂积分补偿增益，默认 5）；
 - 回放过程终端每 25 步打印左右臂 `[跟踪]` 最大关节误差（rad），可据此核对跟踪质量。
 
-**episode 重命名与回放顺序**
+**回放顺序**
 
-`dataset/d12/` 下每条 episode 默认是随机 uuid 目录名。为便于管理，可把 uuid 目录重命名为数字编号（1、2、3……），回放时即**按编号顺序播放**：
+`dataset/d12/` 下每条 episode 一个目录，目录名为数字编号（1、2、3……）时按编号从小到大依次播放，全部播完后回到第 1 条循环（默认循环，Ctrl+C 退出；`--no-loop` 播完即停）。
+
+**episode 重命名**
+
+采集时每条 episode 默认是随机 uuid 目录名，可重命名为数字编号便于按序回放：
 
 ```bash
 cd src/examples/dataCollection/dataset/d12
 mv 7dbb3e20-d9c6-4260-9596-2bd86f3c58b5 1   # 将 uuid 目录重命名为编号（示例）
 ```
-
-- 全量回放按编号从小到大依次播放（循环模式下播完最后一条回到第 1 条）；
-- 单条回放：`python data_collection_replay.py --episode 1`（参数即目录名）。
 
 **查看已采集视频**
 
@@ -175,22 +174,6 @@ dataset/d12/<编号>/video/camera_head.mp4      # 头部相机
 dataset/d12/<编号>/video/camera_wrist_l.mp4    # 左腕相机
 dataset/d12/<编号>/video/camera_wrist_r.mp4    # 右腕相机
 ```
-
-**方式二：末端轨迹回放（data_collection_aug.py）**
-
-读取 hdf5 中记录的双臂末端位姿，走 OSC 逆解重执行轨迹（不直接复刻关节角，接触扰动下末端行为可能与原始动作略有差异）：
-
-```bash
-cd src/examples/dataCollection
-conda activate orcalab_lerobot
-python data_collection_aug.py
-```
-
-- 数据目录为 `dataset/d12/`，依 episode 中的 `scene_info` 还原场景后逐条回放；
-- 脚本内 `save_video = False`，回放过程不重新录制视频；
-- `loop_playback = True` 循环回放，Ctrl+C 退出。
-
-两种回放的数据目录均为 `dataset/d12/`，场景/物体姿态均由 episode 中的 `scene_info` 还原。
 
 ---
 
