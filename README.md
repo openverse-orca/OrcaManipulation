@@ -33,7 +33,9 @@
 
 ### 环境搭建（从零开始）
 
-本仓库不依赖任何特定名称的 conda 环境，只要环境内的 `orca-gym` 版本与 OrcaLab 一致即可。以 OrcaLab 26.9.1 为例：
+本仓库不依赖任何特定名称的 conda 环境，只要环境内的 `orca-gym` 版本与 OrcaLab 一致即可。以 OrcaLab 26.9.1 为例，**请按你的操作系统选择对应小节操作**。
+
+#### ▶ Ubuntu / Linux
 
 ```bash
 # 1. 创建环境（名字自定，这里以 orcalab_26_9_1 为例）
@@ -45,16 +47,37 @@ pip install -r requirements.txt
 
 # 3. 视频录制依赖（26.9.1 客户端推流 remux 需要 av 库）
 pip install av
-
-# 4. 验证版本
-python -c "import orca_gym; print(orca_gym.__version__)"   # 应输出 26.9.1
 ```
 
-> 💡 orca-gym 已在 requirements.txt 中，安装后请按第 4 步核对版本；若与 OrcaLab 版本不一致，执行 `pip install orca-gym==<OrcaLab 版本号>` 覆盖安装。
+#### ▶ Windows（PowerShell）
 
-> 💡 若你的 OrcaLab 是 26.7.3，无需 `av`（26.7.3 走引擎侧录制）。
+前置：安装 [Anaconda](https://www.anaconda.com/download) 或 Miniconda。使用 **PowerShell**（若 `conda` 命令不识别，可在 Anaconda Prompt 执行一次 `conda init powershell` 后重开，或直接使用开始菜单的 **Anaconda PowerShell Prompt**）。
 
-> 💡 本仓库 README 命令示例中的 `conda activate <你的环境名>` 均指代"包含正确版本 orca-gym 的环境"，请替换为你自己创建的环境名。
+```powershell
+# 1. 创建环境（名字自定，这里以 orcalab_26_9_1 为例）
+conda create -n orcalab_26_9_1 python=3.12 -y
+conda activate orcalab_26_9_1
+
+# 2. 进入仓库根目录（按你实际克隆位置调整路径）
+cd $HOME\Desktop\OrcaManipulation
+
+# 3. 安装依赖（requirements.txt 已含 orca-gym）
+pip install -r requirements.txt
+
+# 4. 视频录制依赖 av + 相机推流依赖 websockets（26.9.1 录制链路需要，未随 orca-gym 自动安装）
+pip install av websockets
+
+# 5. 开启 Python UTF-8 模式（只需执行一次，永久生效）
+#    Windows 默认用 GBK 读文件，不设置会在读取含中文的 yaml 时报 UnicodeDecodeError
+setx PYTHONUTF8 1
+#    ↑ 执行后必须【关闭当前窗口、重新打开 PowerShell 并 conda activate】才生效
+```
+
+> ⚠️ **Windows 必做第 5 步**：若运行脚本时报 `UnicodeDecodeError: 'gbk' codec can't decode byte ...`，就是漏了这一步（详见 [常见问题](#-常见问题)）。
+
+> 💡 若你的 OrcaLab 是 26.7.3，无需 `av`（26.7.3 走引擎侧录制），安装上也不影响运行。
+
+> 💡 本仓库 README 命令示例中的 `conda activate <你的环境名>` 均指代"已安装本项目依赖的环境"，请替换为你自己创建的环境名。
 
 ### 资产订阅（必做）
 
@@ -123,9 +146,19 @@ OrcaManipulation/
 
 ### 2. 遥操作数采
 
+**Ubuntu / Linux：**
+
 ```bash
 conda activate <你的环境名>       # 内含与 OrcaLab 版本一致的 orca-gym（见环境搭建）
 cd src/examples/dataCollection
+python data_collection_tele.py --agent_name d12
+```
+
+**Windows（PowerShell）：**
+
+```powershell
+conda activate <你的环境名>
+cd $HOME\Desktop\OrcaManipulation\src\examples\dataCollection
 python data_collection_tele.py --agent_name d12
 ```
 
@@ -157,11 +190,23 @@ python data_collection_tele.py --agent_name d12
 
 使用一比一回放脚本 `data_collection_replay.py`（需 OrcaLab 加载与采集时相同的场景/布局）。
 
-读取 hdf5 中记录的关节角与夹爪原始控制量，直接驱动关节复现原始轨迹（不经过末端逆解）：
+读取 hdf5 中记录的关节角与夹爪原始控制量，直接驱动关节复现原始轨迹（不经过末端逆解）。
+
+**Ubuntu / Linux：**
 
 ```bash
 conda activate <你的环境名>
 cd src/examples/dataCollection
+python data_collection_replay.py                                   # 回放 dataset/d12/ 全部 episode，循环
+python data_collection_replay.py --episode 3                       # 只回放指定一条（目录名）
+python data_collection_replay.py --no-loop                         # 播完退出
+```
+
+**Windows（PowerShell）：**
+
+```powershell
+conda activate <你的环境名>
+cd $HOME\Desktop\OrcaManipulation\src\examples\dataCollection
 python data_collection_replay.py                                   # 回放 dataset/d12/ 全部 episode，循环
 python data_collection_replay.py --episode 3                       # 只回放指定一条（目录名）
 python data_collection_replay.py --no-loop                         # 播完退出
@@ -178,11 +223,20 @@ python data_collection_replay.py --no-loop                         # 播完退�
 
 **episode 重命名**
 
-采集时每条 episode 默认是随机 uuid 目录名，可重命名为数字编号便于按序回放：
+采集时每条 episode 默认是随机 uuid 目录名，可重命名为数字编号便于按序回放。
+
+Ubuntu / Linux：
 
 ```bash
 cd src/examples/dataCollection/dataset/d12
 mv 7dbb3e20-d9c6-4260-9596-2bd86f3c58b5 1   # 将 uuid 目录重命名为编号（示例）
+```
+
+Windows（PowerShell）：
+
+```powershell
+cd $HOME\Desktop\OrcaManipulation\src\examples\dataCollection\dataset\d12
+Rename-Item 7dbb3e20-d9c6-4260-9596-2bd86f3c58b5 1   # 将 uuid 目录重命名为编号（示例）
 ```
 
 **查看已采集视频**
@@ -307,7 +361,26 @@ DataCollectionManager (核心调度器)
 
 这是**客户端 orca-gym 版本与运行中的 OrcaLab 版本不匹配**导致：
 - 26.7.3 的客户端对 26.9.1 的 OrcaLab 调用已删除的 `BeginSaveMp4File` RPC → UNIMPLEMENTED；
-- 解决：在环境内安装与 OrcaLab 版本一致的 orca-gym（`pip install orca-gym==<OrcaLab 版本号>`），并用该环境运行脚本。验证：`python -c "import orca_gym; print(orca_gym.__version__)"`。
+- 解决：在环境内安装与 OrcaLab 版本一致的 orca-gym（`pip install orca-gym==<OrcaLab 版本号>`），并用该环境运行脚本。
+
+**Q: Windows 运行脚本报 `UnicodeDecodeError: 'gbk' codec can't decode byte ...`？**
+
+Windows 上 Python 默认用 GBK 编码读文件，而配置 `conveyor_collect.yaml` 是 UTF-8（含非 GBK 字符），读取即报错。解决（任选其一）：
+
+- 一劳永逸：按上文「环境搭建（从零开始）→ Windows（PowerShell）」第 5 步执行 `setx PYTHONUTF8 1`，**关闭并重新打开终端、重新 `conda activate`** 后再运行；
+- 临时生效（仅当前窗口）：PowerShell 执行 `$env:PYTHONUTF8 = "1"` 后再运行脚本；或 CMD 先执行 `chcp 65001`。
+
+**Q: Windows 上报 `ModuleNotFoundError: No module named 'websockets'`（或 h5py 等缺失）？**
+
+依赖未装完整。在已激活的环境中补装：
+
+```powershell
+cd $HOME\Desktop\OrcaManipulation
+pip install -r requirements.txt
+pip install av websockets
+```
+
+（Ubuntu 环境已随环境搭建安装，一般不会出现；`websockets` 未随 orca-gym 自动声明，是 26.9.1 相机推流的隐式依赖。）
 
 **Q: OrcaLab 26.9.1 下不报错但也没有视频？**
 
