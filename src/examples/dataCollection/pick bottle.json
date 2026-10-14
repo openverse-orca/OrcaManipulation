@@ -1,13 +1,13 @@
 {
     "version": "4.0",
     "level": {
-        "name": "sip_hotelreception",
-        "path": "levels/e071469a36d3c8aa/suzhou_industrial_park/sip_hotelreception/sip_hotelreception.spawnable",
+        "name": "hotelreception",
+        "path": "levels/e071469a36d3c8aa/china_singapore_smart_land_scene/hotelreception/hotelreception.spawnable",
         "package_reference": {
-            "name": "Suzhou_Industrial_Park",
-            "tech_name": "suzhou_industrial_park",
+            "name": "中新园区场景",
+            "tech_name": "china_singapore_smart_land_scene",
             "author": "Orca",
-            "project_name": "suzhou_industrial_park"
+            "project_name": "china_singapore_smart_land_scene"
         }
     },
     "viewport_camera_transform": {
@@ -99,7 +99,7 @@
                                         ],
                                         "scale": 1.0
                                     },
-                                    "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/bu/bardeck/cabinet_a"
+                                    "asset_path": "assets/e071469a36d3c8aa/china_singapore_smart_land_scene/suzhou_industrial_park/bu/bardeck/cabinet_a"
                                 },
                                 {
                                     "name": "Cabinet_B2",
@@ -119,7 +119,7 @@
                                         ],
                                         "scale": 1.0
                                     },
-                                    "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/bu/bardeck/cabinet_b2"
+                                    "asset_path": "assets/e071469a36d3c8aa/china_singapore_smart_land_scene/suzhou_industrial_park/bu/bardeck/cabinet_b2"
                                 },
                                 {
                                     "name": "Bar_A_simplized",
@@ -139,7 +139,7 @@
                                         ],
                                         "scale": 1.0
                                     },
-                                    "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/bu/bardeck/bar_a_simplized"
+                                    "asset_path": "assets/e071469a36d3c8aa/china_singapore_smart_land_scene/suzhou_industrial_park/bu/bardeck/bar_a_simplized"
                                 }
                             ]
                         },
@@ -161,7 +161,7 @@
                                 ],
                                 "scale": 1.0
                             },
-                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/bu/sinkertap/sinkertap"
+                            "asset_path": "assets/e071469a36d3c8aa/china_singapore_smart_land_scene/suzhou_industrial_park/bu/sinkertap/sinkertap"
                         },
                         {
                             "name": "Saucer_01_static",
@@ -181,7 +181,7 @@
                                 ],
                                 "scale": 1.0
                             },
-                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/cup_01/saucer_01_static"
+                            "asset_path": "assets/e071469a36d3c8aa/china_singapore_smart_land_scene/suzhou_industrial_park/prop/cup_01/saucer_01_static"
                         }
                     ]
                 },
@@ -222,7 +222,7 @@
                                 ],
                                 "scale": 1.0
                             },
-                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/bottle/bottle04a",
+                            "asset_path": "assets/e071469a36d3c8aa/china_singapore_smart_land_scene/suzhou_industrial_park/prop/bottle/bottle04a",
                             "entity_overrides": [
                                 {
                                     "entity_path": [
@@ -287,7 +287,7 @@
                                 ],
                                 "scale": 1.0
                             },
-                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/mat_shelf/none-slip_mat"
+                            "asset_path": "assets/e071469a36d3c8aa/china_singapore_smart_land_scene/suzhou_industrial_park/prop/mat_shelf/none-slip_mat"
                         },
                         {
                             "name": "MarkCup_02",
@@ -307,7 +307,7 @@
                                 ],
                                 "scale": 1.0
                             },
-                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/markcup/markcup_02"
+                            "asset_path": "assets/e071469a36d3c8aa/china_singapore_smart_land_scene/suzhou_industrial_park/prop/markcup/markcup_02"
                         },
                         {
                             "name": "MarkCup_01_1",
@@ -327,7 +327,7 @@
                                 ],
                                 "scale": 1.0
                             },
-                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/markcup/markcup_01"
+                            "asset_path": "assets/e071469a36d3c8aa/china_singapore_smart_land_scene/suzhou_industrial_park/prop/markcup/markcup_01"
                         },
                         {
                             "name": "black_metal_ice_bucket_1",
@@ -347,7 +347,7 @@
                                 ],
                                 "scale": 1.0
                             },
-                            "asset_path": "assets/e071469a36d3c8aa/suzhou_industrial_park/suzhou_industrial_park/prop/icebucket/icebucket_b"
+                            "asset_path": "assets/e071469a36d3c8aa/china_singapore_smart_land_scene/suzhou_industrial_park/prop/icebucket/icebucket_b"
                         }
                     ]
                 }
@@ -371,7 +371,7 @@
                 ],
                 "scale": 1.0
             },
-            "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/d12_waist_usda",
+            "asset_path": "assets/e071469a36d3c8aa/robot_project/prefabs/d12_waist_usda",
             "entity_overrides": [
                 {
                     "entity_path": [
@@ -638,16 +638,16 @@
     ],
     "package_references": [
         {
-            "name": "Suzhou_Industrial_Park",
-            "tech_name": "suzhou_industrial_park",
+            "name": "中新园区场景",
+            "tech_name": "china_singapore_smart_land_scene",
             "author": "Orca",
-            "project_name": "suzhou_industrial_park"
+            "project_name": "china_singapore_smart_land_scene"
         },
         {
             "name": "d12_waist",
             "tech_name": "d12_waist",
             "author": "Orca",
-            "project_name": "default_project"
+            "project_name": "robot_project"
         }
     ]
 }

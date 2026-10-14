@@ -63,13 +63,13 @@ python -c "import orca_gym; print(orca_gym.__version__)"   # 应输出 26.9.1
 | 资产包 | 用途 |
 |--------|------|
 | **d12_waist** | D12（青龙）人形机器人模型（含双臂、双 2F85 夹爪、腰部关节） |
-| **Suzhou_Industrial_Park** | 苏州工业园吧台场景（`sip_hotelreception`，含吧台、杯子等物体） |
+| **中新园区场景** | 吧台场景（`hotelreception`，含吧台、杯子等物体） |
 
 操作步骤（OrcaLab 内）：
 
 1. 打开 OrcaLab，进入资产库，切换到**测试库（测试资产库）**；
 2. 搜索并订阅上述两个资产包；
-3. 订阅完成后，即可在场景加载列表中找到 `sip_hotelreception` 场景与 D12 机器人资产。
+3. 订阅完成后，即可在场景加载列表中找到 `hotelreception` 场景与 D12 机器人资产。
 
 ---
 
@@ -115,11 +115,11 @@ OrcaManipulation/
 ### 1. 启动仿真端（加载 JSON 布局）
 
 1. 打开 OrcaLab，完成[资产订阅](#资产订阅必做)；
-2. 加载仓库自带的布局文件 [pick bottle.json](src/examples/dataCollection/pick%20bottle.json)（OrcaLab 菜单 → 打开/加载布局，选择该文件）。布局会自动还原：吧台场景 `sip_hotelreception` + 已摆好位的 `d12_waist_motor_usda` 机器人 + 视角，无需手动摆放机器人；
+2. 加载仓库自带的布局文件 [pick bottle.json](src/examples/dataCollection/pick%20bottle.json)（OrcaLab 菜单 → 打开/加载布局，选择该文件）。布局会自动还原：吧台场景 `hotelreception` + 已摆好位的 `d12_waist_motor_usda` 机器人 + 视角，无需手动摆放机器人；
 3. 进入运行时；
 4. 确认 gRPC 地址为 `localhost:50051`（脚本默认值）。
 
-> ⚠️ 请通过加载 JSON 布局的方式启动场景，而不是只手动加载 `sip_hotelreception` 场景——布局中包含机器人在吧台前的正确摆位，手动加载场景会导致场景里没有机器人（或机器人位置不对），脚本启动时会报 `KeyError: 'd12_waist_motor_usda_l_fingers_actuator'` 之类的执行器找不到错误。
+> ⚠️ 请通过加载 JSON 布局的方式启动场景，而不是只手动加载 `hotelreception` 场景——布局中包含机器人在吧台前的正确摆位，手动加载场景会导致场景里没有机器人（或机器人位置不对），脚本启动时会报 `KeyError: 'd12_waist_motor_usda_l_fingers_actuator'` 之类的执行器找不到错误。
 
 ### 2. 遥操作数采
 
@@ -212,7 +212,7 @@ collection:
 - `type: "collect_only"`：采集模式不做抓取成功判定，按手柄 Grip 控制起止即可；
 - `collection.always_save`：true 时每条 episode 无论成功与否都落盘；
 - 物体随机摆放、灯光随机等通过 `actor` / `light` 段配置（可参考 [example.yaml](src/examples/dataCollection/example.yaml)）；
-- 吧台场景（`sip_hotelreception`）须通过加载 OrcaLab 布局文件 [pick bottle.json](src/examples/dataCollection/pick%20bottle.json) 启动（见[快速开始](#-快速开始)第 1 步），布局内含机器人在吧台前的摆位；
+- 吧台场景（`hotelreception`）须通过加载 OrcaLab 布局文件 [pick bottle.json](src/examples/dataCollection/pick%20bottle.json) 启动（见[快速开始](#-快速开始)第 1 步），布局内含机器人在吧台前的摆位；
 
 ---
 
