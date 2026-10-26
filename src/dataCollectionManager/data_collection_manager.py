@@ -36,6 +36,7 @@ class DataCollectionManager:
         frame_skip: int = 20,
         time_step: float = 0.001,
         orcagym_addr: str = "localhost:50051",
+        mjc_agent_prefix: str | None = None,
         task: AbstractTask = None,
         device: AbstractDevice = None,
         task_status_controller: TaskStatusController = None,
@@ -44,6 +45,7 @@ class DataCollectionManager:
         aug_count: int = 1,
         **kwargs,
     ):
+        self._mjc_agent_prefix = mjc_agent_prefix
         self.device = device
         self.time_step = time_step
         self.frame_skip = frame_skip
