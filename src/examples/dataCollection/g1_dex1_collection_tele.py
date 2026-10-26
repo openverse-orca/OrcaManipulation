@@ -548,6 +548,13 @@ def ensure_camera_streams(
     """
     if not logical_keys:
         return {}
+    # 推流 API 仅 orca-gym 26.9.1+ 提供; 旧版(orcalab 环境的 26.7.3)会静默无视频
+    if not hasattr(env, "start_streaming") or not hasattr(env, "get_recorder_manager"):
+        orca_logger.error(
+            "[相机] 当前 orca-gym 不含推流接口(start_streaming/get_recorder_manager), "
+            "本集仅保存 HDF5。请改用 orcalab_lerobot 环境(orca-gym 26.9.1)"
+        )
+        return {}
     resolved = _resolve_cameras(env, logical_keys)
     try:
         manager = env.get_recorder_manager()
@@ -594,6 +601,18 @@ def ensure_camera_streams(
             time.sleep(0.2)
         if logical not in online:
             orca_logger.warning(f"[相机] {logical}({cam}) 等待首帧超时, 跳过")
+    if not online:
+        try:
+            registered = list(env.get_camera_names())
+        except Exception:
+            registered = []
+        orca_logger.error(
+            f"[相机] 无可用相机, 本集仅保存 HDF5; 后端注册相机={registered}。"
+            "排查: 1) 环境需 orcalab_lerobot(26.9.1) "
+            "2) 场景中相机组件勾选 Enable/ColorCamera/IsRecording "
+            "3) 相机名需含 head_cam|camera_left|camera_right "
+            "4) 加载 g1_pick_tube.json 布局还原相机"
+        )
     return online
 
 

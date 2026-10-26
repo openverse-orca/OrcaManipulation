@@ -139,6 +139,20 @@ src/examples/dataCollection/dataset/
 - 日志写入 `src/examples/dataCollection/logs/g1_dex1_collection.log`
 - `dataset/` 与 `logs/` 下的实际数据已被 `.gitignore` 忽略，不会误提交，仓库仅保留 `.gitkeep` 占位目录
 
+### 只有 HDF5、没有 mp4 时排查
+
+视频走 OrcaStudio 相机推流，任一环节不满足都会**静默降级为只存 HDF5**（日志里出现 `[相机] 无可用相机, 本集仅保存 HDF5`）。按顺序检查：
+
+| # | 检查项 | 说明 |
+|---|---|---|
+| 1 | Python 环境 | 必须是 `orcalab_lerobot`（orca-gym **26.9.1**）。`orcalab` 环境的 26.7.3 没有 `start_streaming`/`get_recorder_manager`，日志会报 `当前 orca-gym 不含推流接口` |
+| 2 | 相机组件已启用 | OrcaStudio 中三路相机需勾选 `Enable`、`ColorCamera`、`IsRecording`。直接加载 `g1_pick_tube.json` 布局可还原这些属性 |
+| 3 | 相机名匹配 | 后端注册名需含 `head_cam`/`camera_left`/`camera_right`（允许 uuid 后缀）。日志会打印实际注册名，可据此核对 |
+| 4 | 机器人资产带相机 | 需订阅带摄像头的「宇树夹试管(改摄像头)」，不含摄像头的版本场景里没有相机实体 |
+| 5 | 未关闭录制 | 启动命令不要带 `--no_cameras` |
+
+启动后正常应看到三行 `[相机] ✓ head(...) 推流就绪`，约 1~2 秒/路。若某路超时 30 秒，只有该路缺视频，其余正常。
+
 ## 五、数据回放
 
 `g1_dex1_collection_replay.py` 读取已采集的 HDF5，在仿真中按帧重放末端轨迹与夹爪开度，用于质检与失败片段复查。
