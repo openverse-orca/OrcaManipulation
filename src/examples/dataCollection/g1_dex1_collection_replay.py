@@ -178,20 +178,31 @@ def main():
         return {"replay": np.zeros(env.nu, dtype=np.float32)}
 
     orca_logger.info("Creating data collection manager")
-    data_collection_manager = DataCollectionManager(
-        agent_name=args.agent_name,
-        env_name="DataCollection",
-        entry_point=ENTRY_POINT,
-        default_joint_values=default_joint_values,
-        obs_callback=obs_callback,
-        env_index=0,
-        device=data_device,
-        scene_manager=scene_manager,
-        data_storage=None,
-        frame_skip=args.frame_skip,
-        time_step=args.time_step,
-        orcagym_addr=orcagym_addr,
-    )
+    try:
+        data_collection_manager = DataCollectionManager(
+            agent_name=args.agent_name,
+            env_name="DataCollection",
+            entry_point=ENTRY_POINT,
+            default_joint_values=default_joint_values,
+            obs_callback=obs_callback,
+            env_index=0,
+            device=data_device,
+            scene_manager=scene_manager,
+            data_storage=None,
+            frame_skip=args.frame_skip,
+            time_step=args.time_step,
+            orcagym_addr=orcagym_addr,
+        )
+    except KeyError as e:
+        msg = (
+            f"场景中未找到 {args.agent_name} 的机器人关节。\n"
+            f"请确认 OrcaStudio 打开的是含该机器人的场景"
+            f"（如 Levels/shihua_xiugai_change_tube），且机器人已加载。\n"
+            f"原始错误: {e}"
+        )
+        orca_logger.error(msg)
+        print("\n" + msg + "\n", flush=True)
+        return
     env = data_collection_manager.env
     env.reset()
     time.sleep(0.1)
