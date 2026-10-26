@@ -12,9 +12,9 @@
     },
     "viewport_camera_transform": {
         "position": [
-            0.5952808260917664,
-            -0.07715649157762527,
-            1.6914492845535278
+            0.10805907845497131,
+            -0.0621822215616703,
+            1.2735638618469238
         ],
         "rotation": [
             0.6732839544930896,
@@ -222,7 +222,52 @@
                                         ],
                                         "scale": 1.0
                                     },
-                                    "asset_path": "assets/e071469a36d3c8aa/testtube_operation/testtube_operation/prop/testtube_context/testtube_15ml"
+                                    "asset_path": "assets/e071469a36d3c8aa/testtube_operation/testtube_operation/prop/testtube_context/testtube_15ml",
+                                    "entity_overrides": [
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 0
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.009999999776482582,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    ]
                                 }
                             ]
                         },
