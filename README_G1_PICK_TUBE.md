@@ -47,15 +47,30 @@ cp -r orcastudio_scene/Assets orcastudio_scene/Levels \
 - 模型含 4 个 DEX1 关节（`left/right_dex1_joint1`、`joint2`）、2 个电机（`left/right_dex1_motor`）
 - 相机 `head_cam`、`camera_left`、`camera_right` 正常注册
 
-## 三、运行数据采集
+## 三、数采流程
 
-使用 `orcalab_lerobot` 环境（orca-gym 26.9.1，支持相机推流录制）：
+### 1. 启动
+
+1. 启动 OrcaStudio，打开 `Levels/shihua_xiugai_change_tube` 场景，确认机器人已加载。
+2. 连接 PICO 手柄，确认手柄已被识别。
+3. 使用 `orcalab_lerobot` 环境（orca-gym 26.9.1，支持相机推流录制）启动采集脚本：
 
 ```bash
 cd src/examples/dataCollection
 ~/miniconda3/envs/orcalab_lerobot/bin/python g1_dex1_collection_tele.py \
     --agent_name g1_pick_usda --pos_scale 0.8
 ```
+
+### 2. 采集
+
+1. 脚本启动后自动连接场景、加载机器人并启动三路相机推流（约数秒，日志出现相机就绪后再操作）。
+2. 按一下**左 Grip** 开始本集录制。
+3. 用手柄控制双臂与夹爪完成任务。
+4. 再按一下**左 Grip** 结束本集，数据自动落盘，场景重置，等待下一集。
+
+### 3. 退出
+
+`Ctrl+C` 结束脚本，退出时会关闭相机推流并保存日志。
 
 ### 常用参数
 
@@ -83,16 +98,28 @@ cd src/examples/dataCollection
 | Y / B | 左 / 右夹爪中位 |
 | 手柄位姿 | 控制左右手臂 |
 
-## 四、输出结构
+## 四、数据存储结构
+
+数据保存在脚本同级的 `dataset` 目录（仓库已保留该空目录）：
 
 ```
-dataset/<agent_name>/<level>/<uuid>/
-├── record/proprio_stats.hdf5    # 关节位置、速度、动作等状态数据
-└── video/
-    ├── head.mp4
-    ├── wrist_l.mp4
-    └── wrist_r.mp4
+src/examples/dataCollection/dataset/
+└── <agent_name>/
+    └── <level>/
+        └── <uuid>/
+            ├── record/proprio_stats.hdf5   # 关节位置、速度、动作等状态数据
+            └── video/
+                ├── head.mp4
+                ├── wrist_l.mp4
+                └── wrist_r.mp4
 ```
+
+以默认参数为例：`dataset/g1_pick_usda/default/<uuid>/`
+
+- 每集自动生成一个 `<uuid>` 目录
+- `--level` 用于区分任务或批次，如 `--level tube_v1`
+- 日志写入 `src/examples/dataCollection/logs/g1_dex1_collection.log`
+- `dataset/` 与 `logs/` 下的实际数据已被 `.gitignore` 忽略，不会误提交，仓库仅保留 `.gitkeep` 占位目录
 
 ## 五、说明
 

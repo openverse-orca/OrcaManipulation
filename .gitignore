@@ -209,3 +209,6 @@ marimo/_lsp/
 __marimo__/
 /src/examples/dataCollection/dataset/*
 /src/examples/dataCollection/aug_dataset/*
+# 仅保留目录结构，采集数据不入库
+!/src/examples/dataCollection/dataset/.gitkeep
+!/src/examples/dataCollection/logs/.gitkeep
