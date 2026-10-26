@@ -5,6 +5,7 @@
 ## 一、目录结构
 
 ```
+├── g1_pick_tube.json            # OrcaStudio 布局文件（关卡 + actor 布局）
 ├── models/                      # 机器人模型（MuJoCo）
 │   ├── g1_pick.xml              # G1 + 双臂 DEX1-1 夹爪
 │   └── assets/                  # 网格资源（含 assets/dex1/）
@@ -23,7 +24,24 @@
 
 ## 二、部署步骤
 
-### 1. 导入场景到 OrcaStudio
+### 方式一：OrcaLab 资产订阅 + 布局文件（推荐）
+
+1. 打开 OrcaLab，进入「资产中心」。
+2. 搜索并订阅以下 **两个资产**：
+   - **试管操作**（`testtube_operation`）—— 场景包
+   - **宇树夹试管(改摄像头)**（`g1_dex_tube_66666666`）—— 机器人
+3. 订阅完成后，在 OrcaStudio 中加载仓库根目录的布局文件 `g1_pick_tube.json`，它会还原：
+   - 关卡：`testtube_operation`
+   - Actors：`Group`、`g1_pick_usda`
+   - 相机机位与视角
+4. 确认场景层级中出现 `g1_pick_usda` 机器人。
+5. 运行遥操作采集代码（见第三节）。
+
+> 布局文件已包含关卡引用与 actor 布局，加载后无需手动摆放机器人。
+
+### 方式二：手动复制文件
+
+**1. 导入场景到 OrcaStudio**
 
 把 `orcastudio_scene/` 目录下的 **所有内容** 直接复制粘贴到 OrcaStudio 项目根目录，与已有的 `Assets/`、`Levels/` 等目录合并：
 
@@ -35,11 +53,11 @@ cp -r orcastudio_scene/Assets orcastudio_scene/Levels \
 
 复制完成后在 OrcaStudio 中打开 `Levels/shihua_xiugai_change_tube` 场景。
 
-### 2. 导入机器人模型
+**2. 导入机器人模型**
 
 把 `models/` 整个目录放到 OrcaStudio 的 MuJoCo 模型目录下。注意 `g1_pick.xml` 必须与其 `assets/` 保持同级（XML 内 `meshdir="assets"`），否则网格加载失败。
 
-### 3. 场景检查
+**3. 场景检查**
 
 打开场景后确认：
 
