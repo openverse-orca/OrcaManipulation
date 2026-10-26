@@ -1,0 +1,13 @@
+{
+    "materialType": "@gemroot:Atom_Feature_Common@/Assets/Materials/Types/StandardPBR.materialtype",
+    "materialTypeVersion": 5,
+    "propertyValues": {
+        "baseColor.textureMap": "../Texture/Blue_test_tube_cap/Blue_test_tube_cap_B.tga",
+        "metallic.textureMap": "../Texture/Blue_test_tube_cap/Blue_test_tube_cap_MRA.tga",
+        "normal.textureMap": "../Texture/Blue_test_tube_cap/Blue_test_tube_cap_N.tga",
+        "occlusion.diffuseTextureChannel": "B",
+        "occlusion.diffuseTextureMap": "../Texture/Blue_test_tube_cap/Blue_test_tube_cap_MRA.tga",
+        "roughness.textureChannel": "G",
+        "roughness.textureMap": "../Texture/Blue_test_tube_cap/Blue_test_tube_cap_MRA.tga"
+    }
+}

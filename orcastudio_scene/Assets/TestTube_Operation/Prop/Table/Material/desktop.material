@@ -1,0 +1,13 @@
+{
+    "materialType": "@gemroot:Atom_Feature_Common@/Assets/Materials/Types/StandardPBR.materialtype",
+    "materialTypeVersion": 5,
+    "propertyValues": {
+        "baseColor.textureMap": "../Texture/Tabletop/Tabletop_B.tga",
+        "metallic.textureMap": "../Texture/Tabletop/Tabletop_MRA.tga",
+        "normal.textureMap": "../Texture/Tabletop/Tabletop_N.tga",
+        "occlusion.diffuseTextureChannel": "B",
+        "occlusion.diffuseTextureMap": "../Texture/Tabletop/Tabletop_MRA.tga",
+        "roughness.textureChannel": "G",
+        "roughness.textureMap": "../Texture/Tabletop/Tabletop_MRA.tga"
+    }
+}

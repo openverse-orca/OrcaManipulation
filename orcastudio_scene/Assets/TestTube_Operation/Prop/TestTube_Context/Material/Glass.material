@@ -1,0 +1,19 @@
+{
+    "materialType": "@gemroot:Atom_Feature_Common@/Assets/Materials/Types/StandardPBR.materialtype",
+    "materialTypeVersion": 5,
+    "propertyValues": {
+        "baseColor.color": [
+            0.7874113321304321,
+            0.7874113321304321,
+            0.7874113321304321,
+            1.0
+        ],
+        "normal.textureMap": "../Texture/test_tube_glass_N.tga",
+        "occlusion.diffuseTextureChannel": "B",
+        "opacity.alphaSource": "None",
+        "opacity.factor": 0.15000000596046448,
+        "opacity.mode": "Blended",
+        "roughness.textureChannel": "G",
+        "roughness.textureMap": "../Texture/test_tube_glass_MRA.tga"
+    }
+}

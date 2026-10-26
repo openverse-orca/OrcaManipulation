@@ -1,0 +1,24 @@
+{
+    "materialType": "@gemroot:Atom_Feature_Common@/Assets/Materials/Types/StandardPBR.materialtype",
+    "materialTypeVersion": 5,
+    "propertyValues": {
+        "baseColor.color": [
+            0.16264592111110687,
+            0.18561074137687683,
+            1.0,
+            1.0
+        ],
+        "baseColor.textureMap": "Paint_02_BaceColor.png",
+        "colorGrad.Saturation": -0.7799999713897705,
+        "general.castShadows": false,
+        "general.doubleSided": true,
+        "metallic.factor": 0.09000000357627869,
+        "normal.factor": 0.5400000214576721,
+        "normal.textureMap": "Paint_02_Normal.jpg",
+        "opacity.mode": "Cutout",
+        "roughness.factor": 0.10000000149011612,
+        "roughness.textureFactor": 1.100000023841858,
+        "roughness.upperBound": 0.0,
+        "specularF0.factor": 1.0
+    }
+}

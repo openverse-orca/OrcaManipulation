@@ -1,0 +1,26 @@
+{
+    "materialType": "@gemroot:Atom_Feature_Common@/Assets/Materials/Types/StandardPBR.materialtype",
+    "materialTypeVersion": 5,
+    "propertyValues": {
+        "baseColor.color": [
+            1.0,
+            0.8811780214309692,
+            0.5225147008895874,
+            1.0
+        ],
+        "baseColor.textureMap": "Floor_B.tga",
+        "colorGrad.Contrast": 0.8999999761581421,
+        "colorGrad.Saturation": 0.4000000059604645,
+        "metallic.textureMap": "Floor_MRA.tga",
+        "normal.textureMap": "Floor_N.tga",
+        "occlusion.diffuseTextureChannel": "B",
+        "occlusion.diffuseTextureMap": "Floor_MRA.tga",
+        "roughness.textureChannel": "G",
+        "roughness.textureMap": "Floor_MRA.tga",
+        "uv.rotateDegrees": 90.0,
+        "uv.tileU": 0.6499999761581421,
+        "uv.tileV": 0.6499999761581421,
+        "vertexColor.blendMode": "LinearLight",
+        "vertexColor.factor": 0.029999999329447746
+    }
+}
