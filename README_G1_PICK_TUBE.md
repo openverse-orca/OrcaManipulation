@@ -34,10 +34,13 @@
    - 关卡：`testtube_operation`
    - Actors：`Group`、`g1_pick_usda`
    - 相机机位与视角
+   - **三路相机的录制开关**（`Enable` / `ColorCamera` / `IsRecording`）
 4. 确认场景层级中出现 `g1_pick_usda` 机器人。
 5. 运行遥操作采集代码（见第三节）。
 
 > 布局文件已包含关卡引用与 actor 布局，加载后无需手动摆放机器人。
+>
+> **必须加载布局文件**：相机录制开关只保存在布局文件里，场景 prefab 中没有。不加载布局 → 相机不推流 → 只产出 HDF5、没有 mp4。
 
 ### 方式二：手动复制文件
 
@@ -63,7 +66,17 @@ cp -r orcastudio_scene/Assets orcastudio_scene/Levels \
 
 - 机器人对象名带 `g1_pick_usda` 前缀（与场景中 `Assets/Prefabs/g1_pick_usda.prefab` 对应）
 - 模型含 4 个 DEX1 关节（`left/right_dex1_joint1`、`joint2`）、2 个电机（`left/right_dex1_motor`）
-- 相机 `head_cam`、`camera_left`、`camera_right` 正常注册
+
+**4. 启用相机录制（决定能否产出 mp4）**
+
+`orcastudio_scene/` 里的 prefab **不含**相机录制开关，仅复制场景的话相机不会推流。二选一：
+
+- 加载仓库根目录的 `g1_pick_tube.json` 布局（自动写入开关，推荐）
+- 或手动在场景中选中 `head_cam`、`camera_left`、`camera_right` 三路相机，勾选 `Enable`、`ColorCamera`、`IsRecording`
+
+设置正确的标志：脚本启动后日志出现三行 `[相机] ✓ head(...) 推流就绪`。
+
+> 另注：当前 prefab 中 `camera_left` / `camera_right` 已带 RGB 串流端口（7072 / 7074），`head_cam` 只有 DDS StreamID、没有 RGB 端口。若 `head` 一路始终收不到帧而两路腕部正常，需在 OrcaStudio 中给 `head_cam` 补配 RGB 图像串流端口。
 
 ## 三、数采流程
 
@@ -145,8 +158,8 @@ src/examples/dataCollection/dataset/
 
 | # | 检查项 | 说明 |
 |---|---|---|
-| 1 | Python 环境 | 必须是 `orcalab_lerobot`（orca-gym **26.9.1**）。`orcalab` 环境的 26.7.3 没有 `start_streaming`/`get_recorder_manager`，日志会报 `当前 orca-gym 不含推流接口` |
-| 2 | 相机组件已启用 | OrcaStudio 中三路相机需勾选 `Enable`、`ColorCamera`、`IsRecording`。直接加载 `g1_pick_tube.json` 布局可还原这些属性 |
+| 1 | 已加载 `g1_pick_tube.json` 布局 | **最常见原因**。相机录制开关（`Enable`/`ColorCamera`/`IsRecording`）只在布局文件里，场景 prefab 中没有；不加载布局则相机处于未录制状态 |
+| 2 | Python 环境 | 必须是 `orcalab_lerobot`（orca-gym **26.9.1**）。`orcalab` 环境的 26.7.3 没有 `start_streaming`/`get_recorder_manager`，日志会报 `当前 orca-gym 不含推流接口` |
 | 3 | 相机名匹配 | 后端注册名需含 `head_cam`/`camera_left`/`camera_right`（允许 uuid 后缀）。日志会打印实际注册名，可据此核对 |
 | 4 | 机器人资产带相机 | 需订阅带摄像头的「宇树夹试管(改摄像头)」，不含摄像头的版本场景里没有相机实体 |
 | 5 | 未关闭录制 | 启动命令不要带 `--no_cameras` |
