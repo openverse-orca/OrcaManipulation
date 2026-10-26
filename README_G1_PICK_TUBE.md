@@ -84,12 +84,16 @@ cp -r orcastudio_scene/Assets orcastudio_scene/Levels \
 
 1. 启动 OrcaStudio，打开 `Levels/shihua_xiugai_change_tube` 场景，确认机器人已加载。
 2. 连接 PICO 手柄，确认手柄已被识别。
-3. 使用 `orcalab_lerobot` 环境（orca-gym 26.9.1，支持相机推流录制）启动采集脚本：
+3. 使用 `orcalab_lerobot` 环境（orca-gym 26.9.1，支持相机推流录制），在仓库根目录执行：
 
 ```bash
 cd src/examples/dataCollection
-~/miniconda3/envs/orcalab_lerobot/bin/python g1_dex1_collection_tele.py \
-    --agent_name g1_pick_usda --pos_scale 0.8
+python -u g1_dex1_collection_tele.py \
+    --orcagym_addr localhost:50051 \
+    --agent_name g1_pick_usda \
+    --pos_scale 0.8 \
+    --num_episodes 10 \
+    --lerobot_out lerobot_datasets/g1_dex1
 ```
 
 ### 2. 采集

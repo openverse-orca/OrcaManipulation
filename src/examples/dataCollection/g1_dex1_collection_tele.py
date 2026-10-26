@@ -1,6 +1,8 @@
 import argparse
 import os
+import signal
 import sys
+import threading
 import time
 import traceback
 
@@ -18,10 +20,19 @@ from devices.abstract_device import PicoJoystickDevice
 from orca_gym.devices.pico_joytsick import PicoJoystick, PicoJoystickKey
 from orca_gym.log.orca_log import get_orca_logger
 from dataCollectionManager.data_collection_manager import DataCollectionManager
-from controllers import controllers
+from controllers.controllers import install_osc_patches
+from controllers.controller_task import TaskStatus
 from controllers.controller_dex1_force import add_dex1_force_pico_controller
 from conf import g1_dex1_osc_conf
-from dataStorage.g1_dex1_data_storage import G1Dex1DataStorage
+from dataStorage.g1_dex1_lerobot_storage import (
+    DEFAULT_HW,
+    G1Dex1LeRobotStorage,
+    LeRobotDatasetWriter,
+    bring_up_cameras,
+    camera_map_for,
+    close_cameras,
+    probe_camera_hw,
+)
 
 from orca_gym.adapters.robosuite.controllers import (
     controller_config,
@@ -238,15 +249,95 @@ def _pin_all_joints_equality(env, agent_name: str) -> bool:
     return True
 
 
-def pin_all_joints(env, agent_name: str) -> bool:
-    """统一应用基座、腰部和腿部的参考姿态约束（双臂由 OSC 遥操控制）。"""
-    if _pin_all_joints_equality(env, agent_name):
-        return True
-    orca_logger.warning(
-        "[CONSTRAINT] equality 钉住不可用，回退为 qpos 写回钉住"
-        "（旧机制：机器人可站立，但夹持物可能缓慢滑落）"
+# SouthGrid g1_pick_osc_conf.l_arm["neutral_joint_values"]，采集时左臂就锁在这组角度。
+_L_ARM_DOCK = [0.0, 0.0, 0.0, 1.5708, 0.0, 0.0, 0.0]
+
+
+def _pin_left_arm(env, agent_name: str) -> bool:
+    """SouthGrid pin_all_joints 的左臂部分，原样搬过来。"""
+    import mujoco
+
+    gym = getattr(env, "gym", None) or getattr(
+        getattr(env, "unwrapped", env), "gym", None
     )
-    return _pin_all_joints_writeback(env, agent_name)
+    if gym is None or not hasattr(gym, "_mjModel") or not hasattr(gym, "_mjData"):
+        orca_logger.warning("[CONSTRAINT] 姿态约束初始化失败：模型状态不可用")
+        return False
+
+    mj, md = gym._mjModel, gym._mjData
+
+    def _joint_qadr_dadr(short_name: str) -> tuple[int, int]:
+        full = f"{agent_name}_{short_name}"
+        jid = mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_JOINT, full)
+        if jid < 0:
+            raise ValueError("姿态约束初始化失败：模型关节不兼容")
+        return int(mj.jnt_qposadr[jid]), int(mj.jnt_dofadr[jid])
+
+    def _actuator_id(short_name: str) -> int:
+        full = f"{agent_name}_{short_name}"
+        aid = mujoco.mj_name2id(mj, mujoco.mjtObj.mjOBJ_ACTUATOR, full)
+        if aid < 0:
+            raise ValueError("姿态约束初始化失败：模型执行器不兼容")
+        return aid
+
+    l_arm_joint_names = g1_dex1_osc_conf.l_arm["joint_names"]
+    l_arm_motor_names = g1_dex1_osc_conf.l_arm["motors_names"]
+    l_arm_target = list(_L_ARM_DOCK)
+    larm_qadrs: list[int] = []
+    larm_dadrs: list[int] = []
+    for short in l_arm_joint_names:
+        qa, da = _joint_qadr_dadr(short)
+        larm_qadrs.append(qa)
+        larm_dadrs.append(da)
+    larm_act_ids: list[int] = [_actuator_id(short) for short in l_arm_motor_names]
+
+    for qa, q0 in zip(larm_qadrs, l_arm_target):
+        md.qpos[qa] = float(q0)
+    for da in larm_dadrs:
+        md.qvel[da] = 0.0
+    for aid in larm_act_ids:
+        md.ctrl[aid] = 0.0
+    mujoco.mj_forward(mj, md)
+
+    if getattr(gym, "_g1_left_arm_pinned", False):
+        return True
+
+    _orig_mj_step = gym.mj_step
+
+    def _mj_step_larm_pinned(nstep=1):
+        n = int(nstep) if nstep is not None else 1
+        for _ in range(max(n, 1)):
+            for qa, q0 in zip(larm_qadrs, l_arm_target):
+                md.qpos[qa] = float(q0)
+            for da in larm_dadrs:
+                md.qvel[da] = 0.0
+            for aid in larm_act_ids:
+                md.ctrl[aid] = 0.0
+            _orig_mj_step(1)
+            for qa, q0 in zip(larm_qadrs, l_arm_target):
+                md.qpos[qa] = float(q0)
+            for da in larm_dadrs:
+                md.qvel[da] = 0.0
+            for aid in larm_act_ids:
+                md.ctrl[aid] = 0.0
+        mujoco.mj_forward(mj, md)
+
+    gym.mj_step = _mj_step_larm_pinned
+    gym._g1_left_arm_pinned = True
+    orca_logger.info("[CONSTRAINT] 左臂停靠姿态约束已启用")
+    return True
+
+
+def pin_all_joints(env, agent_name: str) -> bool:
+    """基座、腰、腿用 equality 钉住；左臂按 SouthGrid 写回停靠姿态。"""
+    if not _pin_all_joints_equality(env, agent_name):
+        orca_logger.warning(
+            "[CONSTRAINT] equality 钉住不可用，回退为 qpos 写回钉住"
+            "（旧机制：机器人可站立，但夹持物可能缓慢滑落）"
+        )
+        if not _pin_all_joints_writeback(env, agent_name):
+            return False
+    return _pin_left_arm(env, agent_name)
 
 
 def apply_grasp_solver_tuning(env) -> bool:
@@ -454,6 +545,40 @@ def add_task_status_pico_controller_edge(
     data_collection_manager.set_task_status_controller(task_status_controller)
 
 
+def use_southgrid_gripper_mapping(gripper, latch_rate: float = 0.5):
+    """DEX1 夹爪改用 SouthGrid 2F85 的手柄语义。
+
+    扳机深度 → 闭合程度，松开扳机即张开；
+    按住 Y/B → 闭合下限以 latch_rate/s 上升（松开扳机也保持夹紧）；
+    按住 X/A → 闭合下限以同速率下降。
+    实际闭合程度 = max(扳机深度, 闭合下限)，经阻抗律换算电机力。
+    """
+    state = {"latch": 0.0}
+    span = gripper.q_close - gripper.q_open
+    orig_reset = gripper.reset
+
+    def _run_controller():
+        dt = float(gripper.env.dt)
+        if gripper.secondary_button:
+            state["latch"] = min(1.0, state["latch"] + latch_rate * dt)
+        elif gripper.primary_button:
+            state["latch"] = max(0.0, state["latch"] - latch_rate * dt)
+        k = np.e
+        depth = (np.exp(k * float(gripper.trigger_value)) - 1.0) / (np.exp(k) - 1.0)
+        norm = float(np.clip(max(depth, state["latch"]), 0.0, 1.0))
+        gripper.q_target = gripper.q_open + span * norm
+        tau = gripper._impedance_force(gripper.q_target)
+        return {i: tau for i in gripper.ctrl_index}
+
+    def _reset():
+        orig_reset()
+        state["latch"] = 0.0
+
+    gripper.run_controller = _run_controller
+    gripper.reset = _reset
+    return gripper
+
+
 # ── 相机推流（orcagym 26.9.1 VideoRecorderManager: 连接+缓冲+remux 一体）─────
 # 旧引擎接口 BeginSaveMp4File 已被 OrcaStudio 移除(UNIMPLEMENTED),
 # 改用 start_streaming 推流 + save_streaming 按帧区间 remux 出 MP4。
@@ -465,7 +590,18 @@ _CAMERA_ROLE_TOKENS = {
     "wrist_l": ("camera_left", "left"),
 }
 # 推流端口兜底值（后端未分配端口时按角色重试, 与 Binjiang 流程一致）
-_CAMERA_FALLBACK_PORTS = {"head": 7090, "wrist_l": 7070, "wrist_r": 7080}
+_CAMERA_FALLBACK_PORTS = {"head": 7070, "wrist_l": 7072, "wrist_r": 7074}
+_PORT_TO_ROLE = {port: role for role, port in _CAMERA_FALLBACK_PORTS.items()}
+_sigint_armed = False
+
+
+def _sigint_immediate(signum, frame):
+    """Ctrl+C 立即打断当前等待。再按一次直接退出，不等清理。"""
+    global _sigint_armed
+    if _sigint_armed:
+        os._exit(130)
+    _sigint_armed = True
+    raise KeyboardInterrupt
 
 
 def _resolve_cameras(env, logical_keys: list[str]) -> dict[str, str]:
@@ -620,11 +756,11 @@ def ensure_camera_streams(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="G1 + DEX1-1 夹爪 VR 遥操作数采（HDF5 + 引擎录制视频）"
+        description="G1 + DEX1-1 夹爪 VR 遥操作数采（LeRobot v2.1）"
     )
     parser.add_argument("--level", type=str, default="default", help="场景的名称")
     parser.add_argument(
-        "--agent_name", default="g1_dex1",
+        "--agent_name", default="g1_pick_usda",
         help="OrcaStudio 场景中的 agent 名称（须与资产前缀一致）",
     )
     parser.add_argument(
@@ -647,21 +783,70 @@ def main():
         help="手柄输入 EMA 平滑系数（默认 0.35；越小越稳越滞后）",
     )
     parser.add_argument(
+        "--dls_lambda", type=float, default=0.23,
+        help="OSC 阻尼最小二乘最大系数 λ_max（与 SouthGrid 相同；0 表示用伪逆，手臂伸直会抖）",
+    )
+    parser.add_argument(
+        "--dls_sigma_th", type=float, default=0.12,
+        help="自适应阻尼触发阈值 σ_th（与 SouthGrid 相同；0 表示固定阻尼）",
+    )
+    parser.add_argument(
+        "--null_kp", type=float, default=10.0,
+        help="零空间关节复原增益（默认 10，临界阻尼自动计算）",
+    )
+    parser.add_argument(
+        "--gripper_mode", choices=("southgrid", "hold"), default="southgrid",
+        help="夹爪按键语义。southgrid：扳机按多深夹多紧、松开即张开，Y/B 按住锁紧、X/A 按住松开；"
+        "hold：旧 DEX1 语义，松开扳机保持，X/A 全开，Y/B 半开",
+    )
+    parser.add_argument(
         "--time_step", type=float, default=0.001, help="MuJoCo 物理步长（秒）"
     )
     parser.add_argument(
         "--frame_skip", type=int, default=5, help="每控制周期的物理子步数"
     )
     parser.add_argument(
-        "--cameras", type=str, default="head,wrist_l,wrist_r",
-        help="录制的逻辑相机列表, 逗号分隔（head/wrist_l/wrist_r）",
+        "--cameras", type=str, default="head,wrist_r",
+        help="写入 LeRobot 的相机，逗号分隔（head/wrist_r/wrist_l）。默认与 SouthGrid 相同：头和右腕",
     )
     parser.add_argument(
         "--no_cameras", action="store_true",
-        help="关闭相机推流录制（仅保存 HDF5）",
+        help="不写图像，只写 11 维 state/action（右臂位姿 + 双手夹爪）",
     )
+    parser.add_argument(
+        "--cam_resolution",
+        default="480x640",
+        help="图像高x宽，默认 480x640，与 SouthGrid 相同",
+    )
+    parser.add_argument(
+        "--lerobot_out",
+        default=os.path.join(base_dir, "lerobot_datasets", "g1_dex1"),
+        help="LeRobot 数据集目录",
+    )
+    parser.add_argument("--repo_id", default="local/g1_dex1", help="LeRobot repo_id")
+    parser.add_argument(
+        "--task",
+        default="g1 dex1 tube teleoperation",
+        help="写入每帧的任务描述",
+    )
+    parser.add_argument("--fps", type=int, default=20, help="采集帧率，默认 20")
+    parser.add_argument(
+        "--num_episodes",
+        type=int,
+        default=0,
+        help="成功保存多少集后退出。0 表示不限，一直采到 Ctrl+C",
+    )
+    parser.add_argument(
+        "--clock",
+        choices=("sim", "wall"),
+        default="wall",
+        help="采帧时钟。wall 用系统时间，sim 用仿真时间",
+    )
+    parser.add_argument("--resume", action="store_true", help="追加到已有数据集")
     parser.add_argument("--orcagym_addr", default="localhost:50051")
     args = parser.parse_args()
+    if args.num_episodes < 0:
+        parser.error("--num_episodes 不能为负。0 表示一直采集，直到 Ctrl+C")
 
     level = args.level
     orcagym_addr = args.orcagym_addr
@@ -680,6 +865,20 @@ def main():
         g1_dex1_osc_conf.l_arm["ema_alpha"] = args.ema_alpha
         g1_dex1_osc_conf.r_arm["ema_alpha"] = args.ema_alpha
 
+    install_osc_patches(
+        dls_lambda=args.dls_lambda,
+        dls_sigma_th=args.dls_sigma_th,
+        null_kp=args.null_kp,
+    )
+    if args.dls_lambda > 0.0:
+        mode = "自适应" if args.dls_sigma_th > 0.0 else "固定"
+        orca_logger.info(
+            f"[CONTROL] OSC {mode}阻尼已启用 λ_max={args.dls_lambda} "
+            f"σ_th={args.dls_sigma_th} null_kp={args.null_kp}"
+        )
+    else:
+        orca_logger.warning("[CONTROL] OSC 未启用阻尼，手臂接近伸直时会抖")
+
     orca_logger.info(
         f"[CONTROL] OSC kp={g1_dex1_osc_conf.l_arm.get('osc_kp', 150)}, "
         f"pos_scale={g1_dex1_osc_conf.l_arm.get('pos_scale', 1.0)}, "
@@ -688,12 +887,9 @@ def main():
         f"ema_alpha={g1_dex1_osc_conf.l_arm.get('ema_alpha', 0.35)}"
     )
 
-    # 双臂初始姿态: 自然下垂零位（双臂均由 OSC 遥操控制）
+    # 与 SouthGrid 相同：左臂停靠，右臂零位。
     default_joint_values = {}
-    for jn, v in zip(
-        g1_dex1_osc_conf.l_arm["joint_names"],
-        [0.0] * len(g1_dex1_osc_conf.l_arm["joint_names"]),
-    ):
+    for jn, v in zip(g1_dex1_osc_conf.l_arm["joint_names"], _L_ARM_DOCK):
         default_joint_values[jn] = v
     for jn, v in zip(
         g1_dex1_osc_conf.r_arm["joint_names"],
@@ -732,12 +928,25 @@ def main():
     )
     scene_manager.get_scene_data(script_name, "beginscene")
 
-    orca_logger.info("Creating data storage")
-    data_storage = G1Dex1DataStorage(
-        dataset_path=os.path.join(base_dir, "dataset", args.agent_name, level),
-        hdf5_path="record/proprio_stats.hdf5",
+    lerobot_out = os.path.abspath(os.path.expanduser(args.lerobot_out))
+    try:
+        cam_h, cam_w = (int(x) for x in args.cam_resolution.lower().split("x"))
+        cam_hw_override = (cam_h, cam_w)
+    except Exception:
+        orca_logger.warning(
+            f"--cam_resolution 无法解析 '{args.cam_resolution}'，改用 {DEFAULT_HW}"
+        )
+        cam_hw_override = DEFAULT_HW
+    camera_roles = (
+        []
+        if args.no_cameras
+        else [c.strip() for c in args.cameras.split(",") if c.strip()]
     )
-    data_storage.set_video_path("video")
+    camera_map = camera_map_for(camera_roles)
+
+    orca_logger.info("Creating LeRobot data storage")
+    scratch_dir = os.path.join(base_dir, "_lerobot_scratch", "g1_dex1", level)
+    data_storage = G1Dex1LeRobotStorage(dataset_path=scratch_dir)
 
     orca_logger.info("Creating data collection manager")
     data_collection_manager = DataCollectionManager(
@@ -754,13 +963,14 @@ def main():
         time_step=args.time_step,
         orcagym_addr=orcagym_addr,
     )
+    signal.signal(signal.SIGINT, _sigint_immediate)
     env = data_collection_manager.env
     env.reset()
     time.sleep(0.1)
 
     # ── DEX1 夹爪控制器（扳机深度→目标开度，阻抗律换算电机力）──────────
     orca_logger.info("Adding left DEX1 gripper controller")
-    add_dex1_force_pico_controller(
+    gripper_l = add_dex1_force_pico_controller(
         data_collection_manager,
         env,
         g1_dex1_osc_conf.gripper_l,
@@ -770,7 +980,7 @@ def main():
     )
 
     orca_logger.info("Adding right DEX1 gripper controller")
-    add_dex1_force_pico_controller(
+    gripper_r = add_dex1_force_pico_controller(
         data_collection_manager,
         env,
         g1_dex1_osc_conf.gripper_r,
@@ -778,18 +988,12 @@ def main():
         pico_joystick_device,
         [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
     )
+    if args.gripper_mode == "southgrid":
+        use_southgrid_gripper_mapping(gripper_l)
+        use_southgrid_gripper_mapping(gripper_r)
+    orca_logger.info(f"[GRIP] 夹爪按键语义: {args.gripper_mode}")
 
-    # ── 双臂 OSC 控制器（kp 覆盖 + 静止稳定滤波 + pos_scale）────────────
-    orca_logger.info("Adding left arm OSC controller")
-    add_arm_osc_stable_pico_controller(
-        data_collection_manager,
-        env,
-        g1_dex1_osc_conf.l_arm,
-        g1_dex1_osc_conf.base_body,
-        pico_joystick_device,
-        PicoJoystickKey.L_TRANSFORM,
-    )
-
+    # 南网不给左臂接 OSC，左手柄位姿全程无效。
     orca_logger.info("Adding right arm OSC controller")
     add_arm_osc_stable_pico_controller(
         data_collection_manager,
@@ -813,102 +1017,248 @@ def main():
         g1_dex1_osc_conf.base_body,
     )
 
-    # 视频录制: 覆写为 26.9.1 相机推流方案（G1Dex1DataStorage 内部处理），
-    # 每集在主循环 ensure_camera_streams 后更新 data_storage.stream_cameras。
-    camera_keys = (
-        []
-        if args.no_cameras
-        else [c.strip() for c in args.cameras.split(",") if c.strip()]
-    )
-    stream_cameras: dict[str, str] = {}
-    data_collection_manager.save_video = True
-
-    print("", flush=True)
-    print("=" * 60, flush=True)
-    print("  【操作按键】", flush=True)
-    print("  左臂移动    左手柄位姿 (持握激活)", flush=True)
-    print("  右臂移动    右手柄位姿 (持握激活)", flush=True)
-    print("  左夹爪      左扳机=闭合(深度控制) / X=全开 / Y=中位 / 松开保持", flush=True)
-    print("  右夹爪      右扳机=闭合(深度控制) / A=全开 / B=中位 / 松开保持", flush=True)
-    print("  开始采集    轻按一下【左手柄 Grip 侧握键】", flush=True)
-    print("  结束保存    再轻按一下【左手柄 Grip 侧握键】", flush=True)
-    print("  退出        终端 Ctrl+C", flush=True)
-    if camera_keys:
-        print(f"  相机录制    {', '.join(camera_keys)} → video/<相机>.mp4", flush=True)
+    # 图像由 LeRobot 写盘模块从相机流取帧。save_video 保持关闭，
+    # 避免管理器再走 HDF5 的 begin_save_video。
+    data_collection_manager.save_video = False
+    cameras: dict = {}
+    cam_hw = cam_hw_override
+    if camera_map:
+        orca_logger.info(f"启用相机: {list(camera_map.values())}")
+        print("[场景] 机器人已就绪，正在启动相机推流...", flush=True)
+        cameras = bring_up_cameras(env, camera_map)
+        camera_map = {name: spec for name, spec in camera_map.items() if name in cameras}
+        if cameras:
+            cam_hw = probe_camera_hw(cameras, camera_map, default_hw=cam_hw_override)
+        else:
+            orca_logger.error("没有可用相机，退出。只要关节数据时请加 --no_cameras")
+            close_cameras(cameras)
+            try:
+                env.close()
+            except Exception:
+                pass
+            return
     else:
-        print("  相机录制    已关闭（仅 HDF5）", flush=True)
-    print(f"  数据输出    {os.path.join(base_dir, 'dataset', args.agent_name, level)}", flush=True)
+        print("[场景] 机器人已就绪，相机已关闭", flush=True)
+
+    # 采集前输入门控（同 SouthGrid）：开始采集前只放行左 Grip，
+    # 手臂和夹爪不响应手柄；RUNNING 后放行全部按键。
+    # 左臂位姿全程不响应手柄，与 SouthGrid _LOCKED_KEYS 相同。
+    locked_keys = {PicoJoystickKey.L_TRANSFORM}
+    all_pico_keys = [k for k in pico_joystick_device.keys if k not in locked_keys]
+    pre_start_keys = [k for k in all_pico_keys if k == PicoJoystickKey.L_GRIPBUTTON]
+
+    def _gated_pico_update():
+        tsc = data_collection_manager.task_status_controller
+        if tsc is not None and tsc.current_status == TaskStatus.RUNNING:
+            pico_joystick_device.pico_joystick.update(all_pico_keys)
+        else:
+            pico_joystick_device.pico_joystick.update(pre_start_keys)
+
+    pico_joystick_device.update = _gated_pico_update
+
+    # 右 Grip 单按：丢弃本集并重置场景；左右 Grip 同按：结束全部采集（同 SouthGrid）
+    monitor_stop = threading.Event()
+    discard_episode = threading.Event()
+    grip_debounce_s = 0.3
+
+    def _grip_monitor():
+        r_only_prev = False
+        both_prev = False
+        last_fire = 0.0
+        while not monitor_stop.wait(0.02):
+            try:
+                pj = pico_joystick_device.pico_joystick
+                raw = pj.current_key_state
+                if not pj.clients or raw is None:
+                    continue
+                l_grip = bool((raw.get("leftHand") or {}).get("gripButtonPressed"))
+                r_grip = bool((raw.get("rightHand") or {}).get("gripButtonPressed"))
+                both = l_grip and r_grip
+                r_only = r_grip and not l_grip
+                now = time.perf_counter()
+                if now - last_fire >= grip_debounce_s:
+                    if both and not both_prev:
+                        orca_logger.info("[Grip] 左右Grip同按 → 结束全部采集")
+                        try:
+                            scene_manager.show_ui_message(
+                                1, "采集终止，等待保存...", "0xff4400", showtime=0
+                            )
+                        except Exception:
+                            pass
+                        data_collection_manager._shutdown_requested = True
+                        last_fire = now
+                    elif r_only and not r_only_prev:
+                        orca_logger.info("[Grip] 右Grip单按 → 丢弃本集，重置场景")
+                        try:
+                            scene_manager.show_ui_message(
+                                1, "已丢弃，重置场景...", "0xff0000", showtime=2
+                            )
+                        except Exception:
+                            pass
+                        discard_episode.set()
+                        data_collection_manager._shutdown_requested = True
+                        last_fire = now
+                r_only_prev = r_only
+                both_prev = both
+            except Exception:
+                pass
+
+    threading.Thread(target=_grip_monitor, daemon=True).start()
+
+    print("", flush=True)
+    print("=" * 60, flush=True)
+    print("  【操作按键】（与 SouthGrid 一致）", flush=True)
+    print("  注意        开始采集前手臂和夹爪不响应手柄", flush=True)
+    print("  左臂移动    保持停靠姿态，不写入数据", flush=True)
+    print("  右臂移动    右手柄位姿", flush=True)
+    if args.gripper_mode == "southgrid":
+        print("  左夹爪      左扳机按多深夹多紧，松开张开 / 按住Y锁紧 / 按住X解锁", flush=True)
+        print("  右夹爪      右扳机按多深夹多紧，松开张开 / 按住B锁紧 / 按住A解锁", flush=True)
+    else:
+        print("  左夹爪      左扳机闭合，松开保持 / X全开 / Y半开", flush=True)
+        print("  右夹爪      右扳机闭合，松开保持 / A全开 / B半开", flush=True)
+    print("  开始采集    轻按一下【左手柄 Grip】", flush=True)
+    print("  结束保存    再轻按一下【左手柄 Grip】（无论成功与否均保存）", flush=True)
+    print("  放弃本集    轻按【右手柄 Grip】（丢弃数据，重置场景）", flush=True)
+    print("  结束全部    【左右 Grip 同时按下】（丢弃当前未保存集，等编码完成退出）", flush=True)
+    print("  强制退出    终端 Ctrl+C（再按一次立即退出）", flush=True)
+    if camera_map:
+        print(
+            f"  相机        {', '.join(key for key, _port in camera_map.values())}"
+            f"  {cam_hw[0]}x{cam_hw[1]}  {args.fps} fps",
+            flush=True,
+        )
+    else:
+        print("  相机        已关闭（只写 11 维 state/action）", flush=True)
+    if args.num_episodes > 0:
+        print(f"  采集条数    {args.num_episodes}", flush=True)
+    else:
+        print("  采集条数    不限，Ctrl+C 结束", flush=True)
+    print(f"  数据输出    {lerobot_out}", flush=True)
     print("=" * 60, flush=True)
     print("", flush=True)
-
-    # ── 主循环（自 Binjiang 结构移植: 每集 reset → update_scene → 重新钉住 → run_episode）──
-    # 不用 manager.run(): 其内部 env.reset()/spawn_scene 可能清除 equality 钉住
-    # 激活状态导致机器人倒下; 手动循环保证每集 update_scene 后重新应用约束。
-    orca_logger.info("进入采集主循环")
     try:
-        while not data_collection_manager._shutdown_requested:
-            env.reset()
-            time.sleep(0.1)
-            if not data_collection_manager.update_scene():
-                orca_logger.info("update_scene 失败，停止采集")
-                break
-            env.set_default_joint_values(default_joint_values)
+        scene_manager.show_ui_message(
+            1,
+            "左Grip×1=开始 左Grip×2=保存 右Grip=丢弃重置 左右Grip同按=退出",
+            "0x00ff00",
+            showtime=0,
+        )
+    except Exception:
+        pass
 
-            # 每集重新应用: 抓取求解器参数 + 姿态钉住
-            apply_grasp_solver_tuning(env)
-            pin_all_joints(env, args.agent_name)
+    # 每集 reset → update_scene → 重新钉住 → run_episode。钉住逻辑不改。
+    writer = None
+    try:
+        writer = LeRobotDatasetWriter.create(
+            repo_id=args.repo_id,
+            root=lerobot_out,
+            fps=args.fps,
+            camera_map=camera_map,
+            state_dim=data_storage.state_dim,
+            state_names=data_storage.state_names,
+            cam_shape=(3, cam_hw[0], cam_hw[1]),
+            resume=args.resume,
+            robot_type="g1_dex1",
+        )
+        data_storage.configure_lerobot(
+            fps=args.fps,
+            cameras=cameras,
+            camera_map=camera_map,
+            target_hw=cam_hw,
+            writer=writer,
+            task=args.task,
+            clock=args.clock,
+            camera_source="websocket",
+        )
+        orca_logger.info(
+            f"进入采集主循环，LeRobot 输出: {lerobot_out}，"
+            f"条数: {args.num_episodes if args.num_episodes > 0 else '不限'}"
+        )
+        saved_this_run = 0
+        with writer:
+            while not data_collection_manager._shutdown_requested:
+                env.reset()
+                time.sleep(0.1)
+                if not data_collection_manager.update_scene():
+                    orca_logger.info("update_scene 失败，停止采集")
+                    break
+                env.set_default_joint_values(default_joint_values)
 
-            # 每集确保相机推流在线（场景重载可能打断推流/更换后端相机名）;
-            # 首集即为推流启动+等首帧, 后续集为快速健康检查
-            if camera_keys:
-                stream_cameras = ensure_camera_streams(env, camera_keys)
-                data_storage.stream_cameras = stream_cameras
-                if not stream_cameras:
-                    orca_logger.warning("[相机] 本集无在线相机, 仅保存 HDF5")
+                apply_grasp_solver_tuning(env)
+                pin_all_joints(env, args.agent_name)
 
-            orca_logger.info("========== 开始新的一集（左Grip×1 开始采集, 左Grip×2 结束保存）==========")
-            print("\n>>> 新的一集: 按左Grip开始采集, 完成后再按左Grip保存", flush=True)
-
-            task_is_success, rec_start, rec_end, init_qpos = (
-                data_collection_manager.run_episode()
-            )
-
-            if data_collection_manager._shutdown_requested:
-                data_storage.clear_data()
-                orca_logger.info("已请求停止，丢弃当前集")
-                break
-
-            if task_is_success:
-                save_kwargs = dict(
-                    task_info=data_collection_manager.task.get_task_info(),
-                    scene_info=scene_manager.get_scene_info(),
-                    task_description=data_collection_manager.task.get_task_description(),
-                    record_start_time=(
-                        rec_start.isoformat() if rec_start is not None else None
-                    ),
-                    record_end_time=(
-                        rec_end.isoformat() if rec_end is not None else None
-                    ),
-                    initial_joint_qpos=init_qpos,
-                    **data_collection_manager._collect_sim_metadata(),
+                episode_no = saved_this_run + 1
+                quota = (
+                    f"/{args.num_episodes}" if args.num_episodes > 0 else ""
                 )
-                data_storage.save_data(**save_kwargs)
-                orca_logger.info("✓ 本集已保存")
-                print(">>> ✓ 本集已保存", flush=True)
-            else:
-                data_storage.clear_data()
-                orca_logger.info("任务失败，本集已丢弃")
+                orca_logger.info(
+                    f"========== 第 {episode_no}{quota} 集"
+                    "（左Grip×1 开始采集, 左Grip×2 结束保存）=========="
+                )
+                print(
+                    f"\n>>> 第 {episode_no}{quota} 集: 按左Grip开始采集, 完成后再按左Grip保存",
+                    flush=True,
+                )
+
+                task_is_success, _rec_start, _rec_end, _init_qpos = (
+                    data_collection_manager.run_episode()
+                )
+
+                if discard_episode.is_set():
+                    discard_episode.clear()
+                    data_collection_manager._shutdown_requested = False
+                    data_storage.clear_data()
+                    orca_logger.info("已丢弃本集（右Grip），重置场景")
+                    print(">>> 已丢弃本集，重置场景", flush=True)
+                    continue
+
+                if data_collection_manager._shutdown_requested:
+                    data_storage.clear_data()
+                    orca_logger.info("已请求停止，丢弃当前集")
+                    break
+
+                if task_is_success:
+                    episodes_before = writer.num_episodes
+                    data_storage.save_data(task=args.task)
+                    saved_this_run += writer.num_episodes - episodes_before
+                    orca_logger.info(
+                        f"✓ 本集已保存，本次 {saved_this_run} 集，"
+                        f"数据集共 {writer.num_episodes} 集 / {writer.num_frames} 帧"
+                    )
+                    print(
+                        f">>> ✓ 本集已保存，本次 {saved_this_run} 集，"
+                        f"数据集共 {writer.num_episodes} 集",
+                        flush=True,
+                    )
+                    if args.num_episodes > 0 and saved_this_run >= args.num_episodes:
+                        orca_logger.info(
+                            f"已保存 {saved_this_run} 集，达到 --num_episodes，停止"
+                        )
+                        print(
+                            f">>> 已保存 {saved_this_run} 集，达到 --num_episodes，停止",
+                            flush=True,
+                        )
+                        break
+                else:
+                    data_storage.clear_data()
+                    orca_logger.info("任务失败，本集已丢弃")
     except KeyboardInterrupt:
         orca_logger.info("KeyboardInterrupt，停止采集")
-        data_storage.clear_data()
-    finally:
-        # 停止相机推流录制器（已完成的保存任务不受影响）
         try:
-            if stream_cameras:
-                env.get_recorder_manager().stop_all()
-                orca_logger.info("相机推流已停止")
+            data_storage.clear_data()
         except Exception:
             pass
+    finally:
+        monitor_stop.set()
+        if writer is not None:
+            try:
+                print("\n[退出] 正在等待视频编码完成...", flush=True)
+                writer.close()
+                orca_logger.info("视频编码已结束")
+            except Exception:
+                pass
+        close_cameras(cameras)
         try:
             env.reset()
             time.sleep(0.1)

@@ -16,6 +16,121 @@ from controllers.controller_wheel_drive import (
 )
 from devices.abstract_device import AbstractDevice, PicoJoystickDevice
 from devices.data_device import DataDevice
+import numpy as np
+
+
+# ── OSC 数值策略：阻尼最小二乘 + 零空间增益 ────────────────────────────────
+
+def _make_fixed_dls_opspace_matrices(dls_lambda: float):
+    """固定 λ-DLS：inv(J M⁻¹ Jᵀ + λ²I)。
+
+    所有方向使用相同的阻尼系数。
+    """
+    lam2 = dls_lambda ** 2
+
+    def _fn(mass_matrix, J_full, J_pos, J_ori):
+        mass_matrix_inv = np.linalg.inv(mass_matrix)
+
+        def _inv(A):
+            return np.linalg.inv(A + lam2 * np.eye(A.shape[0]))
+
+        lambda_full_inv = J_full @ mass_matrix_inv @ J_full.T
+        lambda_pos_inv  = J_pos  @ mass_matrix_inv @ J_pos.T
+        lambda_ori_inv  = J_ori  @ mass_matrix_inv @ J_ori.T
+
+        lambda_full = _inv(lambda_full_inv)
+        lambda_pos  = _inv(lambda_pos_inv)
+        lambda_ori  = _inv(lambda_ori_inv)
+
+        Jbar = mass_matrix_inv @ J_full.T @ lambda_full
+        nullspace_matrix = np.eye(J_full.shape[1]) - Jbar @ J_full
+
+        return lambda_full, lambda_pos, lambda_ori, nullspace_matrix
+
+    return _fn
+
+
+def _make_variable_dls_opspace_matrices(dls_lambda_max: float, dls_sigma_th: float):
+    """变 λ 阻尼（Nakamura's Variable Damping DLS）。
+
+    根据雅可比最小奇异值 σ_min 自适应调节阻尼系数：
+      - σ_min ≥ σ_th：λ_eff = 0，使用伪逆
+      - σ_min < σ_th：λ_eff² = λ_max² × (1 − (σ_min/σ_th)²)，平滑衰减到 0
+      - σ_min → 0：λ_eff → λ_max
+    """
+    lam_max2 = dls_lambda_max ** 2
+
+    def _fn(mass_matrix, J_full, J_pos, J_ori):
+        mass_matrix_inv = np.linalg.inv(mass_matrix)
+
+        sigma_min = np.linalg.svd(J_full, compute_uv=False)[-1]
+        if sigma_min < dls_sigma_th:
+            lam2 = lam_max2 * (1.0 - (sigma_min / dls_sigma_th) ** 2)
+        else:
+            lam2 = 0.0
+
+        def _inv(A):
+            if lam2 > 0.0:
+                return np.linalg.inv(A + lam2 * np.eye(A.shape[0]))
+            return np.linalg.pinv(A)
+
+        lambda_full_inv = J_full @ mass_matrix_inv @ J_full.T
+        lambda_pos_inv  = J_pos  @ mass_matrix_inv @ J_pos.T
+        lambda_ori_inv  = J_ori  @ mass_matrix_inv @ J_ori.T
+
+        lambda_full = _inv(lambda_full_inv)
+        lambda_pos  = _inv(lambda_pos_inv)
+        lambda_ori  = _inv(lambda_ori_inv)
+
+        Jbar = mass_matrix_inv @ J_full.T @ lambda_full
+        nullspace_matrix = np.eye(J_full.shape[1]) - Jbar @ J_full
+
+        return lambda_full, lambda_pos, lambda_ori, nullspace_matrix
+
+    return _fn
+
+
+def _make_null_torques(null_kp: float):
+    """返回可调 kp 的零空间力矩函数（临界阻尼 kd=2√kp）。"""
+    null_kv = 2.0 * np.sqrt(null_kp)
+
+    def _null_torques(mass_matrix, nullspace_matrix, initial_joint,
+                      joint_pos, joint_vel, joint_kp=None):
+        pose_torques = mass_matrix @ (
+            null_kp * (initial_joint - joint_pos) - null_kv * joint_vel
+        )
+        return nullspace_matrix.T @ pose_torques
+
+    return _null_torques
+
+
+def install_osc_patches(
+    dls_lambda: float = 0.0,
+    dls_sigma_th: float = 0.0,
+    null_kp: float = 10.0,
+) -> None:
+    """在创建控制器前配置 OSC 的 DLS 与零空间增益策略。
+
+    Args:
+        dls_lambda:  阻尼系数 λ_max。
+                     - dls_sigma_th > 0：使用自适应变 λ 模式。
+                     - dls_sigma_th = 0：使用固定 λ 模式。
+                     - dls_lambda = 0：使用伪逆。
+        dls_sigma_th: 变 λ 模式触发阈值 σ_th（> 0 启用变 λ；= 0 用固定 λ）。
+        null_kp:     零空间关节复原增益（默认 10；临界阻尼 kd=2√kp 自动计算）。
+    """
+    import orca_gym.adapters.robosuite.controllers.osc as _osc_mod
+
+    if dls_lambda > 0.0:
+        if dls_sigma_th > 0.0:
+            _osc_mod.opspace_matrices = _make_variable_dls_opspace_matrices(
+                dls_lambda, dls_sigma_th
+            )
+        else:
+            _osc_mod.opspace_matrices = _make_fixed_dls_opspace_matrices(dls_lambda)
+
+    if null_kp != 10.0:
+        _osc_mod.nullspace_torques = _make_null_torques(null_kp)
 
 
 def create_arm_osc_controller(
