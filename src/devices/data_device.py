@@ -203,6 +203,7 @@ class DataDevice(AbstractDevice):
                 "opt_config",
                 "frame_skip",
                 "dt",
+                "task_description",
             ]
             for key in f.keys():
                 if key not in _meta_keys:
@@ -235,6 +236,9 @@ class DataDevice(AbstractDevice):
     def _load_recursive(self, item):
         '''递归加载HDF5数据到内存，Dataset数据flatten便于处理'''
         if isinstance(item, h5py.Dataset):
+            # 标量 dataset（如元数据）不支持切片, 用 [()] 读取
+            if item.ndim == 0 or item.shape == ():
+                return item[()]
             data = item[:]
             # 对于多维数据，保持第一维（时间步），flatten其余维度
             if len(data.shape) > 2:
