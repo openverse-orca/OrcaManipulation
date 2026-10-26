@@ -142,6 +142,17 @@ class ControllerDex1Force(AbstractController):
         norm = float(np.clip(np.asarray(ctrl, dtype=np.float64).reshape(-1)[0], 0.0, 1.0))
         self.q_target = self.q_open + (self.q_close - self.q_open) * norm
 
+    def update_target_qpos(self, ctrl: np.ndarray):
+        """DATA 模式: 接收数据集记录的 DEX1 关节 qpos (joint1, joint2)。
+
+        取 joint1 (主动指) 作为目标开度, 裁剪到行程内。回放时比直接回放
+        电机力矩更稳定: 力矩是阻抗律输出, 状态偏差会累积, 而位置目标
+        经同一阻抗律闭环后能自然复现夹持过程。
+        """
+        q = float(np.asarray(ctrl, dtype=np.float64).reshape(-1)[0])
+        lo, hi = min(self.q_open, self.q_close), max(self.q_open, self.q_close)
+        self.q_target = float(np.clip(q, lo, hi))
+
 
 def add_dex1_force_pico_controller(
     data_collection_manager,
@@ -178,5 +189,41 @@ def add_dex1_force_pico_controller(
             device.bind_trigger_event(key, controller.update_trigger_value)
         else:
             raise ValueError(f"Invalid key: {key}")
+    data_collection_manager.add_controller(controller)
+    return controller
+
+
+def add_dex1_force_data_controller(
+    data_collection_manager,
+    env: OrcaGymLocalEnv,
+    gripper_config: dict,
+    base_body: str,
+    device,
+    left_gripper: bool,
+):
+    """创建 DEX1-1 夹爪 DATA 控制器, 从数据集 /action/effector/position 回放开度。
+
+    数据布局: 左夹爪 2 关节 qpos 在 [0,2), 右夹爪在 [2,4)。
+    """
+    ctrl_name = [
+        env.actuator(actuator_name)
+        for actuator_name in gripper_config["actuator_names"]
+    ]
+    init_ctrl = {
+        name: init_val
+        for init_val, name in zip(gripper_config["init_ctrl"], ctrl_name)
+    }
+    controller = ControllerDex1Force(
+        env, ctrl_name, init_ctrl, gripper_config, base_body,
+        ControllerDex1Force.ControllerType.DATA,
+    )
+    if left_gripper:
+        device.bind_dataset_event(
+            "/action/effector/position", (0, 2), controller.update_target_qpos
+        )
+    else:
+        device.bind_dataset_event(
+            "/action/effector/position", (2, 4), controller.update_target_qpos
+        )
     data_collection_manager.add_controller(controller)
     return controller

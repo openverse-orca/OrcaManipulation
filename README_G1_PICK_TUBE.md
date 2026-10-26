@@ -121,7 +121,35 @@ src/examples/dataCollection/dataset/
 - 日志写入 `src/examples/dataCollection/logs/g1_dex1_collection.log`
 - `dataset/` 与 `logs/` 下的实际数据已被 `.gitignore` 忽略，不会误提交，仓库仅保留 `.gitkeep` 占位目录
 
-## 五、说明
+## 五、数据回放
+
+`g1_dex1_collection_replay.py` 读取已采集的 HDF5，在仿真中按帧重放末端轨迹与夹爪开度，用于质检与失败片段复查。
+
+```bash
+cd src/examples/dataCollection
+
+# 回放该场景下全部集（按目录顺序，播完退出）
+~/miniconda3/envs/orcalab_lerobot/bin/python g1_dex1_collection_replay.py \
+    --agent_name g1_pick_usda --level default
+
+# 只回放指定集：序号（从 0 开始）或 uuid 前缀
+~/miniconda3/envs/orcalab_lerobot/bin/python g1_dex1_collection_replay.py \
+    --agent_name g1_pick_usda --level default --episode 0
+
+# 循环回放
+~/miniconda3/envs/orcalab_lerobot/bin/python g1_dex1_collection_replay.py \
+    --agent_name g1_pick_usda --level default --loop
+```
+
+回放说明：
+
+- 双臂按 `/action/end/position` 与 `/action/end/orientation` 走 OSC 控制
+- 夹爪按 `/action/effector/position` 的关节开度（joint1）作为阻抗控制目标，比直接回放电机力矩更稳定
+- 每集会先恢复数据中记录的 `initial_joint_qpos`，再重新激活钉住约束，避免机器人倒地
+- `--episode` 支持序号或 uuid 前缀；不给则按目录顺序播放全部
+- 日志写入 `src/examples/dataCollection/logs/g1_dex1_replay.log`
+
+## 六、说明
 
 - 采集程序会在每集开始时重新激活基座与腰腿关节的钉住约束，避免场景重载后机器人倒下。
 - 夹爪为单电机 + 齿轮齿条耦合，采用官方位置阻抗控制（`tau = kp*(q_d - q) - kd*dq`），kp=1500、kd=15、最大夹持力 120N。
