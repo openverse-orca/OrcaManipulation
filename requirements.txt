@@ -1,4 +1,5 @@
 orca-gym>=26.9.1
+lerobot>=0.3.0,<0.4
 numpy
 scipy
 opencv-python

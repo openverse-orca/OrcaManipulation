@@ -17,6 +17,7 @@ import os
 import queue
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -64,6 +65,7 @@ def set_logger(logger) -> None:
 # ---------------------------------------------------------------------------
 
 def _import_lerobot_dataset():
+    errors = []
     for mod in (
         "lerobot.datasets.lerobot_dataset",
         "lerobot.common.datasets.lerobot_dataset",
@@ -71,15 +73,16 @@ def _import_lerobot_dataset():
         try:
             import importlib
             return importlib.import_module(mod).LeRobotDataset
-        except Exception:
-            pass
+        except Exception as e:  # 记录真实原因，避免只报"无法导入"
+            errors.append(f"  {mod}: {type(e).__name__}: {e}")
     raise ImportError(
-        "无法导入 LeRobotDataset。请在 orcalab_lerobot 环境中运行，"
-        "并确认已安装 lerobot>=0.3.0。"
+        "无法导入 LeRobotDataset。请确认当前解释器已安装 lerobot 0.3.x"
+        f"（当前: {sys.executable}）。底层错误:\n" + "\n".join(errors)
     )
 
 
 def _import_video_encoding_manager():
+    errors = []
     for mod in (
         "lerobot.datasets.video_utils",
         "lerobot.common.datasets.video_utils",
@@ -87,9 +90,12 @@ def _import_video_encoding_manager():
         try:
             import importlib
             return importlib.import_module(mod).VideoEncodingManager
-        except Exception:
-            pass
-    raise ImportError("无法导入 VideoEncodingManager，请检查 lerobot 版本。")
+        except Exception as e:
+            errors.append(f"  {mod}: {type(e).__name__}: {e}")
+    raise ImportError(
+        "无法导入 VideoEncodingManager，请检查 lerobot 版本。底层错误:\n"
+        + "\n".join(errors)
+    )
 
 
 # ---------------------------------------------------------------------------
