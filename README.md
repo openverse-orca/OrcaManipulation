@@ -58,14 +58,21 @@
 3. 使用 `orcalab_lerobot` 环境（orca-gym 26.9.1，支持相机推流录制），在仓库根目录执行：
 
 ```bash
+# 1. 进入采集脚本目录（在仓库根目录下执行）
 cd src/examples/dataCollection
-python -u g1_dex1_collection_tele.py \
+
+# 2. 采集 10 条数据
+#    --num_episodes 10 表示采集 10 集（10 条），采满自动退出
+#    每集：按一次左 Grip 开始录制，再按一次左 Grip 结束并落盘
+~/miniconda3/envs/orcalab_lerobot/bin/python -u g1_dex1_collection_tele.py \
     --orcagym_addr localhost:50051 \
     --agent_name g1_pick_usda \
     --pos_scale 0.8 \
     --num_episodes 10 \
     --lerobot_out lerobot_datasets/g1_dex1
 ```
+
+数据保存在 `src/examples/dataCollection/lerobot_datasets/g1_dex1`。
 
 ### 2. 采集
 
@@ -83,6 +90,8 @@ python -u g1_dex1_collection_tele.py \
 | 参数 | 默认值 | 说明 |
 |---|---|---|
 | `--agent_name` | `g1_dex1` | 必须与场景中机器人对象前缀一致（本场景为 `g1_pick_usda`） |
+| `--num_episodes` | `0`（不限） | 采集条数，`10` 即采 10 集后自动退出 |
+| `--resume` | - | 追加到已有数据集，不清空 |
 | `--pos_scale` | `1.0` | 手柄位移→末端位移比例，精细操作建议 0.3~0.8 |
 | `--osc_kp` | `300` | 任务空间刚度 |
 | `--pos_deadzone` | `0.003` | 静止死区，手抖可调大 |
