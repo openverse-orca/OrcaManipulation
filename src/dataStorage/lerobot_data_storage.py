@@ -550,7 +550,6 @@ class LeRobotDatasetWriter:
         state_dim: int,
         state_names: list[str],
         cam_shape: tuple,
-        resume: bool = False,
         robot_type: str = "humanoid",
         action_names: list[str] | None = None,
         action_dim: int | None = None,
@@ -585,7 +584,9 @@ class LeRobotDatasetWriter:
                 f"state_dim={state_dim} 与 len(state_names)={len(state_names)} 不一致"
             )
 
-        if resume and Path(root).exists():
+        root_path = Path(root)
+        # 已有落盘的 episode：一律追加，按采集顺序继续编号，不覆盖、不清空。
+        if (root_path / "meta" / "episodes.jsonl").exists():
             dataset = LeRobotDataset(
                 repo_id=repo_id,
                 root=root,
@@ -606,18 +607,29 @@ class LeRobotDatasetWriter:
                 prev_action_names = _flat_names(feats["action"]["names"])
                 if prev_state_names != list(state_names) or prev_action_names != act_names:
                     raise ValueError(
-                        "[resume] 数据集的 state/action 字段与当前配置不一致。"
-                        "请使用新的 --lerobot_out，或确认后重新创建目标数据集。"
+                        "[追加] 数据集的 state/action 字段与当前配置不一致。"
+                        "请使用新的 --lerobot_out。"
                     )
             except KeyError as e:
-                raise ValueError(f"[resume] 数据集缺少 feature 字段: {e}") from e
+                raise ValueError(f"[追加] 数据集缺少 feature 字段: {e}") from e
             dataset.episode_buffer = dataset.create_episode_buffer()
             print(
-                f"[resume] 已加载 {dataset.num_episodes} 集 / {dataset.num_frames} 帧"
+                f"[追加] 已有 {dataset.num_episodes} 集 / {dataset.num_frames} 帧，"
+                f"本次从第 {dataset.num_episodes} 集继续编号"
             )
         else:
-            if Path(root).exists() and not resume:
-                shutil.rmtree(root)
+            if root_path.exists():
+                # 没有已保存的 episode，只可能是上次启动中断留下的空壳。
+                stray = [
+                    p for p in root_path.rglob("*")
+                    if p.is_file() and p != root_path / "meta" / "info.json"
+                ]
+                if stray:
+                    raise ValueError(
+                        f"{root} 存在但缺少 meta/episodes.jsonl，无法安全追加。"
+                        "请换一个 --lerobot_out，或手动处理该目录。"
+                    )
+                shutil.rmtree(root_path)
 
             features: dict = {
                 "observation.state": {

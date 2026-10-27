@@ -843,7 +843,11 @@ def main():
         default="wall",
         help="采帧时钟。wall 用系统时间，sim 用仿真时间",
     )
-    parser.add_argument("--resume", action="store_true", help="追加到已有数据集")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="兼容旧命令；现在默认追加到已有数据集，不会清空",
+    )
     parser.add_argument("--orcagym_addr", default="localhost:50051")
     args = parser.parse_args()
     if args.num_episodes < 0:
@@ -1148,7 +1152,6 @@ def main():
             state_dim=data_storage.state_dim,
             state_names=data_storage.state_names,
             cam_shape=(3, cam_hw[0], cam_hw[1]),
-            resume=args.resume,
             robot_type="g1_dex1",
         )
         data_storage.configure_lerobot(
