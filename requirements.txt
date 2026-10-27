@@ -1,5 +1,11 @@
-orca-gym>=26.4.2.1
+orca-gym>=26.9.1
+numpy
+scipy
+opencv-python
+pyarrow
+av
+gymnasium
+h5py
 numba
 termcolor>=2.4.0
 pyyaml
-h5py

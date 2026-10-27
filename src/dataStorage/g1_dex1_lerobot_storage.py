@@ -36,10 +36,17 @@ CAMERA_BY_ROLE = {
 
 
 def _load_southgrid_lerobot():
-    """把 SouthGrid 的 LeRobot 写盘模块挂进当前 dataStorage 包。"""
-    south_ds = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "SouthGrid", "src", "dataStorage")
-    )
+    """把 SouthGrid 的 LeRobot 写盘模块挂进当前 dataStorage 包。
+
+    默认要求 SouthGrid 与本仓库同级; 布局不同时可用 SOUTHGRID_ROOT 指定。
+    """
+    south_root = os.environ.get("SOUTHGRID_ROOT")
+    if south_root:
+        south_ds = os.path.abspath(os.path.join(south_root, "src", "dataStorage"))
+    else:
+        south_ds = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "..", "SouthGrid", "src", "dataStorage")
+        )
     if not os.path.isdir(south_ds):
         raise ImportError(f"找不到 SouthGrid 数据模块: {south_ds}")
 

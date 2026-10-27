@@ -5,6 +5,8 @@
 ## 一、目录结构
 
 ```
+├── README.md                    # 本文档
+├── requirements.txt             # Python 依赖
 ├── g1_pick_tube.json            # OrcaStudio 布局文件（关卡 + actor 布局）
 ├── models/                      # 机器人模型（MuJoCo）
 │   ├── g1_pick.xml              # G1 + 双臂 DEX1-1 夹爪
@@ -29,6 +31,22 @@
     ├── sensor/                  # 相机推流
     └── task/                    # 空任务
 ```
+
+### 依赖与环境
+
+- Python 3.12，`orca-gym >= 26.9.1`（相机推流与录制器接口从 26.9.1 起提供），推荐直接使用 `orcalab_lerobot` 环境
+- Python 依赖：`pip install -r requirements.txt`
+- **必须同时检出 SouthGrid**，并与本仓库放在同一工作区下。`g1_dex1_lerobot_storage.py` 通过相对路径 `../../../SouthGrid/src/dataStorage` 加载其 LeRobot 写盘与相机模块：
+
+```
+<工作区>/
+├── repo/            # 本仓库
+└── SouthGrid/       # git clone https://github.com/openverse-orca/SouthGrid.git
+```
+
+  若 SouthGrid 不在同级目录，可设置环境变量 `SOUTHGRID_ROOT=/path/to/SouthGrid`。
+
+- 视频编码使用 PyAV + `h264_nvenc`，需要 NVIDIA GPU；无 GPU 时无法产出 mp4，只能落盘 parquet
 
 ## 二、部署步骤
 
