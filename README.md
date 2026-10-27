@@ -33,15 +33,14 @@
 - Python 3.12
 - 在仓库根目录安装依赖（清华源）：
   ```bash
+  pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cpu
   pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
   pip install "lerobot==0.3.3" --no-deps -i https://pypi.tuna.tsinghua.edu.cn/simple
   ```
-  `lerobot` 官方包强依赖 `wandb` 等训练组件，数采用不到，且部分镜像源缺 `wandb` 会导致解析失败，所以单独用 `--no-deps` 安装；0.4 及以上 API 不兼容，会报 `无法导入 LeRobotDataset`。
 - 安装完成后自检：
   ```bash
   python verify_environment.py
   ```
-  会逐项核对 `requirements.txt` 的版本、`lerobot` 版本以及关键模块能否导入，全部通过时输出 `Environment verification PASSED` 并退出码为 0。
 
 ## 二、部署步骤
 
