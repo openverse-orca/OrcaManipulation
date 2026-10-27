@@ -211,6 +211,7 @@ __marimo__/
 /src/examples/dataCollection/aug_dataset/*
 /src/examples/dataCollection/lerobot_datasets/*
 /src/examples/dataCollection/_lerobot_scratch/*
-# 仅保留目录结构，采集数据不入库
+# 仅保留目录结构；dataset/g1_dex1 为可回放的示例数据集，随仓库提交
 !/src/examples/dataCollection/dataset/.gitkeep
+!/src/examples/dataCollection/dataset/g1_dex1/
 !/src/examples/dataCollection/logs/.gitkeep

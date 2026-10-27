@@ -22,7 +22,7 @@ LeRobot state（11 维，见 g1_dex1_lerobot_storage.py）与回放字段对应:
     python g1_dex1_collection_replay.py --episode episode_000003
 
     # 指定数据集目录 / 循环回放
-    python g1_dex1_collection_replay.py --lerobot_dataset ./lerobot_datasets/g1_dex1
+    python g1_dex1_collection_replay.py --lerobot_dataset ./dataset/g1_dex1
     python g1_dex1_collection_replay.py --loop
 """
 
@@ -262,7 +262,7 @@ def main():
     )
     parser.add_argument(
         "--lerobot_dataset",
-        default=os.path.join(base_dir, "lerobot_datasets", "g1_dex1"),
+        default=os.path.join(base_dir, "dataset", "g1_dex1"),
         help="LeRobot 数据集目录（与采集脚本 --lerobot_out 相同）",
     )
     parser.add_argument(

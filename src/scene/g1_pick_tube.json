@@ -12,15 +12,15 @@
     },
     "viewport_camera_transform": {
         "position": [
-            0.34208837151527405,
-            0.08341531455516815,
-            3.5551466941833496
+            0.3730711042881012,
+            0.0026400540955364704,
+            1.6297998428344727
         ],
         "rotation": [
-            0.5378404768568213,
-            -0.4777765196621602,
-            -0.461297117148685,
-            0.5192900811918643
+            0.5469778350573656,
+            -0.3061999774030939,
+            -0.3805883645402434,
+            0.6798597786094459
         ]
     },
     "actors": [
@@ -202,7 +202,1066 @@
                                         ],
                                         "scale": 1.0
                                     },
-                                    "asset_path": "assets/e071469a36d3c8aa/testtube_operation/testtube_operation/prop/testtube_context/testtube_15ml"
+                                    "asset_path": "assets/e071469a36d3c8aa/testtube_operation/testtube_operation/prop/testtube_context/testtube_15ml",
+                                    "entity_overrides": [
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{E5A56D7F-C63E-4080-BF62-01326AC60982}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "baseColor.color.b",
+                                                            "value": 0.7839999794960022,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 24
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 23
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 22
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 21
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 19
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 18
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 17
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 16
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 15
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 14
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 13
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 12
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 11
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 10
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 9
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 8
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 7
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 6
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 5
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 4
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 3
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 2
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 1
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "entity_path": [
+                                                {
+                                                    "name": "TestTube_15ml",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "15cm",
+                                                    "index": 0
+                                                },
+                                                {
+                                                    "name": "phy",
+                                                    "index": 1
+                                                },
+                                                {
+                                                    "name": "1",
+                                                    "index": 0
+                                                }
+                                            ],
+                                            "group_overrids": [
+                                                {
+                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
+                                                    "type_index": 0,
+                                                    "property_overrides": [
+                                                        {
+                                                            "name": "friction.x",
+                                                            "value": 2.0,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.y",
+                                                            "value": 0.004999999888241291,
+                                                            "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "friction.z",
+                                                            "value": 0.0010000000474974513,
+                                                            "type": "float"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    ]
                                 }
                             ]
                         },
@@ -269,6 +1328,11 @@
                                                             "name": "decompositionThreshold",
                                                             "value": 0.009999999776482582,
                                                             "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "meshFile",
+                                                            "value": "/home/yuancheng-zhu/Orca/OrcaStudio/{3DB8A56E-2458-4543-93A1-1A41756B97DA}/user/mujoco_decomposition/mesh_279693749_{A7F0827_decomposition.obj",
+                                                            "type": "string"
                                                         }
                                                     ]
                                                 }
@@ -320,6 +1384,11 @@
                                                             "name": "decompositionThreshold",
                                                             "value": 0.009999999776482582,
                                                             "type": "float"
+                                                        },
+                                                        {
+                                                            "name": "meshFile",
+                                                            "value": "/home/yuancheng-zhu/Orca/OrcaStudio/{3DB8A56E-2458-4543-93A1-1A41756B97DA}/user/mujoco_decomposition/mesh_279693749_{A7F0827_decomposition.obj",
+                                                            "type": "string"
                                                         }
                                                     ]
                                                 }
@@ -344,36 +1413,15 @@
                     -3.689728487188404e-07
                 ],
                 "rotation": [
+                    -0.0,
                     0.0,
-                    0.0,
-                    0.0,
+                    -0.0,
                     1.0
                 ],
                 "scale": 1.0
             },
             "asset_path": "assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda",
             "entity_overrides": [
-                {
-                    "entity_path": [],
-                    "group_overrids": [
-                        {
-                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
-                            "type_index": 0,
-                            "property_overrides": [
-                                {
-                                    "name": "translate.x",
-                                    "value": 0.023694157600402832,
-                                    "type": "float"
-                                },
-                                {
-                                    "name": "rotate.z",
-                                    "value": 180.0,
-                                    "type": "float"
-                                }
-                            ]
-                        }
-                    ]
-                },
                 {
                     "entity_path": [
                         {

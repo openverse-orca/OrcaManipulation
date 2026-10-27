@@ -18,7 +18,8 @@
     ├── envs/dataCollection/     # 仿真环境封装
     ├── examples/dataCollection/
     │   ├── g1_dex1_collection_tele.py    # 遥操作采集
-    │   └── g1_dex1_collection_replay.py  # 数据集回放
+    │   ├── g1_dex1_collection_replay.py  # 数据集回放
+    │   └── dataset/g1_dex1/              # 内置 9 条可回放示例数据（LeRobot v2.1）
     ├── scene/                   # 场景与 actor 管理
     │   ├── scene_manager.py
     │   └── g1_pick_tube.json    # 场景文件（关卡 + actor + 相机录制开关）
@@ -83,10 +84,12 @@ cd src/examples/dataCollection
     --agent_name g1_pick_usda \
     --pos_scale 0.8 \
     --num_episodes 10 \
-    --lerobot_out lerobot_datasets/g1_dex1
+    --lerobot_out dataset/g1_dex1
 ```
 
-数据保存在 `src/examples/dataCollection/lerobot_datasets/g1_dex1`。
+数据保存在 `src/examples/dataCollection/dataset/g1_dex1`。
+
+> 仓库已内置 9 条可回放的示例数据（`dataset/g1_dex1`），可直接跳到第五节回放验证环境。新采集会在其后按顺序追加编号，不会覆盖已有数据。
 
 ### 2. 采集
 
@@ -113,7 +116,7 @@ cd src/examples/dataCollection
 | `--ema_alpha` | `0.35` | 输入低通系数 |
 | `--cameras` | `head,wrist_r` | 录制相机 |
 | `--no_cameras` | - | 只存 11 维 state/action，不写图像 |
-| `--lerobot_out` | `lerobot_datasets/g1_dex1` | LeRobot 数据集目录 |
+| `--lerobot_out` | `dataset/g1_dex1` | LeRobot 数据集目录 |
 | `--fps` | `20` | 写入数据集的帧率 |
 | `--frame_skip` | `5` | 每个控制周期的物理步数 |
 | `--time_step` | `0.001` | 物理步长 |
@@ -135,10 +138,10 @@ cd src/examples/dataCollection
 
 ## 四、数据存储结构
 
-数据集为 LeRobot v2.1 格式，保存在 `--lerobot_out` 指定的目录（默认脚本同级的 `lerobot_datasets/g1_dex1`）：
+数据集为 LeRobot v2.1 格式，保存在 `--lerobot_out` 指定的目录（默认脚本同级的 `dataset/g1_dex1`）：
 
 ```
-src/examples/dataCollection/lerobot_datasets/g1_dex1/
+src/examples/dataCollection/dataset/g1_dex1/
 ├── meta/info.json                  # 特征、帧率、总集数
 ├── data/chunk-000/
 │   └── episode_000000.parquet      # observation.state / action（11 维）与时间戳
@@ -150,9 +153,9 @@ src/examples/dataCollection/lerobot_datasets/g1_dex1/
 state/action 为 11 维：`r_pos(3), r_quat_xyzw(4), l_grip_inner_norm, l_grip_outer_norm, r_grip_inner_norm, r_grip_outer_norm`。左臂在采集中锁在停靠姿态，不写入数据。
 
 - 每完成一集自动写一个 `episode_XXXXXX.parquet` 与对应视频
-- `--lerobot_out` 可区分任务或批次，如 `--lerobot_out lerobot_datasets/tube_v1`
+- `--lerobot_out` 可区分任务或批次，如 `--lerobot_out dataset/tube_v1`
 - 日志写入 `src/examples/dataCollection/logs/g1_dex1_collection.log`
-- `dataset/`、`lerobot_datasets/` 与 `logs/` 下的实际数据已被 `.gitignore` 忽略，不会误提交
+- `dataset/g1_dex1` 里的示例数据随仓库提交；`lerobot_datasets/` 与 `logs/` 仍被 `.gitignore` 忽略
 
 ### 只有 HDF5、没有 mp4 时排查
 
@@ -185,7 +188,7 @@ cd src/examples/dataCollection
 
 # 指定数据集目录 / 循环回放
 ~/miniconda3/envs/orcalab_lerobot/bin/python g1_dex1_collection_replay.py \
-    --lerobot_dataset lerobot_datasets/g1_dex1 --loop
+    --lerobot_dataset dataset/g1_dex1 --loop
 ```
 
 回放说明：

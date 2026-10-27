@@ -817,11 +817,11 @@ def main():
     parser.add_argument(
         "--cam_resolution",
         default="480x640",
-        help="图像高x宽，默认 480x640，与 SouthGrid 相同",
+        help="图像高x宽，默认 480x640",
     )
     parser.add_argument(
         "--lerobot_out",
-        default=os.path.join(base_dir, "lerobot_datasets", "g1_dex1"),
+        default=os.path.join(base_dir, "dataset", "g1_dex1"),
         help="LeRobot 数据集目录",
     )
     parser.add_argument("--repo_id", default="local/g1_dex1", help="LeRobot repo_id")
