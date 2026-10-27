@@ -58,7 +58,7 @@ orca_logger = get_orca_logger(
 )
 
 
-# ── 基座/腰/腿姿态钉住（自 Binjiang 竞赛栈移植）───────────────────────────
+# ── 基座/腰/腿姿态钉住 ───────────────────────────────────────────────────
 
 def _pin_all_joints_writeback(env, agent_name: str) -> bool:
     """旧机制（回退用）：每步 qpos 写回钉住基座、腰部和腿部。
@@ -249,7 +249,7 @@ def _pin_all_joints_equality(env, agent_name: str) -> bool:
     return True
 
 
-# 参考 Binjiang_Competition g1_dex1_osc_conf.l_arm["neutral_joint_values"]:
+# 左臂停靠姿态（g1_dex1_osc_conf.l_arm["neutral_joint_values"]）:
 # 肩部 roll 稍外展 0.127rad(~7.3°)，避免左臂贴住躯干/桌面。采集与回放共用。
 _L_ARM_DOCK = [0.0, 0.127, 0.0, 1.5708, 0.0, 0.0, 0.0]
 
@@ -368,7 +368,7 @@ def apply_grasp_solver_tuning(env) -> bool:
 # ── OSC 手臂：kp 覆盖 + 静止稳定滤波 + pos_scale ─────────────────────────
 
 class StableGoalFilter:
-    """手柄输入静止稳定滤波（自 Binjiang 竞赛栈移植）。
+    """手柄输入静止稳定滤波。
 
     VR 手柄静止时位姿仍有毫米级噪声，经 OSC 高增益放大后表现为机械臂
     持续微晃，影响夹试管等精细操作：
@@ -590,7 +590,7 @@ _CAMERA_ROLE_TOKENS = {
     "wrist_r": ("camera_right", "right"),
     "wrist_l": ("camera_left", "left"),
 }
-# 推流端口兜底值（后端未分配端口时按角色重试, 与 Binjiang 流程一致）
+# 推流端口兜底值（后端未分配端口时按角色重试）
 _CAMERA_FALLBACK_PORTS = {"head": 7070, "wrist_l": 7072, "wrist_r": 7074}
 _PORT_TO_ROLE = {port: role for role, port in _CAMERA_FALLBACK_PORTS.items()}
 _sigint_armed = False
@@ -645,7 +645,7 @@ def _camera_frames_flowing(env, manager, cam: str, probe_seconds: float = 0.8) -
     """探测相机帧是否在流动（probe 期间持续 render 触发引擎推流）。
 
     引擎只在 render() 调用时编码推流相机帧——等首帧期间必须主动渲染，
-    否则永远收不到帧（Binjiang bring_up_cameras 的 render_fn 同理）。
+    否则永远收不到帧（bring_up_cameras 的 render_fn 同理）。
     故无论是否已收到首帧, 都先渲染一个窗口再比较帧计数。
     健康信号用 buffered_frame_count（帧计数增长）; 不用 simulate_index
     ——引擎未启用索引计数器时帧的 sim_idx=-1，会误判。
