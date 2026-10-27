@@ -1,22 +1,13 @@
 # G1 + DEX1-1 试管抓取遥操作数据采集
 
-本分支 `g1_pick_tube` 提供 Unitree G1（29DOF）+ DEX1-1 夹爪在试管场景下的 VR 遥操作数据采集方案，包含机器人模型、OrcaStudio 场景资产与采集代码。
+本分支 `g1_pick_tube` 提供 Unitree G1（29DOF）+ DEX1-1 夹爪在试管场景下的 VR 遥操作数据采集与回放方案，包含采集代码与场景布局文件。
 
 ## 一、目录结构
 
 ```
 ├── README.md                    # 本文档
 ├── requirements.txt             # Python 依赖
-├── g1_pick_tube.json            # OrcaStudio 布局文件（关卡 + actor 布局）
-├── models/                      # 机器人模型（MuJoCo）
-│   ├── g1_pick.xml              # G1 + 双臂 DEX1-1 夹爪
-│   └── assets/                  # 网格资源（含 assets/dex1/）
-├── orcastudio_scene/            # OrcaStudio 场景资产
-│   ├── Assets/                  # TestTube_Operation / Importer / Prefabs 等
-│   ├── Levels/
-│   │   └── shihua_xiugai_change_tube/   # 场景 Level
-│   ├── ReflectionProbes/
-│   └── DiffuseProbeGrids/
+├── g1_pick_tube.json            # 场景布局文件（关卡 + actor 布局）
 └── src/                         # 采集/回放代码与依赖
     ├── conf/g1_dex1_osc_conf.py # 机器人/夹爪参数
     ├── controllers/             # OSC 手臂、DEX1 阻抗夹爪
@@ -35,17 +26,7 @@
 ### 依赖与环境
 
 - Python 3.12，`orca-gym >= 26.9.1`（相机推流与录制器接口从 26.9.1 起提供），推荐直接使用 `orcalab_lerobot` 环境
-- Python 依赖：`pip install -r requirements.txt`
-- **SouthGrid 需与本仓库同级**（LeRobot 写盘与相机模块由它提供）：
-
-```
-g1_pick_tube/
-├── repo/       # 本仓库
-└── SouthGrid/  # git clone https://github.com/openverse-orca/SouthGrid.git
-```
-
-  若不在同级，设置环境变量 `SOUTHGRID_ROOT=/path/to/SouthGrid` 即可。
-
+- 安装依赖：`pip install -r requirements.txt`
 - 视频编码使用 PyAV + `h264_nvenc`，需要 NVIDIA GPU；无 GPU 时无法产出 mp4，只能落盘 parquet
 
 ## 二、部署步骤
