@@ -12,15 +12,15 @@
     },
     "viewport_camera_transform": {
         "position": [
-            0.10805907845497131,
-            -0.0621822215616703,
-            1.2735638618469238
+            0.04992525652050972,
+            -0.5214629173278809,
+            1.173462986946106
         ],
         "rotation": [
-            0.6732839544930896,
-            -0.2490952684593282,
-            -0.2415571731199135,
-            0.6529091789580221
+            0.9545832176791063,
+            -0.29737248706632785,
+            -0.005488144642248391,
+            0.017617171446534304
         ]
     },
     "actors": [
@@ -184,26 +184,6 @@
                                 "scale": 1.0
                             },
                             "children": [
-                                {
-                                    "name": "TestTube_20ml",
-                                    "path": "/Group/Interactive/test_tube/TestTube_20ml",
-                                    "type": "AssetActor",
-                                    "transform": {
-                                        "position": [
-                                            -0.10465682297945023,
-                                            -0.13501402735710144,
-                                            0.8323982357978821
-                                        ],
-                                        "rotation": [
-                                            0.0,
-                                            0.0,
-                                            0.0,
-                                            1.0
-                                        ],
-                                        "scale": 1.0
-                                    },
-                                    "asset_path": "assets/e071469a36d3c8aa/testtube_operation/testtube_operation/prop/testtube_context/testtube_20ml"
-                                },
                                 {
                                     "name": "TestTube_15ml",
                                     "path": "/Group/Interactive/test_tube/TestTube_15ml",
@@ -409,46 +389,15 @@
                     0.017848119139671326
                 ],
                 "rotation": [
-                    -0.007578538820936109,
+                    0.007578419618491674,
                     0.0,
                     0.0,
-                    0.9999712824623214
+                    -0.9999712833657205
                 ],
                 "scale": 1.0
             },
             "asset_path": "assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda",
             "entity_overrides": [
-                {
-                    "entity_path": [],
-                    "group_overrids": [
-                        {
-                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
-                            "type_index": 0,
-                            "property_overrides": [
-                                {
-                                    "name": "translate.x",
-                                    "value": 0.01747552491724491,
-                                    "type": "float"
-                                },
-                                {
-                                    "name": "translate.y",
-                                    "value": -0.03443277254700661,
-                                    "type": "float"
-                                },
-                                {
-                                    "name": "translate.z",
-                                    "value": 0.017848119139671326,
-                                    "type": "float"
-                                },
-                                {
-                                    "name": "rotate.z",
-                                    "value": -179.13156127929688,
-                                    "type": "float"
-                                }
-                            ]
-                        }
-                    ]
-                },
                 {
                     "entity_path": [
                         {

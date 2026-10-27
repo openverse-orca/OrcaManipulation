@@ -15,11 +15,19 @@
 │   │   └── shihua_xiugai_change_tube/   # 场景 Level
 │   ├── ReflectionProbes/
 │   └── DiffuseProbeGrids/
-└── src/                         # 采集代码
-    ├── conf/g1_dex1_osc_conf.py
-    ├── controllers/controller_dex1_force.py
-    ├── dataStorage/g1_dex1_data_storage.py
-    └── examples/dataCollection/g1_dex1_collection_tele.py
+└── src/                         # 采集/回放代码与依赖
+    ├── conf/g1_dex1_osc_conf.py # 机器人/夹爪参数
+    ├── controllers/             # OSC 手臂、DEX1 阻抗夹爪
+    ├── dataCollectionManager/   # 采集主循环
+    ├── dataStorage/             # LeRobot v2.1 数据集写入
+    ├── devices/                 # PICO / 数据回放设备
+    ├── envs/dataCollection/     # 仿真环境封装
+    ├── examples/dataCollection/
+    │   ├── g1_dex1_collection_tele.py    # 遥操作采集
+    │   └── g1_dex1_collection_replay.py  # 数据集回放
+    ├── scene/                   # 场景与 actor 管理
+    ├── sensor/                  # 相机推流
+    └── task/                    # 空任务
 ```
 
 ## 二、部署步骤
@@ -100,7 +108,7 @@ python -u g1_dex1_collection_tele.py \
 
 1. 脚本启动后自动连接场景、加载机器人并启动三路相机推流（约数秒，日志出现相机就绪后再操作）。
 2. 按一下**左 Grip** 开始本集录制。
-3. 用手柄控制双臂与夹爪完成任务。
+3. 用手柄控制右臂与右夹爪完成任务（左臂/左手已禁用，锁在安全停靠姿态）。
 4. 再按一下**左 Grip** 结束本集，数据自动落盘，场景重置，等待下一集。
 
 ### 3. 退出
@@ -116,9 +124,10 @@ python -u g1_dex1_collection_tele.py \
 | `--osc_kp` | `300` | 任务空间刚度 |
 | `--pos_deadzone` | `0.003` | 静止死区，手抖可调大 |
 | `--ema_alpha` | `0.35` | 输入低通系数 |
-| `--cameras` | `head,wrist_l,wrist_r` | 录制相机 |
-| `--no_cameras` | - | 只存 HDF5，不录视频 |
-| `--level` | `default` | 数据集子目录 |
+| `--cameras` | `head,wrist_r` | 录制相机 |
+| `--no_cameras` | - | 只存 11 维 state/action，不写图像 |
+| `--lerobot_out` | `lerobot_datasets/g1_dex1` | LeRobot 数据集目录 |
+| `--fps` | `20` | 写入数据集的帧率 |
 | `--frame_skip` | `5` | 每个控制周期的物理步数 |
 | `--time_step` | `0.001` | 物理步长 |
 
@@ -127,34 +136,34 @@ python -u g1_dex1_collection_tele.py \
 | 操作 | 说明 |
 |---|---|
 | 左 Grip | 按一下开始采集，再按一下结束 |
-| 左扳机 | 左夹爪开度（按下闭合） |
 | 右扳机 | 右夹爪开度（按下闭合） |
-| X / A | 左 / 右夹爪全开 |
-| Y / B | 左 / 右夹爪中位 |
-| 手柄位姿 | 控制左右手臂 |
+| A | 右夹爪全开 |
+| B | 右夹爪闭合下限抬升（保持夹紧） |
+| 右手柄位姿 | 控制右臂 |
+
+> 左臂与左手在采集、回放中均不接控制器，锁在安全停靠姿态（肩 roll ≈ 7.3°）。
+> 左手柄位姿、左扳机与 X / Y 键不再生效，左手始终保持在停靠开度。
 
 ## 四、数据存储结构
 
-数据保存在脚本同级的 `dataset` 目录（仓库已保留该空目录）：
+数据集为 LeRobot v2.1 格式，保存在 `--lerobot_out` 指定的目录（默认脚本同级的 `lerobot_datasets/g1_dex1`）：
 
 ```
-src/examples/dataCollection/dataset/
-└── <agent_name>/
-    └── <level>/
-        └── <uuid>/
-            ├── record/proprio_stats.hdf5   # 关节位置、速度、动作等状态数据
-            └── video/
-                ├── head.mp4
-                ├── wrist_l.mp4
-                └── wrist_r.mp4
+src/examples/dataCollection/lerobot_datasets/g1_dex1/
+├── meta/info.json                  # 特征、帧率、总集数
+├── data/chunk-000/
+│   └── episode_000000.parquet      # observation.state / action（11 维）与时间戳
+└── videos/chunk-000/
+    ├── observation.images.cam_head/episode_000000.mp4
+    └── observation.images.cam_wrist_r/episode_000000.mp4
 ```
 
-以默认参数为例：`dataset/g1_pick_usda/default/<uuid>/`
+state/action 为 11 维：`r_pos(3), r_quat_xyzw(4), l_grip_inner_norm, l_grip_outer_norm, r_grip_inner_norm, r_grip_outer_norm`。左臂在采集中锁在停靠姿态，不写入数据。
 
-- 每集自动生成一个 `<uuid>` 目录
-- `--level` 用于区分任务或批次，如 `--level tube_v1`
+- 每完成一集自动写一个 `episode_XXXXXX.parquet` 与对应视频
+- `--lerobot_out` 可区分任务或批次，如 `--lerobot_out lerobot_datasets/tube_v1`
 - 日志写入 `src/examples/dataCollection/logs/g1_dex1_collection.log`
-- `dataset/` 与 `logs/` 下的实际数据已被 `.gitignore` 忽略，不会误提交，仓库仅保留 `.gitkeep` 占位目录
+- `dataset/`、`lerobot_datasets/` 与 `logs/` 下的实际数据已被 `.gitignore` 忽略，不会误提交
 
 ### 只有 HDF5、没有 mp4 时排查
 
@@ -172,34 +181,38 @@ src/examples/dataCollection/dataset/
 
 ## 五、数据回放
 
-`g1_dex1_collection_replay.py` 读取已采集的 HDF5，在仿真中按帧重放末端轨迹与夹爪开度，用于质检与失败片段复查。
+`g1_dex1_collection_replay.py` 读取采集生成的 LeRobot 数据集，在仿真中 1:1 重放右臂末端轨迹与夹爪开合，用于质检与失败片段复查。
 
 ```bash
 cd src/examples/dataCollection
 
-# 回放该场景下全部集（按目录顺序，播完退出）
+# 回放数据集全部集（按 episode 序号，播完退出）
 ~/miniconda3/envs/orcalab_lerobot/bin/python g1_dex1_collection_replay.py \
-    --agent_name g1_pick_usda --level default
+    --agent_name g1_pick_usda
 
-# 只回放指定集：序号（从 0 开始）或 uuid 前缀
+# 只回放指定集：序号（从 0 开始）或 parquet 文件名前缀
 ~/miniconda3/envs/orcalab_lerobot/bin/python g1_dex1_collection_replay.py \
-    --agent_name g1_pick_usda --level default --episode 0
+    --agent_name g1_pick_usda --episode 0
 
-# 循环回放
+# 指定数据集目录 / 循环回放
 ~/miniconda3/envs/orcalab_lerobot/bin/python g1_dex1_collection_replay.py \
-    --agent_name g1_pick_usda --level default --loop
+    --lerobot_dataset lerobot_datasets/g1_dex1 --loop
 ```
 
 回放说明：
 
-- 双臂按 `/action/end/position` 与 `/action/end/orientation` 走 OSC 控制
-- 夹爪按 `/action/effector/position` 的关节开度（joint1）作为阻抗控制目标，比直接回放电机力矩更稳定
-- 每集会先恢复数据中记录的 `initial_joint_qpos`，再重新激活钉住约束，避免机器人倒地
-- `--episode` 支持序号或 uuid 前缀；不给则按目录顺序播放全部
+- 读取每集 parquet 的 `observation.state`（11 维），右臂按 B 系位置/四元数走 OSC 控制
+- 相邻数据帧之间插值出 `steps_per_frame` 个控制周期（位置线性、姿态 slerp），每个控制周期都下发新目标，严格按原速 1:1 回放，避免逐帧保持的阶梯式抖动
+- 夹爪不再直接用记录开度作为目标：记录值是被试管挡住后的实际位置，直接回放会导致接触后夹持力为 0。改为按开度还原“张开/闭合”意图（迟滞判定），闭合时命令全闭以复现采集时的夹持力（约 8–22N）
+- 左臂/左手不参与回放（数据不含左臂），由 `pin_all_joints` 锁在停靠姿态，且不再挂左手控制器，避免电机与钉住约束互扯
+- 按数据集 `fps` 与控制周期（`time_step × frame_skip`）自动换算每帧的插值周期数
+- LeRobot 数据集不含物体/场景状态与 `initial_joint_qpos`，每集使用场景初始状态
+- `--episode` 支持序号或文件名前缀；不给则按 episode 顺序播放全部
 - 日志写入 `src/examples/dataCollection/logs/g1_dex1_replay.log`
 
 ## 六、说明
 
 - 采集程序会在每集开始时重新激活基座与腰腿关节的钉住约束，避免场景重载后机器人倒下。
+- 左臂锁死在停靠姿态 `[0, 0.127, 0, 1.5708, 0, 0, 0]`（肩 roll ≈ 7.3°，参考 Binjiang_Competition），每个物理步写回 qpos/qvel 并清零电机控制，采集与回放一致。
 - 夹爪为单电机 + 齿轮齿条耦合，采用官方位置阻抗控制（`tau = kp*(q_d - q) - kd*dq`），kp=1500、kd=15、最大夹持力 120N。
 - 夹爪行程 `q_open=-0.020`、`q_close=0.0245`（官方 range 上限）。

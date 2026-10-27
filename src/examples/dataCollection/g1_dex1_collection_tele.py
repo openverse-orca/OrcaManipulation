@@ -249,8 +249,9 @@ def _pin_all_joints_equality(env, agent_name: str) -> bool:
     return True
 
 
-# SouthGrid g1_pick_osc_conf.l_arm["neutral_joint_values"]，采集时左臂就锁在这组角度。
-_L_ARM_DOCK = [0.0, 0.0, 0.0, 1.5708, 0.0, 0.0, 0.0]
+# 参考 Binjiang_Competition g1_dex1_osc_conf.l_arm["neutral_joint_values"]:
+# 肩部 roll 稍外展 0.127rad(~7.3°)，避免左臂贴住躯干/桌面。采集与回放共用。
+_L_ARM_DOCK = [0.0, 0.127, 0.0, 1.5708, 0.0, 0.0, 0.0]
 
 
 def _pin_left_arm(env, agent_name: str) -> bool:
@@ -969,16 +970,8 @@ def main():
     time.sleep(0.1)
 
     # ── DEX1 夹爪控制器（扳机深度→目标开度，阻抗律换算电机力）──────────
-    orca_logger.info("Adding left DEX1 gripper controller")
-    gripper_l = add_dex1_force_pico_controller(
-        data_collection_manager,
-        env,
-        g1_dex1_osc_conf.gripper_l,
-        g1_dex1_osc_conf.base_body,
-        pico_joystick_device,
-        [PicoJoystickKey.X, PicoJoystickKey.Y, PicoJoystickKey.L_TRIGGER],
-    )
-
+    # 左臂/左手全程停靠锁定, 不接控制器, 避免左手电机与钉住约束互扯导致抖动。
+    orca_logger.info("Left arm/gripper disabled (docked)")
     orca_logger.info("Adding right DEX1 gripper controller")
     gripper_r = add_dex1_force_pico_controller(
         data_collection_manager,
@@ -989,7 +982,6 @@ def main():
         [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER],
     )
     if args.gripper_mode == "southgrid":
-        use_southgrid_gripper_mapping(gripper_l)
         use_southgrid_gripper_mapping(gripper_r)
     orca_logger.info(f"[GRIP] 夹爪按键语义: {args.gripper_mode}")
 
@@ -1109,13 +1101,11 @@ def main():
     print("=" * 60, flush=True)
     print("  【操作按键】（与 SouthGrid 一致）", flush=True)
     print("  注意        开始采集前手臂和夹爪不响应手柄", flush=True)
-    print("  左臂移动    保持停靠姿态，不写入数据", flush=True)
+    print("  左臂/左夹爪  已禁用，锁在停靠姿态（左扳机 / X / Y 无效）", flush=True)
     print("  右臂移动    右手柄位姿", flush=True)
     if args.gripper_mode == "southgrid":
-        print("  左夹爪      左扳机按多深夹多紧，松开张开 / 按住Y锁紧 / 按住X解锁", flush=True)
         print("  右夹爪      右扳机按多深夹多紧，松开张开 / 按住B锁紧 / 按住A解锁", flush=True)
     else:
-        print("  左夹爪      左扳机闭合，松开保持 / X全开 / Y半开", flush=True)
         print("  右夹爪      右扳机闭合，松开保持 / A全开 / B半开", flush=True)
     print("  开始采集    轻按一下【左手柄 Grip】", flush=True)
     print("  结束保存    再轻按一下【左手柄 Grip】（无论成功与否均保存）", flush=True)
