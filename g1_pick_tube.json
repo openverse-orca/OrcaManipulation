@@ -12,15 +12,15 @@
     },
     "viewport_camera_transform": {
         "position": [
-            0.04992525652050972,
-            -0.5214629173278809,
-            1.173462986946106
+            0.34208837151527405,
+            0.08341531455516815,
+            3.5551466941833496
         ],
         "rotation": [
-            0.9545832176791063,
-            -0.29737248706632785,
-            -0.005488144642248391,
-            0.017617171446534304
+            0.5378404768568213,
+            -0.4777765196621602,
+            -0.461297117148685,
+            0.5192900811918643
         ]
     },
     "actors": [
@@ -202,52 +202,7 @@
                                         ],
                                         "scale": 1.0
                                     },
-                                    "asset_path": "assets/e071469a36d3c8aa/testtube_operation/testtube_operation/prop/testtube_context/testtube_15ml",
-                                    "entity_overrides": [
-                                        {
-                                            "entity_path": [
-                                                {
-                                                    "name": "TestTube_15ml",
-                                                    "index": 0
-                                                },
-                                                {
-                                                    "name": "15cm",
-                                                    "index": 0
-                                                },
-                                                {
-                                                    "name": "phy",
-                                                    "index": 1
-                                                },
-                                                {
-                                                    "name": "1",
-                                                    "index": 0
-                                                }
-                                            ],
-                                            "group_overrids": [
-                                                {
-                                                    "type_id": "{39E400EC-2015-416D-8483-3C64041787A5}",
-                                                    "type_index": 0,
-                                                    "property_overrides": [
-                                                        {
-                                                            "name": "friction.x",
-                                                            "value": 2.0,
-                                                            "type": "float"
-                                                        },
-                                                        {
-                                                            "name": "friction.y",
-                                                            "value": 0.009999999776482582,
-                                                            "type": "float"
-                                                        },
-                                                        {
-                                                            "name": "friction.z",
-                                                            "value": 0.004999999888241291,
-                                                            "type": "float"
-                                                        }
-                                                    ]
-                                                }
-                                            ]
-                                        }
-                                    ]
+                                    "asset_path": "assets/e071469a36d3c8aa/testtube_operation/testtube_operation/prop/testtube_context/testtube_15ml"
                                 }
                             ]
                         },
@@ -384,20 +339,41 @@
             "type": "AssetActor",
             "transform": {
                 "position": [
-                    0.01747552491724491,
-                    -0.03443277254700661,
-                    0.017848119139671326
+                    0.023694157600402832,
+                    -0.03336058929562569,
+                    -3.689728487188404e-07
                 ],
                 "rotation": [
-                    0.007578419618491674,
                     0.0,
                     0.0,
-                    -0.9999712833657205
+                    0.0,
+                    1.0
                 ],
                 "scale": 1.0
             },
             "asset_path": "assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda",
             "entity_overrides": [
+                {
+                    "entity_path": [],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "translate.x",
+                                    "value": 0.023694157600402832,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.z",
+                                    "value": 180.0,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                },
                 {
                     "entity_path": [
                         {
@@ -418,11 +394,87 @@
                         },
                         {
                             "name": "waist_yaw_link_rev_1_0",
-                            "index": 5
+                            "index": 3
                         },
                         {
                             "name": "waist_roll_link_rev_1_0",
-                            "index": 1
+                            "index": 0
+                        },
+                        {
+                            "name": "torso_link_rev_1_0",
+                            "index": 0
+                        },
+                        {
+                            "name": "head_camera1",
+                            "index": 10
+                        },
+                        {
+                            "name": "head_camera2",
+                            "index": 0
+                        },
+                        {
+                            "name": "cameras",
+                            "index": 0
+                        },
+                        {
+                            "name": "head_cam",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "IsRecording",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "Enable",
+                                    "value": true,
+                                    "type": "bool"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "mujoco_wrap",
+                            "index": 0
+                        },
+                        {
+                            "name": "rootPrim",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "pelvis",
+                            "index": 0
+                        },
+                        {
+                            "name": "waist_yaw_link_rev_1_0",
+                            "index": 3
+                        },
+                        {
+                            "name": "waist_roll_link_rev_1_0",
+                            "index": 0
                         },
                         {
                             "name": "torso_link_rev_1_0",
@@ -430,11 +482,11 @@
                         },
                         {
                             "name": "right_shoulder_pitch_link",
-                            "index": 9
+                            "index": 7
                         },
                         {
                             "name": "right_shoulder_roll_link",
-                            "index": 0
+                            "index": 1
                         },
                         {
                             "name": "right_shoulder_yaw_link",
@@ -442,11 +494,11 @@
                         },
                         {
                             "name": "right_elbow_link",
-                            "index": 1
+                            "index": 0
                         },
                         {
                             "name": "right_wrist_roll_link",
-                            "index": 0
+                            "index": 1
                         },
                         {
                             "name": "right_wrist_pitch_link",
@@ -458,15 +510,15 @@
                         },
                         {
                             "name": "camera_right_body1",
-                            "index": 2
+                            "index": 3
                         },
                         {
                             "name": "camera_right_body2",
-                            "index": 1
+                            "index": 0
                         },
                         {
                             "name": "cameras",
-                            "index": 1
+                            "index": 0
                         },
                         {
                             "name": "camera_right",
@@ -527,87 +579,11 @@
                         },
                         {
                             "name": "waist_yaw_link_rev_1_0",
-                            "index": 5
+                            "index": 3
                         },
                         {
                             "name": "waist_roll_link_rev_1_0",
-                            "index": 1
-                        },
-                        {
-                            "name": "torso_link_rev_1_0",
                             "index": 0
-                        },
-                        {
-                            "name": "head_camera1",
-                            "index": 6
-                        },
-                        {
-                            "name": "head_camera2",
-                            "index": 1
-                        },
-                        {
-                            "name": "cameras",
-                            "index": 0
-                        },
-                        {
-                            "name": "head_cam",
-                            "index": 0
-                        }
-                    ],
-                    "group_overrids": [
-                        {
-                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
-                            "type_index": 0,
-                            "property_overrides": [
-                                {
-                                    "name": "ColorCamera",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "UseNvEnc",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "IsRecording",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "Enable",
-                                    "value": true,
-                                    "type": "bool"
-                                }
-                            ]
-                        }
-                    ]
-                },
-                {
-                    "entity_path": [
-                        {
-                            "name": "mujoco_wrap",
-                            "index": 0
-                        },
-                        {
-                            "name": "rootPrim",
-                            "index": 0
-                        },
-                        {
-                            "name": "pelvis",
-                            "index": 0
-                        },
-                        {
-                            "name": "pelvis",
-                            "index": 0
-                        },
-                        {
-                            "name": "waist_yaw_link_rev_1_0",
-                            "index": 5
-                        },
-                        {
-                            "name": "waist_roll_link_rev_1_0",
-                            "index": 1
                         },
                         {
                             "name": "torso_link_rev_1_0",
@@ -615,7 +591,7 @@
                         },
                         {
                             "name": "left_shoulder_pitch_link",
-                            "index": 1
+                            "index": 6
                         },
                         {
                             "name": "left_shoulder_roll_link",
@@ -627,31 +603,31 @@
                         },
                         {
                             "name": "left_elbow_link",
-                            "index": 1
+                            "index": 0
                         },
                         {
                             "name": "left_wrist_roll_link",
-                            "index": 0
+                            "index": 2
                         },
                         {
                             "name": "left_wrist_pitch_link",
-                            "index": 1
+                            "index": 0
                         },
                         {
                             "name": "left_wrist_yaw_link",
-                            "index": 1
+                            "index": 2
                         },
                         {
                             "name": "camera_left_body1",
-                            "index": 0
+                            "index": 2
                         },
                         {
                             "name": "camera_left_body2",
-                            "index": 0
+                            "index": 1
                         },
                         {
                             "name": "cameras",
-                            "index": 0
+                            "index": 1
                         },
                         {
                             "name": "camera_left",
@@ -703,8 +679,8 @@
             "project_name": "testtube_operation"
         },
         {
-            "name": "宇树夹试管(改摄像头)",
-            "tech_name": "g1_dex_tube_666666666",
+            "name": "宇树G1试管夹取机器人",
+            "tech_name": "g1_dex_tube_11234568",
             "author": "admin_test_2",
             "project_name": "default_project"
         }
