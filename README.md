@@ -69,7 +69,7 @@
 
 1. 启动 Orca，加载场景文件 `src/scene/g1_pick_tube.json`，确认机器人 `g1_pick_usda` 已加载。
 2. 连接 PICO 手柄，确认手柄已被识别。
-3. 使用已激活的 `orcalab_lerobot` 环境（orca-gym 26.9.1，支持相机推流录制），在仓库根目录执行：
+3. 使用已激活的 `orcalab` 环境，在仓库根目录执行：
 
 ```bash
 # 1. 进入采集脚本目录（在仓库根目录下执行）
