@@ -7,13 +7,9 @@
 图像 (3, 480, 640)，键名 cam_head / cam_wrist_r / cam_wrist_l。
 
 DEX1 每只手只有一个电机。joint1 的开合按 q_open→q_close 归一化到 [0, 1] 后，
-同时写入该手的 inner 和 outer。action 与 SouthGrid 一样取下一帧的 state。
+同时写入该手的 inner 和 outer。action 取下一帧的 state。
 """
 from __future__ import annotations
-
-import importlib.util
-import os
-import sys
 
 import numpy as np
 
@@ -27,50 +23,17 @@ _STATE_NAMES = [
     "r_grip_inner_norm", "r_grip_outer_norm",
 ]
 
-# 与 SouthGrid lerobot_camera.DEFAULT_CAMERA_MAP / WRIST_L_CAMERA 一致。
+# 与 lerobot_camera.DEFAULT_CAMERA_MAP / WRIST_L_CAMERA 一致。
 CAMERA_BY_ROLE = {
     "head": ("camera_head_color", "cam_head", 7070),
     "wrist_l": ("camera_wrist_l_color", "cam_wrist_l", 7072),
     "wrist_r": ("camera_wrist_r_color", "cam_wrist_r", 7074),
 }
 
+# LeRobot 写盘与相机模块已内置在本包内，无需外部依赖。
+from dataStorage import lerobot_data_storage as _lerobot_mod  # noqa: E402
 
-def _load_southgrid_lerobot():
-    """把 SouthGrid 的 LeRobot 写盘模块挂进当前 dataStorage 包。
-
-    默认要求 SouthGrid 与本仓库同级; 布局不同时可用 SOUTHGRID_ROOT 指定。
-    """
-    south_root = os.environ.get("SOUTHGRID_ROOT")
-    if south_root:
-        south_ds = os.path.abspath(os.path.join(south_root, "src", "dataStorage"))
-    else:
-        south_ds = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "..", "..", "SouthGrid", "src", "dataStorage")
-        )
-    if not os.path.isdir(south_ds):
-        raise ImportError(f"找不到 SouthGrid 数据模块: {south_ds}")
-
-    def _load(mod_name: str, filename: str):
-        cached = sys.modules.get(mod_name)
-        if cached is not None and getattr(cached, "__file__", None):
-            return cached
-        path = os.path.join(south_ds, filename)
-        spec = importlib.util.spec_from_file_location(mod_name, path)
-        if spec is None or spec.loader is None:
-            raise ImportError(f"无法加载 {path}")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[mod_name] = module
-        spec.loader.exec_module(module)
-        return module
-
-    camera = _load("dataStorage.lerobot_camera", "lerobot_camera.py")
-    storage = _load("dataStorage.lerobot_data_storage", "lerobot_data_storage.py")
-    return camera, storage
-
-
-_camera_mod, _lerobot_mod = _load_southgrid_lerobot()
-
-# 相机走 OrcaLab 9.1 的录制器接口（与 OrcaManip/src/teleop 相同），写盘仍用 SouthGrid。
+# 相机走 OrcaLab 9.1 的录制器接口，写盘由内置模块完成。
 from sensor import camera_stream as _stream  # noqa: E402
 
 _lerobot_mod.capture_frame_with_idx = _stream.capture_frame_with_idx
