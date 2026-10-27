@@ -1,0 +1,14 @@
+{
+  "mot": {
+    "keys": 1649,
+    "missing": [],
+    "unexpected": [],
+    "shape_mismatches": {}
+  },
+  "proprio_encoder": {
+    "keys": 2,
+    "missing": [],
+    "unexpected": [],
+    "shape_mismatches": {}
+  }
+}

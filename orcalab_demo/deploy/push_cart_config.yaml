@@ -1,0 +1,287 @@
+output_dir: /efm-nas/efm-nas/group-pxj/shaoting.zhao/Exps/FastWAM-wb/runs/wb_posttrain_latest_midtrain_fk_30demo/wam-posttrain-push_cart-midtrain0918-fk005-30demo-fullsteps-bs16-16g-retry1-09220158
+batch_size: 16
+num_workers: 8
+shard_datasets_by_node: false
+shard_group_size: 1
+lr_scheduler_type: cosine
+learning_rate: 0.0001
+num_epochs: 50
+max_steps: 4850
+log_every: 50
+save_every: 1000
+save_final: true
+eval_every: 500
+eval_at_start: false
+eval_num_inference_steps: 10
+gradient_accumulation_steps: 1
+mixed_precision: bf16
+seed: 42
+max_grad_norm: 1.0
+weight_decay: 0.01
+resume: /efm-nas/efm-nas/group-pxj/shaoting.zhao/Exps/FastWAM-wb/runs/wb_midtrain_latest_archive_pretrained/wam-midtrain-pico-0918-warmstart-fixed-bs24-32g-nascache-09210219/checkpoints/weights/step_020560.pt
+wandb:
+  enabled: true
+  workspace: null
+  project: fastwam-wb
+  name: wam-posttrain-push_cart-midtrain0918-fk005-30demo-fullsteps-bs16-16g-retry1-09220158
+  group: wb_posttrain_latest_midtrain_fk_30demo
+  mode: online
+training_dynamics:
+  enabled: false
+  activation:
+    enabled: false
+  grad:
+    enabled: true
+  optimizer:
+    enabled: true
+  weight:
+    enabled: true
+data:
+  _target_: fastwam.datasets.wb_dataset.WBMixtureDataset
+  _recursive_: false
+  datasets_root: /efm-vepfs/group-pxj/shaoting.zhao/Projects/WB-WAM/datasets
+  bad_episodes_path: /efm-vepfs/group-pxj/shaoting.zhao/Projects/WB-WAM/datasets/bad_episodes.json
+  raw_state_dim: 110
+  raw_action_dim: 136
+  state_dim: 72
+  action_dim: 72
+  proprio_dim: 96
+  action_target_dim: 96
+  model_dim_indices: null
+  state_slices:
+  - states[9:38]
+  - states[107:110]
+  - states[67:87]
+  - states[87:107]
+  action_slices:
+  - action[104:133]
+  - action[133:136]
+  - action[64:84]
+  - action[84:104]
+  action_representation: absolute
+  relative_joint_ranges: []
+  relative_action_reference: observation
+  num_frames: 33
+  action_video_freq_ratio: 4
+  video_size:
+  - 224
+  - 224
+  camera_key: observation.images.stereo_left
+  image_augmentation:
+    enabled: true
+    random_resized_crop:
+      probability: 1.0
+      scale:
+      - 0.9
+      - 1.0
+      ratio:
+      - 0.95
+      - 1.05
+    color_jitter:
+      probability: 0.8
+      brightness: 0.1
+      contrast: 0.1
+      saturation: 0.1
+      hue: 0.02
+    low_light_noise:
+      probability: 0.25
+      exposure:
+      - 0.9
+      - 1.0
+      gamma:
+      - 1.0
+      - 1.2
+      shot_noise_peak:
+      - 2048.0
+      - 8192.0
+      read_noise_std:
+      - 0.0
+      - 0.006
+  val_set_proportion: 0.0
+  is_training_set: true
+  pretrained_norm_stats: null
+  compute_norm_stats: true
+  norm_default_mode: q01/q99
+  use_stepwise_action_norm: true
+  norm_exception_mode: null
+  norm_missing_key_mode: error
+  dummy_clip_default:
+  - -5.0
+  - 5.0
+  norm_tail_scale: 0.075
+  stats_downsample_rate: 1
+  use_weight_normalization: true
+  use_weight_for_sampling: false
+  text_embedding_cache_dir: ./text_embeds_cache/wan22_umt5_xxl/wb_v3_224/ctx192_wbfullv1
+  text_embedding_cache_suffix: wan22ti2v5b_wbfullv1
+  use_text_embed_cache: true
+  context_len: 192
+  instruction_template: 'The task is: {task}
+
+    {visual_description}
+
+    {control_description}'
+  override_instruction: null
+  video_backend: null
+  tolerance_s: null
+  shard_cache_size: 2
+  strict_video_decode: false
+  datasets:
+  - name: sonic_0825_push_cart
+    root: /efm-vepfs/group-pxj/shaoting.zhao/Projects/WB-WAM/datasets/sonic_0825/data/handle_the_cart_and_move_forward_082501_lerobot_v3_20hz
+    weight: 1.0
+    camera_key: observation.images.primary
+    val_split_mode: task_stratified
+    exclude_episode_indices:
+    - 0
+    - 1
+    - 2
+    - 5
+    - 6
+    - 7
+    - 8
+    - 9
+    - 10
+    - 12
+    - 15
+    - 16
+    - 18
+    - 19
+    - 20
+    - 21
+    - 22
+    - 23
+    - 24
+    - 26
+    - 30
+    - 32
+    - 33
+    - 34
+    - 36
+    - 37
+    - 38
+    - 39
+    - 40
+    - 41
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    - 47
+    - 48
+    - 49
+    - 50
+    - 51
+    - 52
+    - 55
+    - 56
+    - 58
+    - 59
+    - 60
+    - 61
+    - 62
+    - 63
+    - 65
+    - 66
+    - 67
+    - 68
+    - 70
+    - 72
+    - 73
+    - 74
+    - 76
+    - 78
+    - 79
+    - 80
+    - 82
+    - 83
+    - 84
+    - 85
+    - 87
+    - 88
+    - 89
+    - 93
+    - 95
+    - 97
+    - 101
+    - 102
+    fk_joint_space: isaaclab_delta
+    override_instruction: Push the chair or cart forward.
+    instruction:
+      visual_description: The video is recorded from the point of view of a Unitree
+        G1 robot using its primary camera and may show the robot's arms and two Wuji
+        dexterous hands.
+      control_description: The predicted motion controls the Unitree G1 body using
+        twenty-nine body joint positions plus root roll, root pitch, and yaw angular
+        velocity, and two Wuji dexterous hands using twenty joint positions per side.
+  return_fk_targets: true
+model:
+  _target_: wbwam.runtime.create_wbwam_optional_idm
+  model_id: Wan-AI/Wan2.2-TI2V-5B
+  redirect_common_files: false
+  tokenizer_model_id: Wan-AI/Wan2.1-T2V-1.3B
+  tokenizer_max_len: 192
+  load_text_encoder: false
+  proprio_dim: 96
+  mot_checkpoint_mixed_attn: false
+  compile_training_denoise: true
+  action_idm_prob: 0.5
+  action_dit_pretrained_path: /efm-nas/efm-nas/group-pxj/shaoting.zhao/Models/FastWAM/checkpoints/ActionDiT_linear_interp_Wan22_alphascale_1024hdim.pt
+  skip_dit_load_from_pretrain: false
+  video_dit_config:
+    has_image_input: false
+    patch_size:
+    - 1
+    - 2
+    - 2
+    in_dim: 48
+    hidden_dim: 3072
+    ffn_dim: 14336
+    freq_dim: 256
+    text_dim: 4096
+    out_dim: 48
+    num_heads: 24
+    attn_head_dim: 128
+    num_layers: 30
+    eps: 1.0e-06
+    seperated_timestep: true
+    require_clip_embedding: false
+    require_vae_embedding: false
+    fuse_vae_embedding_in_latents: true
+    use_gradient_checkpointing: false
+    video_attention_mask_mode: first_frame_causal
+    action_conditioned: false
+    action_dim: 96
+    action_group_causal_mask_mode: group_diagonal
+  action_dit_config:
+    action_dim: 96
+    hidden_dim: 1024
+    ffn_dim: 4096
+    num_heads: 24
+    attn_head_dim: 128
+    num_layers: 30
+    text_dim: 4096
+    freq_dim: 256
+    eps: 1.0e-06
+    use_gradient_checkpointing: false
+  video_scheduler:
+    train_shift: 5.0
+    infer_shift: 5.0
+    num_train_timesteps: 1000
+  action_scheduler:
+    train_shift: 5.0
+    infer_shift: 5.0
+    num_train_timesteps: 1000
+  loss:
+    lambda_action: 1.0
+fk_link_loss:
+  enabled: true
+  weight: 0.05
+  position_scale: 0.3
+  orientation_weight: 1.0
+  orientation_scale: 0.4
+  group_weights:
+    upper: 1.0
+    lower: 1.0
+    torso: 1.0
