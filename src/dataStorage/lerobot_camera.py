@@ -1,6 +1,6 @@
 """Camera helpers for LeRobot data collection.
 
-OrcaLab streams configured cameras over WebSocket. This module provides camera
+Orca streams configured cameras over WebSocket. This module provides camera
 maps, live-frame capture, resolution detection, and timestamp-aligned MP4 frame
 iteration. A camera map has the form
 ``{environment_camera_name: (dataset_key, port), ...}``.
@@ -55,7 +55,7 @@ def wait_ports_open(
     timeout: float,
     host: str = "127.0.0.1",
 ) -> dict:
-    """等待 OrcaLab 打开各相机推流端口（TCP 可连），返回 {env_name: port}。
+    """等待 Orca 打开各相机推流端口（TCP 可连），返回 {env_name: port}。
 
     启动 CameraWrapper 前会轮询各 TCP 端口，直到就绪或达到超时时间。
 
@@ -86,7 +86,7 @@ def wait_ports_open(
     if pending:
         _logger.warning(
             "[相机] 以下端口超时未就绪，将跳过：%s\n"
-            "        请确认 OrcaLab 已加载带相机的场景且开始渲染。",
+            "        请确认 Orca 已加载带相机的场景且开始渲染。",
             sorted(pending.values()),
         )
     return ready
@@ -254,7 +254,7 @@ def extract_frames_from_mp4(
 ) -> list[dict]:
     """从服务端录制的 MP4 按墙钟时间戳逐帧提取 RGB 图像。
 
-    OrcaLab 在 {episode_video_dir}/video/{cam_name}.mp4 录制各路视频。
+    Orca 在 {episode_video_dir}/video/{cam_name}.mp4 录制各路视频。
     对于每个状态采集时刻 wall_timestamps_s[i]，计算自 ep_start_wall_s 的偏移量，
     对应到视频帧索引并读取，resize 到 target_hw。
 

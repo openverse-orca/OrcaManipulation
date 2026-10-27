@@ -33,7 +33,7 @@ CAMERA_BY_ROLE = {
 # LeRobot 写盘与相机模块已内置在本包内，无需外部依赖。
 from dataStorage import lerobot_data_storage as _lerobot_mod  # noqa: E402
 
-# 相机走 OrcaLab 9.1 的录制器接口，写盘由内置模块完成。
+# 相机走 Orca 9.1 的录制器接口，写盘由内置模块完成。
 from sensor import camera_stream as _stream  # noqa: E402
 
 _lerobot_mod.capture_frame_with_idx = _stream.capture_frame_with_idx

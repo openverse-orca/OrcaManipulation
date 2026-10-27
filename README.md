@@ -1,6 +1,6 @@
 # G1 + DEX1-1 试管抓取遥操作数据采集
 
-本分支 `g1_pick_tube` 提供 Unitree G1（29DOF）+ DEX1-1 夹爪在试管场景下的 VR 遥操作数据采集与回放方案，包含采集/回放代码与 OrcaLab 场景文件。
+本分支 `g1_pick_tube` 提供 Unitree G1（29DOF）+ DEX1-1 夹爪在试管场景下的 VR 遥操作数据采集与回放方案，包含采集/回放代码与 Orca 场景文件。
 
 ## 一、目录结构
 
@@ -35,11 +35,11 @@
 
 ### 资产订阅 + 场景文件
 
-1. 打开 OrcaLab，进入「资产中心」。
+1. 打开 Orca，进入「资产中心」。
 2. 搜索并订阅以下 **两个资产**：
    - **试管操作**（`testtube_operation`）—— 场景包
    - **宇树G1试管夹取机器人**（`g1_dex_tube_11234568`）—— 机器人
-3. 订阅完成后，在 OrcaLab 中加载场景文件 `src/scene/g1_pick_tube.json`，它会还原：
+3. 订阅完成后，在 Orca 中加载场景文件 `src/scene/g1_pick_tube.json`，它会还原：
    - 关卡：`testtube_operation`
    - Actors：`Group`、`g1_pick_usda`
    - 相机机位与视角
@@ -55,7 +55,7 @@
 
 ### 1. 启动
 
-1. 启动 OrcaLab，加载场景文件 `src/scene/g1_pick_tube.json`，确认机器人 `g1_pick_usda` 已加载。
+1. 启动 Orca，加载场景文件 `src/scene/g1_pick_tube.json`，确认机器人 `g1_pick_usda` 已加载。
 2. 连接 PICO 手柄，确认手柄已被识别。
 3. 使用 `orcalab_lerobot` 环境（orca-gym 26.9.1，支持相机推流录制），在仓库根目录执行：
 
@@ -144,7 +144,7 @@ state/action 为 11 维：`r_pos(3), r_quat_xyzw(4), l_grip_inner_norm, l_grip_o
 
 ### 只有 HDF5、没有 mp4 时排查
 
-视频走 OrcaLab 相机推流，任一环节不满足都会**静默降级为只存 HDF5**（日志里出现 `[相机] 无可用相机, 本集仅保存 HDF5`）。按顺序检查：
+视频走 Orca 相机推流，任一环节不满足都会**静默降级为只存 HDF5**（日志里出现 `[相机] 无可用相机, 本集仅保存 HDF5`）。按顺序检查：
 
 | # | 检查项 | 说明 |
 |---|---|---|

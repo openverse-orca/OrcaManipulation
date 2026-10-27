@@ -345,7 +345,7 @@ def apply_grasp_solver_tuning(env) -> bool:
     """强制抓取求解器参数，防场景合并覆盖 XML option。
 
     MuJoCo 软摩擦约束存在"爬滑"：夹持法向力足够时物体仍以恒定速度滑出。
-    OrcaLab 场景合并可能用场景 option 覆盖机器人 XML 的 option，故运行时
+    Orca 场景合并可能用场景 option 覆盖机器人 XML 的 option，故运行时
     直接写本地 mjModel.opt 强制生效。
     """
     gym = getattr(env, "gym", None) or getattr(
@@ -581,7 +581,7 @@ def use_southgrid_gripper_mapping(gripper, latch_rate: float = 0.5):
 
 
 # ── 相机推流（orcagym 26.9.1 VideoRecorderManager: 连接+缓冲+remux 一体）─────
-# 旧引擎接口 BeginSaveMp4File 已被 OrcaLab 移除(UNIMPLEMENTED),
+# 旧引擎接口 BeginSaveMp4File 已被 Orca 移除(UNIMPLEMENTED),
 # 改用 start_streaming 推流 + save_streaming 按帧区间 remux 出 MP4。
 
 # 逻辑相机角色关键词 → 后端注册名需包含的 token（后端名带 uuid 后缀）
@@ -748,7 +748,7 @@ def ensure_camera_streams(
             "排查: 1) 环境需 orcalab_lerobot(26.9.1) "
             "2) 场景中相机组件勾选 Enable/ColorCamera/IsRecording "
             "3) 相机名需含 head_cam|camera_left|camera_right "
-            "4) 在 OrcaLab 中加载 src/scene/g1_pick_tube.json 还原相机"
+            "4) 在 Orca 中加载 src/scene/g1_pick_tube.json 还原相机"
         )
     return online
 
@@ -762,7 +762,7 @@ def main():
     parser.add_argument("--level", type=str, default="default", help="场景的名称")
     parser.add_argument(
         "--agent_name", default="g1_pick_usda",
-        help="OrcaLab 场景中的 agent 名称（须与资产前缀一致）",
+        help="Orca 场景中的 agent 名称（须与资产前缀一致）",
     )
     parser.add_argument(
         "--task_config", default="example.yaml", help="场景配置 YAML 文件名"

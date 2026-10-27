@@ -23,7 +23,7 @@ class G1Dex1DataStorage(AbstractDataStorage):
         time_step                 仿真时间戳
     视频每集保存为 video/<逻辑相机名>.mp4（orcagym 26.9.1 相机推流 remux）。
 
-    旧引擎接口 begin_save_video(BeginSaveMp4File) 已被 OrcaLab 移除
+    旧引擎接口 begin_save_video(BeginSaveMp4File) 已被 Orca 移除
     (gRPC UNIMPLEMENTED)，此处覆写为 VideoRecorderManager 方案：
     录制区间按帧的 simulate_index 圈定，与 HDF5 数据同集对齐。
     """

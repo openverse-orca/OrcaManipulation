@@ -1,6 +1,6 @@
 """Camera helpers for LeRobot data collection.
 
-OrcaLab streams each camera as H.264 over WebSocket. This module opens the
+Orca streams each camera as H.264 over WebSocket. This module opens the
 streams through OrcaGym's recorder manager, waits for decodable frames, and
 returns the latest decoded RGB image of each camera. A camera map has the form
 ``{environment_camera_name: (dataset_key, port), ...}``; the port is matched
