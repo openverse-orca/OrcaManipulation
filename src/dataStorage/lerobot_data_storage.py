@@ -77,8 +77,69 @@ def _import_lerobot_dataset():
             errors.append(f"  {mod}: {type(e).__name__}: {e}")
     raise ImportError(
         "无法导入 LeRobotDataset。请确认当前解释器已安装 lerobot 0.3.x"
-        f"（当前: {sys.executable}）。底层错误:\n" + "\n".join(errors)
+        f"（当前: {sys.executable}）。"
+        '安装: pip install "lerobot==0.3.3" --no-deps\n底层错误:\n' + "\n".join(errors)
     )
+
+
+def _save_episode_data_only(dataset) -> int:
+    """保存本集 parquet + meta，不编码视频。
+
+    官方 lerobot 0.3.x 没有 save_episode_data_only（仅 Orca 定制版新增），
+    这里按相同步骤自实现，两种安装都能用。
+    """
+    if hasattr(dataset, "save_episode_data_only"):
+        return dataset.save_episode_data_only()
+
+    from lerobot.datasets.compute_stats import compute_episode_stats
+    from lerobot.datasets.utils import (
+        check_timestamps_sync,
+        get_episode_data_index,
+        validate_episode_buffer,
+    )
+
+    episode_buffer = dataset.episode_buffer
+    validate_episode_buffer(episode_buffer, dataset.meta.total_episodes, dataset.features)
+
+    episode_length = episode_buffer.pop("size")
+    tasks = episode_buffer.pop("task")
+    episode_tasks = list(set(tasks))
+    episode_index = episode_buffer["episode_index"]
+
+    episode_buffer["index"] = np.arange(
+        dataset.meta.total_frames, dataset.meta.total_frames + episode_length
+    )
+    episode_buffer["episode_index"] = np.full((episode_length,), episode_index)
+
+    for task in episode_tasks:
+        if dataset.meta.get_task_index(task) is None:
+            dataset.meta.add_task(task)
+    episode_buffer["task_index"] = np.array(
+        [dataset.meta.get_task_index(task) for task in tasks]
+    )
+
+    for key, ft in dataset.features.items():
+        if key in ("index", "episode_index", "task_index") or ft["dtype"] in ("image", "video"):
+            continue
+        episode_buffer[key] = np.stack(episode_buffer[key])
+
+    dataset._wait_image_writer()
+    dataset._save_episode_table(episode_buffer, episode_index)
+    ep_stats = compute_episode_stats(episode_buffer, dataset.features)
+    dataset.meta.save_episode(episode_index, episode_length, episode_tasks, ep_stats)
+
+    ep_data_index = get_episode_data_index(dataset.meta.episodes, [episode_index])
+    ep_data_index_np = {k: t.numpy() for k, t in ep_data_index.items()}
+    check_timestamps_sync(
+        episode_buffer["timestamp"],
+        episode_buffer["episode_index"],
+        ep_data_index_np,
+        dataset.fps,
+        dataset.tolerance_s,
+    )
+
+    dataset.episode_buffer = dataset.create_episode_buffer()
+    return episode_index
 
 
 def _import_video_encoding_manager():
@@ -721,7 +782,7 @@ class LeRobotDatasetWriter:
 
         _log.info("[LeRobot] 正在写入回合数据与元信息…")
         t0 = time.perf_counter()
-        ep_idx = self._dataset.save_episode_data_only()
+        ep_idx = _save_episode_data_only(self._dataset)
         t_meta = time.perf_counter() - t0
 
         # Statistics images are no longer needed after episode finalization.

@@ -29,8 +29,14 @@
 ### 依赖与环境
 
 - Python 3.12，`orca-gym >= 26.9.1`（相机推流与录制器接口从 26.9.1 起提供），推荐直接使用 `orcalab_lerobot` 环境
-- 数据集写盘依赖 `lerobot` **0.3.x**（`pip install "lerobot>=0.3.0,<0.4"`；0.4 及以上 API 不兼容，会报 `无法导入 LeRobotDataset`）
 - 安装依赖：`pip install -r requirements.txt`
+- 再单独安装 `lerobot` **0.3.x**（官方包强依赖 `wandb` 等训练组件，数采用不到，用 `--no-deps` 跳过）：
+  ```bash
+  pip install "lerobot==0.3.3" --no-deps
+  # 验证
+  python -c "from lerobot.datasets.lerobot_dataset import LeRobotDataset; print('OK')"
+  ```
+  0.4 及以上 API 不兼容，会报 `无法导入 LeRobotDataset`。
 
 ## 二、部署步骤
 

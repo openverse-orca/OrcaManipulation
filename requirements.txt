@@ -1,5 +1,4 @@
 orca-gym>=26.9.1
-lerobot>=0.3.0,<0.4
 numpy
 scipy
 opencv-python
@@ -10,3 +9,13 @@ h5py
 numba
 termcolor>=2.4.0
 pyyaml
+
+# LeRobot 数据集写盘所需依赖（lerobot 本体单独安装，见 README）：
+#   pip install "lerobot==0.3.3" --no-deps
+datasets<=3.6.0,>=2.19.0
+huggingface-hub>=0.34.2
+jsonlines>=4.0.0
+packaging>=24.2
+pillow
+torch>=2.2.1,<2.8
+torchvision>=0.21,<0.23
