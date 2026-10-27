@@ -7,7 +7,7 @@
 ```
 ├── README.md                    # 本文档
 ├── requirements.txt             # Python 依赖
-├── install.sh                   # 一键安装依赖
+├── verify_environment.py        # 环境依赖自检
 ├── pyproject.toml               # 包配置
 ├── LICENSE                      # MIT
 └── src/                         # 采集/回放代码与依赖
@@ -30,17 +30,18 @@
 
 ### 依赖与环境
 
-- Python 3.12，`orca-gym >= 26.9.1`（相机推流与录制器接口从 26.9.1 起提供），推荐直接使用 `orcalab_lerobot` 环境
-- 一键安装依赖：
+- Python 3.12
+- 在仓库根目录安装依赖（清华源）：
   ```bash
-  bash install.sh
+  python -m pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+  python -m pip install "lerobot==0.3.3" --no-deps -i https://pypi.tuna.tsinghua.edu.cn/simple
   ```
-  等价于 `pip install -r requirements.txt` + `pip install "lerobot==0.3.3" --no-deps`。`lerobot` 官方包强依赖 `wandb` 等训练组件，数采用不到，且部分镜像源缺 `wandb` 会导致解析失败，所以单独用 `--no-deps` 安装；0.4 及以上 API 不兼容，会报 `无法导入 LeRobotDataset`。
-- `torch` / `torchvision` 只用 CPU 版即可；想省流量可先装 CPU 版再执行 `bash install.sh`：
+  `lerobot` 官方包强依赖 `wandb` 等训练组件，数采用不到，且部分镜像源缺 `wandb` 会导致解析失败，所以单独用 `--no-deps` 安装；0.4 及以上 API 不兼容，会报 `无法导入 LeRobotDataset`。
+- 安装完成后自检：
   ```bash
-  pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cpu
-  bash install.sh
+  python verify_environment.py
   ```
+  会逐项核对 `requirements.txt` 的版本、`lerobot` 版本以及关键模块能否导入，全部通过时输出 `Environment verification PASSED` 并退出码为 0。
 
 ## 二、部署步骤
 
@@ -68,7 +69,7 @@
 
 1. 启动 Orca，加载场景文件 `src/scene/g1_pick_tube.json`，确认机器人 `g1_pick_usda` 已加载。
 2. 连接 PICO 手柄，确认手柄已被识别。
-3. 使用 `orcalab_lerobot` 环境（orca-gym 26.9.1，支持相机推流录制），在仓库根目录执行：
+3. 使用已激活的 `orcalab_lerobot` 环境（orca-gym 26.9.1，支持相机推流录制），在仓库根目录执行：
 
 ```bash
 # 1. 进入采集脚本目录（在仓库根目录下执行）
@@ -77,7 +78,7 @@ cd src/examples/dataCollection
 # 2. 采集 10 条数据
 #    --num_episodes 10 表示采集 10 集（10 条），采满自动退出
 #    每集：按一次左 Grip 开始录制，再按一次左 Grip 结束并落盘
-~/miniconda3/envs/orcalab_lerobot/bin/python -u g1_dex1_collection_tele.py \
+python -u g1_dex1_collection_tele.py \
     --orcagym_addr localhost:50051 \
     --agent_name g1_pick_usda \
     --pos_scale 0.8 \
@@ -131,7 +132,7 @@ cd src/examples/dataCollection
 | B | 右夹爪闭合下限抬升（保持夹紧） |
 | 右手柄位姿 | 控制右臂 |
 
-> 左臂与左手在采集、回放中均不接控制器，锁在安全停靠姿态（肩 roll ≈ 7.3°）。
+> 左臂与左手在采集、回放中均不接控制器，锁在安全停靠姿态。
 > 左手柄位姿、左扳机与 X / Y 键不再生效，左手始终保持在停靠开度。
 
 ## 四、数据存储结构
@@ -153,21 +154,8 @@ state/action 为 11 维：`r_pos(3), r_quat_xyzw(4), l_grip_inner_norm, l_grip_o
 - 每完成一集自动写一个 `episode_XXXXXX.parquet` 与对应视频
 - `--lerobot_out` 可区分任务或批次，如 `--lerobot_out dataset/tube_v1`
 - 日志写入 `src/examples/dataCollection/logs/g1_dex1_collection.log`
-- `dataset/g1_dex1` 里的示例数据随仓库提交；`lerobot_datasets/` 与 `logs/` 仍被 `.gitignore` 忽略
+- `dataset/g1_dex1` 里的示例数据随仓库提交；`dataset/` 下其他目录与 `logs/` 仍被 `.gitignore` 忽略
 
-### 只有 HDF5、没有 mp4 时排查
-
-视频走 Orca 相机推流，任一环节不满足都会**静默降级为只存 HDF5**（日志里出现 `[相机] 无可用相机, 本集仅保存 HDF5`）。按顺序检查：
-
-| # | 检查项 | 说明 |
-|---|---|---|
-| 1 | 已加载 `src/scene/g1_pick_tube.json` | **最常见原因**。相机录制开关（`Enable`/`ColorCamera`/`IsRecording`）只在场景文件里，场景 prefab 中没有；不加载则相机处于未录制状态 |
-| 2 | Python 环境 | 必须是 `orcalab_lerobot`（orca-gym **26.9.1**）。`orcalab` 环境的 26.7.3 没有 `start_streaming`/`get_recorder_manager`，日志会报 `当前 orca-gym 不含推流接口` |
-| 3 | 相机名匹配 | 后端注册名需含 `head_cam`/`camera_left`/`camera_right`（允许 uuid 后缀）。日志会打印实际注册名，可据此核对 |
-| 4 | 机器人资产带相机 | 需订阅场景文件引用的机器人资产「宇树G1试管夹取机器人」（`g1_dex_tube_11234568`），不含摄像头的版本场景里没有相机实体 |
-| 5 | 未关闭录制 | 启动命令不要带 `--no_cameras` |
-
-启动后正常应看到三行 `[相机] ✓ head(...) 推流就绪`，约 1~2 秒/路。若某路超时 30 秒，只有该路缺视频，其余正常。
 
 ## 五、数据回放
 
@@ -177,15 +165,15 @@ state/action 为 11 维：`r_pos(3), r_quat_xyzw(4), l_grip_inner_norm, l_grip_o
 cd src/examples/dataCollection
 
 # 回放数据集全部集（按 episode 序号，播完退出）
-~/miniconda3/envs/orcalab_lerobot/bin/python g1_dex1_collection_replay.py \
+python g1_dex1_collection_replay.py \
     --agent_name g1_pick_usda
 
 # 只回放指定集：序号（从 0 开始）或 parquet 文件名前缀
-~/miniconda3/envs/orcalab_lerobot/bin/python g1_dex1_collection_replay.py \
+python g1_dex1_collection_replay.py \
     --agent_name g1_pick_usda --episode 0
 
 # 指定数据集目录 / 循环回放
-~/miniconda3/envs/orcalab_lerobot/bin/python g1_dex1_collection_replay.py \
+python g1_dex1_collection_replay.py \
     --lerobot_dataset dataset/g1_dex1 --loop
 ```
 

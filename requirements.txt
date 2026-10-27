@@ -13,8 +13,8 @@ numba==0.65.1
 termcolor==3.3.0
 PyYAML==6.0.3
 
-# LeRobot 数据集写盘所需依赖（lerobot 本体由 install.sh 单独安装）：
-#   bash install.sh   # 等价于 pip install -r requirements.txt + pip install "lerobot==0.3.3" --no-deps
+# LeRobot 数据集写盘所需依赖（lerobot 本体单独安装）：
+#   python -m pip install "lerobot==0.3.3" --no-deps -i https://pypi.tuna.tsinghua.edu.cn/simple
 datasets==3.6.0
 huggingface-hub==0.34.4
 jsonlines==4.0.0
