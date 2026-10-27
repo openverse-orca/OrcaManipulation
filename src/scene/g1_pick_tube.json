@@ -2,12 +2,12 @@
     "version": "4.0",
     "level": {
         "name": "testtube_operation",
-        "path": "levels/e071469a36d3c8aa/testtube_operation/testtube_operation/testtube_operation.spawnable",
+        "path": "levels/e071469a36d3c8aa/chinapetro/testtube_operation/testtube_operation.spawnable",
         "package_reference": {
-            "name": "试管操作",
-            "tech_name": "testtube_operation",
+            "name": "试管操作-多机协同",
+            "tech_name": "testtube_operation_collaboration",
             "author": "Orca",
-            "project_name": "testtube_operation"
+            "project_name": "chinapetro"
         }
     },
     "viewport_camera_transform": {
@@ -99,7 +99,7 @@
                                         ],
                                         "scale": 1.0
                                     },
-                                    "asset_path": "assets/e071469a36d3c8aa/testtube_operation/testtube_operation/prop/table/table"
+                                    "asset_path": "assets/e071469a36d3c8aa/chinapetro/testtube_operation/prop/table/table"
                                 }
                             ]
                         },
@@ -140,7 +140,7 @@
                                         ],
                                         "scale": 1.0
                                     },
-                                    "asset_path": "assets/e071469a36d3c8aa/testtube_operation/gasstation_01/prop/trafficcone/trafficcone_02"
+                                    "asset_path": "assets/e071469a36d3c8aa/chinapetro/gasstation_01/prop/trafficcone/trafficcone_02"
                                 }
                             ]
                         }
@@ -202,7 +202,7 @@
                                         ],
                                         "scale": 1.0
                                     },
-                                    "asset_path": "assets/e071469a36d3c8aa/testtube_operation/testtube_operation/prop/testtube_context/testtube_15ml",
+                                    "asset_path": "assets/e071469a36d3c8aa/chinapetro/testtube_operation/prop/testtube_context/testtube_15ml",
                                     "entity_overrides": [
                                         {
                                             "entity_path": [
@@ -1302,7 +1302,7 @@
                                         ],
                                         "scale": 1.0
                                     },
-                                    "asset_path": "assets/e071469a36d3c8aa/testtube_operation/testtube_operation/prop/tuberack/tuberack",
+                                    "asset_path": "assets/e071469a36d3c8aa/chinapetro/testtube_operation/prop/tuberack/tuberack",
                                     "entity_overrides": [
                                         {
                                             "entity_path": [
@@ -1358,7 +1358,7 @@
                                         ],
                                         "scale": 1.0
                                     },
-                                    "asset_path": "assets/e071469a36d3c8aa/testtube_operation/testtube_operation/prop/tuberack/tuberack",
+                                    "asset_path": "assets/e071469a36d3c8aa/chinapetro/testtube_operation/prop/tuberack/tuberack",
                                     "entity_overrides": [
                                         {
                                             "entity_path": [
@@ -1420,7 +1420,7 @@
                 ],
                 "scale": 1.0
             },
-            "asset_path": "assets/cae3c6559556dd4f/default_project/prefabs/g1_pick_usda",
+            "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/g1_pick_usda",
             "entity_overrides": [
                 {
                     "entity_path": [
@@ -1721,15 +1721,15 @@
     ],
     "package_references": [
         {
-            "name": "试管操作",
-            "tech_name": "testtube_operation",
+            "name": "试管操作-多机协同",
+            "tech_name": "testtube_operation_collaboration",
             "author": "Orca",
-            "project_name": "testtube_operation"
+            "project_name": "chinapetro"
         },
         {
             "name": "宇树G1试管夹取机器人",
-            "tech_name": "g1_dex_tube_11234568",
-            "author": "admin_test_2",
+            "tech_name": "g1_dex_tube",
+            "author": "Orca",
             "project_name": "default_project"
         }
     ]
