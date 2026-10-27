@@ -1,21 +1,22 @@
-orca-gym>=26.9.1
-numpy
-scipy
-opencv-python
-pyarrow
-av
-gymnasium
-h5py
-numba
-termcolor>=2.4.0
-pyyaml
+# 版本与已验证可运行环境 orcalab_lerobot 对齐
+orca-gym==26.9.1
+numpy==2.2.6
+scipy==1.16.2
+opencv-python==4.13.0.92
+pyarrow==24.0.0
+av==17.0.1
+gymnasium==1.2.1
+h5py==3.16.0
+numba==0.65.1
+termcolor==3.3.0
+PyYAML==6.0.3
 
 # LeRobot 数据集写盘所需依赖（lerobot 本体单独安装，见 README）：
 #   pip install "lerobot==0.3.3" --no-deps
-datasets<=3.6.0,>=2.19.0
-huggingface-hub>=0.34.2
-jsonlines>=4.0.0
-packaging>=24.2
-pillow
-torch>=2.2.1,<2.8
-torchvision>=0.21,<0.23
+datasets==3.6.0
+huggingface-hub==0.34.4
+jsonlines==4.0.0
+packaging==26.0
+pillow==12.0.0
+torch==2.7.1
+torchvision==0.22.1

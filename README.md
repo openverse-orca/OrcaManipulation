@@ -30,6 +30,11 @@
 
 - Python 3.12，`orca-gym >= 26.9.1`（相机推流与录制器接口从 26.9.1 起提供），推荐直接使用 `orcalab_lerobot` 环境
 - 安装依赖：`pip install -r requirements.txt`
+- `torch` / `torchvision` 只用 CPU 版即可；想省流量可先装 CPU 版再装其余依赖：
+  ```bash
+  pip install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cpu
+  pip install -r requirements.txt
+  ```
 - 再单独安装 `lerobot` **0.3.x**（官方包强依赖 `wandb` 等训练组件，数采用不到，用 `--no-deps` 跳过）：
   ```bash
   pip install "lerobot==0.3.3" --no-deps
