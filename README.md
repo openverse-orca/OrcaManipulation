@@ -36,15 +36,15 @@
 
 - Python 3.12，`orca-gym >= 26.9.1`（相机推流与录制器接口从 26.9.1 起提供），推荐直接使用 `orcalab_lerobot` 环境
 - Python 依赖：`pip install -r requirements.txt`
-- **必须同时检出 SouthGrid**，并与本仓库放在同一工作区下。`g1_dex1_lerobot_storage.py` 通过相对路径 `../../../SouthGrid/src/dataStorage` 加载其 LeRobot 写盘与相机模块：
+- **SouthGrid 需与本仓库同级**（LeRobot 写盘与相机模块由它提供）：
 
 ```
-<工作区>/
-├── repo/            # 本仓库
-└── SouthGrid/       # git clone https://github.com/openverse-orca/SouthGrid.git
+g1_pick_tube/
+├── repo/       # 本仓库
+└── SouthGrid/  # git clone https://github.com/openverse-orca/SouthGrid.git
 ```
 
-  若 SouthGrid 不在同级目录，可设置环境变量 `SOUTHGRID_ROOT=/path/to/SouthGrid`。
+  若不在同级，设置环境变量 `SOUTHGRID_ROOT=/path/to/SouthGrid` 即可。
 
 - 视频编码使用 PyAV + `h264_nvenc`，需要 NVIDIA GPU；无 GPU 时无法产出 mp4，只能落盘 parquet
 
