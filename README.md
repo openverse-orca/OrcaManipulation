@@ -68,42 +68,6 @@
 >
 > **必须加载布局文件**：相机录制开关只保存在布局文件里，场景 prefab 中没有。不加载布局 → 相机不推流 → 只产出 HDF5、没有 mp4。
 
-### 方式二：手动复制文件
-
-**1. 导入场景到 OrcaStudio**
-
-把 `orcastudio_scene/` 目录下的 **所有内容** 直接复制粘贴到 OrcaStudio 项目根目录，与已有的 `Assets/`、`Levels/` 等目录合并：
-
-```bash
-cp -r orcastudio_scene/Assets orcastudio_scene/Levels \
-      orcastudio_scene/ReflectionProbes orcastudio_scene/DiffuseProbeGrids \
-      <OrcaStudio项目根目录>/
-```
-
-复制完成后在 OrcaStudio 中打开 `Levels/shihua_xiugai_change_tube` 场景。
-
-**2. 导入机器人模型**
-
-把 `models/` 整个目录放到 OrcaStudio 的 MuJoCo 模型目录下。注意 `g1_pick.xml` 必须与其 `assets/` 保持同级（XML 内 `meshdir="assets"`），否则网格加载失败。
-
-**3. 场景检查**
-
-打开场景后确认：
-
-- 机器人对象名带 `g1_pick_usda` 前缀（与场景中 `Assets/Prefabs/g1_pick_usda.prefab` 对应）
-- 模型含 4 个 DEX1 关节（`left/right_dex1_joint1`、`joint2`）、2 个电机（`left/right_dex1_motor`）
-
-**4. 启用相机录制（决定能否产出 mp4）**
-
-`orcastudio_scene/` 里的 prefab **不含**相机录制开关，仅复制场景的话相机不会推流。二选一：
-
-- 加载仓库根目录的 `g1_pick_tube.json` 布局（自动写入开关，推荐）
-- 或手动在场景中选中 `head_cam`、`camera_left`、`camera_right` 三路相机，勾选 `Enable`、`ColorCamera`、`IsRecording`
-
-设置正确的标志：脚本启动后日志出现三行 `[相机] ✓ head(...) 推流就绪`。
-
-> 另注：当前 prefab 中 `camera_left` / `camera_right` 已带 RGB 串流端口（7072 / 7074），`head_cam` 只有 DDS StreamID、没有 RGB 端口。若 `head` 一路始终收不到帧而两路腕部正常，需在 OrcaStudio 中给 `head_cam` 补配 RGB 图像串流端口。
-
 ## 三、数采流程
 
 ### 1. 启动
