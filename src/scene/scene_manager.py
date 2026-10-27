@@ -34,7 +34,7 @@ class SceneManager:
 
     def get_actors_joints_in_env(self)-> list[str]:
         '''
-        OrcaStudio导出xml时，会携带命名空间前缀， 这里的前缀就是actor name, 
+        OrcaLab导出xml时，会携带命名空间前缀， 这里的前缀就是actor name, 
         因为actor spawnable到场景中，会默认放在全局配置Components下
         '''
         actor_names = self._config.get("actor", {}).get("names", [])

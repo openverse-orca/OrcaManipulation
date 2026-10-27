@@ -255,7 +255,7 @@ def main():
     parser = argparse.ArgumentParser(description="G1 + DEX1-1 数据回放")
     parser.add_argument(
         "--agent_name", default="g1_pick_usda",
-        help="OrcaStudio 场景中的 agent 名称（须与采集时一致）",
+        help="OrcaLab 场景中的 agent 名称（须与采集时一致）",
     )
     parser.add_argument(
         "--task_config", default="example.yaml", help="场景配置 YAML 文件名"
@@ -385,8 +385,7 @@ def main():
     except KeyError as e:
         msg = (
             f"场景中未找到 {args.agent_name} 的机器人关节。\n"
-            f"请确认 OrcaStudio 打开的是含该机器人的场景"
-            f"（如 Levels/shihua_xiugai_change_tube），且机器人已加载。\n"
+            f"请确认 OrcaLab 已加载 src/scene/g1_pick_tube.json（含 {args.agent_name}），且机器人已加载。\n"
             f"原始错误: {e}"
         )
         orca_logger.error(msg)

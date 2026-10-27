@@ -1,24 +1,27 @@
 # G1 + DEX1-1 试管抓取遥操作数据采集
 
-本分支 `g1_pick_tube` 提供 Unitree G1（29DOF）+ DEX1-1 夹爪在试管场景下的 VR 遥操作数据采集与回放方案，包含采集代码与场景布局文件。
+本分支 `g1_pick_tube` 提供 Unitree G1（29DOF）+ DEX1-1 夹爪在试管场景下的 VR 遥操作数据采集与回放方案，包含采集/回放代码与 OrcaLab 场景文件。
 
 ## 一、目录结构
 
 ```
 ├── README.md                    # 本文档
 ├── requirements.txt             # Python 依赖
-├── g1_pick_tube.json            # 场景布局文件（关卡 + actor 布局）
+├── pyproject.toml               # 包配置
+├── LICENSE                      # MIT
 └── src/                         # 采集/回放代码与依赖
     ├── conf/g1_dex1_osc_conf.py # 机器人/夹爪参数
     ├── controllers/             # OSC 手臂、DEX1 阻抗夹爪
     ├── dataCollectionManager/   # 采集主循环
-    ├── dataStorage/             # LeRobot v2.1 数据集写入
+    ├── dataStorage/             # LeRobot v2.1 数据集写入与视频编码
     ├── devices/                 # PICO / 数据回放设备
     ├── envs/dataCollection/     # 仿真环境封装
     ├── examples/dataCollection/
     │   ├── g1_dex1_collection_tele.py    # 遥操作采集
     │   └── g1_dex1_collection_replay.py  # 数据集回放
     ├── scene/                   # 场景与 actor 管理
+    │   ├── scene_manager.py
+    │   └── g1_pick_tube.json    # 场景文件（关卡 + actor + 相机录制开关）
     ├── sensor/                  # 相机推流
     └── task/                    # 空任务
 ```
@@ -27,17 +30,16 @@
 
 - Python 3.12，`orca-gym >= 26.9.1`（相机推流与录制器接口从 26.9.1 起提供），推荐直接使用 `orcalab_lerobot` 环境
 - 安装依赖：`pip install -r requirements.txt`
-- 视频编码使用 PyAV + `h264_nvenc`，需要 NVIDIA GPU；无 GPU 时无法产出 mp4，只能落盘 parquet
 
 ## 二、部署步骤
 
-### 方式一：OrcaLab 资产订阅 + 布局文件（推荐）
+### 方式一：OrcaLab 资产订阅 + 场景文件（推荐）
 
 1. 打开 OrcaLab，进入「资产中心」。
 2. 搜索并订阅以下 **两个资产**：
    - **试管操作**（`testtube_operation`）—— 场景包
-   - **宇树夹试管(改摄像头)**（`g1_dex_tube_66666666`）—— 机器人
-3. 订阅完成后，在 OrcaStudio 中加载仓库根目录的布局文件 `g1_pick_tube.json`，它会还原：
+   - **宇树G1试管夹取机器人**（`g1_dex_tube_11234568`）—— 机器人
+3. 订阅完成后，在 OrcaLab 中加载场景文件 `src/scene/g1_pick_tube.json`，它会还原：
    - 关卡：`testtube_operation`
    - Actors：`Group`、`g1_pick_usda`
    - 相机机位与视角
@@ -45,15 +47,15 @@
 4. 确认场景层级中出现 `g1_pick_usda` 机器人。
 5. 运行遥操作采集代码（见第三节）。
 
-> 布局文件已包含关卡引用与 actor 布局，加载后无需手动摆放机器人。
+> 场景文件已包含关卡引用与 actor 布局，加载后无需手动摆放机器人。
 >
-> **必须加载布局文件**：相机录制开关只保存在布局文件里，场景 prefab 中没有。不加载布局 → 相机不推流 → 只产出 HDF5、没有 mp4。
+> **必须加载场景文件**：相机录制开关只保存在场景文件里，场景 prefab 中没有。不加载场景 → 相机不推流 → 只产出 HDF5、没有 mp4。
 
 ## 三、数采流程
 
 ### 1. 启动
 
-1. 启动 OrcaStudio，打开 `Levels/shihua_xiugai_change_tube` 场景，确认机器人已加载。
+1. 启动 OrcaLab，加载场景文件 `src/scene/g1_pick_tube.json`，确认机器人 `g1_pick_usda` 已加载。
 2. 连接 PICO 手柄，确认手柄已被识别。
 3. 使用 `orcalab_lerobot` 环境（orca-gym 26.9.1，支持相机推流录制），在仓库根目录执行：
 
@@ -139,14 +141,14 @@ state/action 为 11 维：`r_pos(3), r_quat_xyzw(4), l_grip_inner_norm, l_grip_o
 
 ### 只有 HDF5、没有 mp4 时排查
 
-视频走 OrcaStudio 相机推流，任一环节不满足都会**静默降级为只存 HDF5**（日志里出现 `[相机] 无可用相机, 本集仅保存 HDF5`）。按顺序检查：
+视频走 OrcaLab 相机推流，任一环节不满足都会**静默降级为只存 HDF5**（日志里出现 `[相机] 无可用相机, 本集仅保存 HDF5`）。按顺序检查：
 
 | # | 检查项 | 说明 |
 |---|---|---|
-| 1 | 已加载 `g1_pick_tube.json` 布局 | **最常见原因**。相机录制开关（`Enable`/`ColorCamera`/`IsRecording`）只在布局文件里，场景 prefab 中没有；不加载布局则相机处于未录制状态 |
+| 1 | 已加载 `src/scene/g1_pick_tube.json` | **最常见原因**。相机录制开关（`Enable`/`ColorCamera`/`IsRecording`）只在场景文件里，场景 prefab 中没有；不加载则相机处于未录制状态 |
 | 2 | Python 环境 | 必须是 `orcalab_lerobot`（orca-gym **26.9.1**）。`orcalab` 环境的 26.7.3 没有 `start_streaming`/`get_recorder_manager`，日志会报 `当前 orca-gym 不含推流接口` |
 | 3 | 相机名匹配 | 后端注册名需含 `head_cam`/`camera_left`/`camera_right`（允许 uuid 后缀）。日志会打印实际注册名，可据此核对 |
-| 4 | 机器人资产带相机 | 需订阅带摄像头的「宇树夹试管(改摄像头)」，不含摄像头的版本场景里没有相机实体 |
+| 4 | 机器人资产带相机 | 需订阅场景文件引用的机器人资产「宇树G1试管夹取机器人」（`g1_dex_tube_11234568`），不含摄像头的版本场景里没有相机实体 |
 | 5 | 未关闭录制 | 启动命令不要带 `--no_cameras` |
 
 启动后正常应看到三行 `[相机] ✓ head(...) 推流就绪`，约 1~2 秒/路。若某路超时 30 秒，只有该路缺视频，其余正常。
