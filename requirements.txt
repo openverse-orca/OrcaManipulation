@@ -1,11 +1,9 @@
-# 版本与已验证可运行环境 orcalab_lerobot 对齐
-orca-gym==26.9.1
+# 版本与已验证可运行环境 orcalab 对齐
 numpy==2.2.6
 scipy==1.16.2
 opencv-python==4.13.0.92
 pyarrow==24.0.0
 av==17.0.1
-# orca-gym 26.9.1 的 recorder 缺声明，需显式安装
 websockets==16.0
 gymnasium==1.2.1
 h5py==3.16.0
