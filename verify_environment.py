@@ -10,7 +10,7 @@ import sys
 
 # 已验证可运行环境的固定依赖版本
 EXPECTED_VERSIONS = {
-    "orca-gym": "26.9.1",
+    "orca-gym": "26.10.1.16",
     "numpy": "2.2.6",
     "scipy": "1.16.2",
     "opencv-python": "4.13.0.92",

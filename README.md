@@ -1,6 +1,6 @@
 # G1 + DEX1-1 试管抓取遥操作数据采集
 
-本分支 `g1_pick_tube` 提供 Unitree G1（29DOF）+ DEX1-1 夹爪在试管场景下的 VR 遥操作数据采集与回放方案，包含采集/回放代码与 Orca 场景文件。
+本分支 `g1_pick_tube` 提供 Unitree G1（29DOF）+ DEX1-1 夹爪在试管场景下的 VR 遥操作数据采集与回放方案，包含采集/回放代码与 Orcalab 场景文件。
 
 ## 一、目录结构
 
@@ -46,11 +46,11 @@
 
 ### 资产订阅 + 场景文件
 
-1. 打开 Orca，进入「资产中心」。
+1. 打开 Orcalab，进入「资产中心」。
 2. 搜索并订阅以下 **两个资产**：
    - **试管操作**（`testtube_operation`）—— 场景包
    - **宇树G1试管夹取机器人**（`g1_dex_tube_11234568`）—— 机器人
-3. 订阅完成后，在 Orca 中加载场景文件 `src/scene/g1_pick_tube.json`，它会还原：
+3. 订阅完成后，在 Orcalab 中加载场景文件 `src/scene/g1_pick_tube.json`，它会还原：
    - 关卡：`testtube_operation`
    - Actors：`Group`、`g1_pick_usda`
    - 相机机位与视角
@@ -66,7 +66,7 @@
 
 ### 1. 启动
 
-1. 启动 Orca，加载场景文件 `src/scene/g1_pick_tube.json`，确认机器人 `g1_pick_usda` 已加载。
+1. 启动 Orcalab，加载场景文件 `src/scene/g1_pick_tube.json`，确认机器人 `g1_pick_usda` 已加载。
 2. 连接 PICO 手柄，确认手柄已被识别。
 3. 使用已激活的 `orcalab` 环境，在仓库根目录执行：
 
