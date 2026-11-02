@@ -1253,6 +1253,12 @@ def main():
                 pass
         close_cameras(cameras)
         try:
+            # 清掉画面上常驻的操作提示：lua 侧会忽略空文本，
+            # 这里用空格 + showtime=1 让文字到点自动消失
+            scene_manager.show_ui_message(1, " ", "0x00ff00", showtime=1)
+        except Exception:
+            pass
+        try:
             env.reset()
             time.sleep(0.1)
             env.close()

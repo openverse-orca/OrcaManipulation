@@ -469,6 +469,12 @@ def main():
     finally:
         orca_logger.info(f"回放结束，共 {played} 集")
         try:
+            # 清掉画面上常驻的「回放中...」提示：lua 侧会忽略空文本，
+            # 这里用空格 + showtime=1 让文字到点自动消失
+            scene_manager.show_ui_message(1, " ", "0x00bfff", showtime=1)
+        except Exception:
+            pass
+        try:
             env.reset()
             time.sleep(0.1)
             env.close()
