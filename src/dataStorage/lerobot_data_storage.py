@@ -511,10 +511,9 @@ class _StatsImageWriter:
 # 背景：lerobot 的 LeRobotDataset 构造时会断言 meta 中列出的每一集都存在
 # parquet 与全部 mp4，缺一个就抛 AssertionError 并转去 HuggingFace 拉取，
 # 表现为"手动删了几集后启动报错"。这里在加载前把 meta 修正成与磁盘一致：
-# 不完整的集移入 _trash（不真删），剩余集按原采集顺序重编号 0..K-1。
+# 不完整的集直接丢弃，剩余集按原采集顺序重编号 0..K-1。
 # ---------------------------------------------------------------------------
 
-_TRASH_DIR = "_trash"
 _STAGE_DIR = "_reconcile_tmp"
 
 _DATA_TMPL_DEFAULT = "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet"
@@ -601,7 +600,7 @@ def _rewrite_episode_table(
 
 
 def _reconcile_dataset(root: Path) -> None:
-    """让 meta 与磁盘实际文件对齐：缺失集移入 _trash，剩余集按采集顺序重编号。
+    """让 meta 与磁盘实际文件对齐：缺失集丢弃，剩余集按采集顺序重编号。
 
     判定完整：该集 parquet 与每一路 observation.images.* mp4 都存在且非空
     （lerobot 构造数据集时正是这样逐集断言的）。
@@ -636,24 +635,19 @@ def _reconcile_dataset(root: Path) -> None:
         else:
             dropped.append((old_idx, data_path, video_paths))
 
-    # 2. 不完整的集移入 _trash，可手工回捞
+    # 2. 不完整的集直接丢弃（parquet 或任一路 mp4 缺失即视为废集）
     if dropped:
-        trash_dir = root / _TRASH_DIR
         for old_idx, data_path, video_paths in dropped:
-            leftovers = [
-                p for p in (data_path, *video_paths.values()) if p.is_file()
-            ]
-            if not leftovers:
-                continue
-            dst_dir = trash_dir / f"episode_{old_idx:06d}"
-            dst_dir.mkdir(parents=True, exist_ok=True)
-            for p in leftovers:
-                shutil.move(str(p), str(dst_dir / p.name))
+            for p in (data_path, *video_paths.values()):
+                if p.is_file():
+                    p.unlink()
         _log.warning(
-            f"[数据对账] {len(dropped)} 集不完整（缺 parquet 或 mp4），"
-            f"已移入 {trash_dir}: "
+            f"[数据对账] {len(dropped)} 集不完整（缺 parquet 或 mp4），已丢弃: "
             + ", ".join(str(i) for i, _, _ in dropped)
         )
+
+    # 兼容旧版本留下的 _trash 备份目录，统一下并到"直接丢弃"策略
+    shutil.rmtree(root / "_trash", ignore_errors=True)
 
     # 3. 一集完整的都不剩：清空 data/videos/meta，交给上层按新数据集处理
     if not kept:
@@ -815,7 +809,7 @@ class LeRobotDatasetWriter:
             )
 
         root_path = Path(root)
-        # 已有落盘的 episode：先与磁盘对账（缺集移入 _trash、剩余集重编号），
+        # 已有落盘的 episode：先与磁盘对账（缺集丢弃、剩余集重编号），
         # 再一律追加，按采集顺序继续编号，不覆盖、不清空。
         if (root_path / "meta" / "episodes.jsonl").exists():
             _reconcile_dataset(root_path)
@@ -854,24 +848,18 @@ class LeRobotDatasetWriter:
         else:
             if root_path.exists():
                 # 没有可用的 episode，只可能是上次启动中断留下的空壳
-                # （或对账后清空、只剩 _trash 备份）。
+                # （或对账后清空、只剩 info.json）。
                 stray = [
                     p for p in root_path.rglob("*")
                     if p.is_file()
                     and p != root_path / "meta" / "info.json"
-                    and _TRASH_DIR not in p.relative_to(root_path).parts
                 ]
                 if stray:
                     raise ValueError(
                         f"{root} 存在但缺少 meta/episodes.jsonl，无法安全追加。"
                         "请换一个 --lerobot_out，或手动处理该目录。"
                     )
-                if (root_path / _TRASH_DIR).exists():
-                    # 保留 _trash 备份，只清掉数据与元信息
-                    for name in ("meta", "data", "videos"):
-                        shutil.rmtree(root_path / name, ignore_errors=True)
-                else:
-                    shutil.rmtree(root_path)
+                shutil.rmtree(root_path)
 
             features: dict = {
                 "observation.state": {
