@@ -12,9 +12,9 @@
     },
     "viewport_camera_transform": {
         "position": [
-            0.3730711042881012,
-            0.0026400540955364704,
-            1.6297998428344727
+            0.040391456335783005,
+            -0.07028193771839142,
+            1.074450969696045
         ],
         "rotation": [
             0.5469778350573656,
@@ -1331,7 +1331,7 @@
                                                         },
                                                         {
                                                             "name": "meshFile",
-                                                            "value": "/home/yuancheng-zhu/Orca/OrcaStudio/{3DB8A56E-2458-4543-93A1-1A41756B97DA}/user/mujoco_decomposition/mesh_279693749_{A7F0827_decomposition.obj",
+                                                            "value": "/home/yuancheng-zhu/Orca/OrcaStudio/{3DB8A56E-2458-4543-93A1-1A41756B97DA}/user/mujoco_decomposition/mesh_279588981_{CFBF6A2_decomposition.obj",
                                                             "type": "string"
                                                         }
                                                     ]
@@ -1387,7 +1387,7 @@
                                                         },
                                                         {
                                                             "name": "meshFile",
-                                                            "value": "/home/yuancheng-zhu/Orca/OrcaStudio/{3DB8A56E-2458-4543-93A1-1A41756B97DA}/user/mujoco_decomposition/mesh_279693749_{A7F0827_decomposition.obj",
+                                                            "value": "/home/yuancheng-zhu/Orca/OrcaStudio/{3DB8A56E-2458-4543-93A1-1A41756B97DA}/user/mujoco_decomposition/mesh_279588981_{CFBF6A2_decomposition.obj",
                                                             "type": "string"
                                                         }
                                                     ]
@@ -1442,83 +1442,7 @@
                         },
                         {
                             "name": "waist_yaw_link_rev_1_0",
-                            "index": 3
-                        },
-                        {
-                            "name": "waist_roll_link_rev_1_0",
-                            "index": 0
-                        },
-                        {
-                            "name": "torso_link_rev_1_0",
-                            "index": 0
-                        },
-                        {
-                            "name": "head_camera1",
-                            "index": 10
-                        },
-                        {
-                            "name": "head_camera2",
-                            "index": 0
-                        },
-                        {
-                            "name": "cameras",
-                            "index": 0
-                        },
-                        {
-                            "name": "head_cam",
-                            "index": 0
-                        }
-                    ],
-                    "group_overrids": [
-                        {
-                            "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
-                            "type_index": 0,
-                            "property_overrides": [
-                                {
-                                    "name": "ColorCamera",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "UseNvEnc",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "IsRecording",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "Enable",
-                                    "value": true,
-                                    "type": "bool"
-                                }
-                            ]
-                        }
-                    ]
-                },
-                {
-                    "entity_path": [
-                        {
-                            "name": "mujoco_wrap",
-                            "index": 0
-                        },
-                        {
-                            "name": "rootPrim",
-                            "index": 0
-                        },
-                        {
-                            "name": "pelvis",
-                            "index": 0
-                        },
-                        {
-                            "name": "pelvis",
-                            "index": 0
-                        },
-                        {
-                            "name": "waist_yaw_link_rev_1_0",
-                            "index": 3
+                            "index": 4
                         },
                         {
                             "name": "waist_roll_link_rev_1_0",
@@ -1530,7 +1454,7 @@
                         },
                         {
                             "name": "right_shoulder_pitch_link",
-                            "index": 7
+                            "index": 9
                         },
                         {
                             "name": "right_shoulder_roll_link",
@@ -1554,11 +1478,11 @@
                         },
                         {
                             "name": "right_wrist_yaw_link",
-                            "index": 0
+                            "index": 2
                         },
                         {
                             "name": "camera_right_body1",
-                            "index": 3
+                            "index": 0
                         },
                         {
                             "name": "camera_right_body2",
@@ -1584,21 +1508,6 @@
                                     "type": "float"
                                 },
                                 {
-                                    "name": "ColorCamera",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "UseNvEnc",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "IsRecording",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
                                     "name": "Enable",
                                     "value": true,
                                     "type": "bool"
@@ -1627,7 +1536,7 @@
                         },
                         {
                             "name": "waist_yaw_link_rev_1_0",
-                            "index": 3
+                            "index": 4
                         },
                         {
                             "name": "waist_roll_link_rev_1_0",
@@ -1638,47 +1547,19 @@
                             "index": 0
                         },
                         {
-                            "name": "left_shoulder_pitch_link",
-                            "index": 6
-                        },
-                        {
-                            "name": "left_shoulder_roll_link",
-                            "index": 0
-                        },
-                        {
-                            "name": "left_shoulder_yaw_link",
-                            "index": 0
-                        },
-                        {
-                            "name": "left_elbow_link",
-                            "index": 0
-                        },
-                        {
-                            "name": "left_wrist_roll_link",
+                            "name": "head_camera1",
                             "index": 2
                         },
                         {
-                            "name": "left_wrist_pitch_link",
+                            "name": "head_camera2",
                             "index": 0
-                        },
-                        {
-                            "name": "left_wrist_yaw_link",
-                            "index": 2
-                        },
-                        {
-                            "name": "camera_left_body1",
-                            "index": 2
-                        },
-                        {
-                            "name": "camera_left_body2",
-                            "index": 1
                         },
                         {
                             "name": "cameras",
-                            "index": 1
+                            "index": 0
                         },
                         {
-                            "name": "camera_left",
+                            "name": "head_cam",
                             "index": 0
                         }
                     ],
@@ -1687,26 +1568,6 @@
                             "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
                             "type_index": 0,
                             "property_overrides": [
-                                {
-                                    "name": "NearClipDistance",
-                                    "value": 0.0020000000949949026,
-                                    "type": "float"
-                                },
-                                {
-                                    "name": "ColorCamera",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "UseNvEnc",
-                                    "value": true,
-                                    "type": "bool"
-                                },
-                                {
-                                    "name": "IsRecording",
-                                    "value": true,
-                                    "type": "bool"
-                                },
                                 {
                                     "name": "Enable",
                                     "value": true,
