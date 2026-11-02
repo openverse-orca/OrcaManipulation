@@ -12,6 +12,7 @@ The validated runtime uses LeRobot 0.3.x, OrcaGym 26.7.3, PyAV, and PyArrow.
 from __future__ import annotations
 
 import av
+import json
 import logging
 import os
 import queue
@@ -505,6 +506,235 @@ class _StatsImageWriter:
 
 
 # ---------------------------------------------------------------------------
+# 启动期数据对账：以磁盘文件为准修正 meta
+# ---------------------------------------------------------------------------
+# 背景：lerobot 的 LeRobotDataset 构造时会断言 meta 中列出的每一集都存在
+# parquet 与全部 mp4，缺一个就抛 AssertionError 并转去 HuggingFace 拉取，
+# 表现为"手动删了几集后启动报错"。这里在加载前把 meta 修正成与磁盘一致：
+# 不完整的集移入 _trash（不真删），剩余集按原采集顺序重编号 0..K-1。
+# ---------------------------------------------------------------------------
+
+_TRASH_DIR = "_trash"
+_STAGE_DIR = "_reconcile_tmp"
+
+_DATA_TMPL_DEFAULT = "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet"
+_VIDEO_TMPL_DEFAULT = (
+    "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4"
+)
+
+
+def _load_jsonl(path: Path) -> list:
+    if not path.is_file():
+        return []
+    items = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                items.append(json.loads(line))
+    return items
+
+
+def _write_jsonl(path: Path, items: list) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        for item in items:
+            f.write(json.dumps(item, ensure_ascii=False) + "\n")
+    os.replace(tmp, path)
+
+
+def _is_valid_file(path: Path) -> bool:
+    return path.is_file() and path.stat().st_size > 0
+
+
+def _video_keys(info: dict) -> list:
+    return [k for k, ft in info.get("features", {}).items() if ft.get("dtype") == "video"]
+
+
+def _episode_paths(root: Path, info: dict, ep_idx: int):
+    """按 info.json 的模板算出某集的 parquet 与各路 mp4 路径（含 chunk 重算）。"""
+    chunks_size = int(info.get("chunks_size", 1000))
+    chunk = ep_idx // chunks_size
+    data_tmpl = info.get("data_path") or _DATA_TMPL_DEFAULT
+    video_tmpl = info.get("video_path") or _VIDEO_TMPL_DEFAULT
+    data_path = root / data_tmpl.format(
+        episode_chunk=chunk, episode_index=ep_idx
+    )
+    video_paths = {
+        key: root / video_tmpl.format(
+            episode_chunk=chunk, video_key=key, episode_index=ep_idx
+        )
+        for key in _video_keys(info)
+    }
+    return data_path, video_paths
+
+
+def _rewrite_episode_table(
+    src: Path, dst: Path, new_ep_idx: int, frame_offset: int
+) -> int:
+    """重写 episode_index / index 两列后写到 dst，返回该集帧数。
+
+    - episode_index：整列改成新集号；
+    - index：全局帧序号，按新顺序从 frame_offset 起连续编号；
+    - frame_index / timestamp / state / action 保持不变（与集号无关）。
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    table = pq.read_table(src)
+    length = table.num_rows
+
+    for name, values in (
+        ("episode_index", np.full(length, new_ep_idx, dtype=np.int64)),
+        ("index", np.arange(frame_offset, frame_offset + length, dtype=np.int64)),
+    ):
+        pos = table.schema.get_field_index(name)
+        if pos < 0:
+            table = table.append_column(pa.field(name, pa.int64()), pa.array(values))
+        else:
+            field = table.schema.field(pos)
+            table = table.set_column(pos, name, pa.array(values).cast(field.type))
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(table, dst)
+    return length
+
+
+def _reconcile_dataset(root: Path) -> None:
+    """让 meta 与磁盘实际文件对齐：缺失集移入 _trash，剩余集按采集顺序重编号。
+
+    判定完整：该集 parquet 与每一路 observation.images.* mp4 都存在且非空
+    （lerobot 构造数据集时正是这样逐集断言的）。
+    """
+    meta_dir = root / "meta"
+    info_path = meta_dir / "info.json"
+    episodes_path = meta_dir / "episodes.jsonl"
+    stats_path = meta_dir / "episodes_stats.jsonl"
+
+    if not info_path.is_file():
+        raise ValueError(
+            f"{root} 缺少 meta/info.json，无法对账。"
+            "请检查该目录，或换一个 --lerobot_out。"
+        )
+
+    with open(info_path, "r", encoding="utf-8") as f:
+        info = json.load(f)
+    episodes = sorted(_load_jsonl(episodes_path), key=lambda e: int(e["episode_index"]))
+    stats_by_idx = {int(s["episode_index"]): s for s in _load_jsonl(stats_path)}
+
+    # 1. 按原采集顺序判定哪些集完整
+    kept = []
+    dropped = []
+    for ep in episodes:
+        old_idx = int(ep["episode_index"])
+        data_path, video_paths = _episode_paths(root, info, old_idx)
+        complete = _is_valid_file(data_path) and all(
+            _is_valid_file(p) for p in video_paths.values()
+        )
+        if complete:
+            kept.append((old_idx, ep, data_path, video_paths))
+        else:
+            dropped.append((old_idx, data_path, video_paths))
+
+    # 2. 不完整的集移入 _trash，可手工回捞
+    if dropped:
+        trash_dir = root / _TRASH_DIR
+        for old_idx, data_path, video_paths in dropped:
+            leftovers = [
+                p for p in (data_path, *video_paths.values()) if p.is_file()
+            ]
+            if not leftovers:
+                continue
+            dst_dir = trash_dir / f"episode_{old_idx:06d}"
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            for p in leftovers:
+                shutil.move(str(p), str(dst_dir / p.name))
+        _log.warning(
+            f"[数据对账] {len(dropped)} 集不完整（缺 parquet 或 mp4），"
+            f"已移入 {trash_dir}: "
+            + ", ".join(str(i) for i, _, _ in dropped)
+        )
+
+    # 3. 一集完整的都不剩：清空 data/videos/meta，交给上层按新数据集处理
+    if not kept:
+        for name in ("data", "videos", "meta"):
+            shutil.rmtree(root / name, ignore_errors=True)
+        _log.warning("[数据对账] 没有完整的集，已清空数据集，将从第 0 集重新采集")
+        return
+
+    chunks_size = int(info.get("chunks_size", 1000))
+    video_key_count = len(_video_keys(info))
+    total_episodes = len(kept)
+
+    # 4. 存在缺集或编号不连续时，压紧重编号 0..K-1
+    need_renumber = bool(dropped) or any(
+        old_idx != new_idx for new_idx, (old_idx, _, _, _) in enumerate(kept)
+    )
+
+    if need_renumber:
+        stage_root = root / _STAGE_DIR
+        if stage_root.exists():
+            _log.warning(f"[数据对账] 清理上次中断残留的暂存目录 {stage_root}")
+            shutil.rmtree(stage_root)
+        stage_root.mkdir(parents=True)
+
+        cursor = 0
+        new_episodes = []
+        new_stats = []
+        for new_idx, (old_idx, ep, data_path, video_paths) in enumerate(kept):
+            new_data_path, new_video_paths = _episode_paths(root, info, new_idx)
+
+            staged_data = stage_root / new_data_path.relative_to(root)
+            length = _rewrite_episode_table(data_path, staged_data, new_idx, cursor)
+            cursor += length
+
+            for key, src_video in video_paths.items():
+                staged_video = stage_root / new_video_paths[key].relative_to(root)
+                staged_video.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(src_video), str(staged_video))
+
+            entry = dict(ep)
+            entry["episode_index"] = new_idx
+            entry["length"] = length
+            new_episodes.append(entry)
+
+            old_stats = stats_by_idx.get(old_idx)
+            if old_stats is not None:
+                stat_entry = dict(old_stats)
+                stat_entry["episode_index"] = new_idx
+                new_stats.append(stat_entry)
+
+        # 旧文件已全部暂存，清空 data/videos 后落位
+        for name in ("data", "videos"):
+            shutil.rmtree(root / name, ignore_errors=True)
+        for name in ("data", "videos"):
+            staged = stage_root / name
+            if staged.exists():
+                shutil.move(str(staged), str(root / name))
+        shutil.rmtree(stage_root, ignore_errors=True)
+
+        total_frames = cursor
+        _write_jsonl(episodes_path, new_episodes)
+        if new_stats:
+            _write_jsonl(stats_path, new_stats)
+        _log.warning(
+            f"[数据对账] 已按采集顺序重新编号为 {total_episodes} 集 / "
+            f"{total_frames} 帧"
+        )
+    else:
+        total_frames = sum(int(ep.get("length", 0)) for _, ep, _, _ in kept)
+
+    # 5. 修正 info.json 的计数与 splits（历史删除可能留下脏值）
+    info["total_episodes"] = total_episodes
+    info["total_frames"] = total_frames
+    info["total_videos"] = total_episodes * video_key_count
+    info["total_chunks"] = (total_episodes + chunks_size - 1) // chunks_size
+    info["splits"] = {"train": f"0:{total_episodes}"}
+    with open(info_path, "w", encoding="utf-8") as f:
+        json.dump(info, f, indent=4, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------------------
 # LeRobotDatasetWriter：封装 LeRobotDataset 的创建/写入/生命周期（NVENC 直编版）
 # ---------------------------------------------------------------------------
 
@@ -585,7 +815,11 @@ class LeRobotDatasetWriter:
             )
 
         root_path = Path(root)
-        # 已有落盘的 episode：一律追加，按采集顺序继续编号，不覆盖、不清空。
+        # 已有落盘的 episode：先与磁盘对账（缺集移入 _trash、剩余集重编号），
+        # 再一律追加，按采集顺序继续编号，不覆盖、不清空。
+        if (root_path / "meta" / "episodes.jsonl").exists():
+            _reconcile_dataset(root_path)
+
         if (root_path / "meta" / "episodes.jsonl").exists():
             dataset = LeRobotDataset(
                 repo_id=repo_id,
@@ -619,17 +853,25 @@ class LeRobotDatasetWriter:
             )
         else:
             if root_path.exists():
-                # 没有已保存的 episode，只可能是上次启动中断留下的空壳。
+                # 没有可用的 episode，只可能是上次启动中断留下的空壳
+                # （或对账后清空、只剩 _trash 备份）。
                 stray = [
                     p for p in root_path.rglob("*")
-                    if p.is_file() and p != root_path / "meta" / "info.json"
+                    if p.is_file()
+                    and p != root_path / "meta" / "info.json"
+                    and _TRASH_DIR not in p.relative_to(root_path).parts
                 ]
                 if stray:
                     raise ValueError(
                         f"{root} 存在但缺少 meta/episodes.jsonl，无法安全追加。"
                         "请换一个 --lerobot_out，或手动处理该目录。"
                     )
-                shutil.rmtree(root_path)
+                if (root_path / _TRASH_DIR).exists():
+                    # 保留 _trash 备份，只清掉数据与元信息
+                    for name in ("meta", "data", "videos"):
+                        shutil.rmtree(root_path / name, ignore_errors=True)
+                else:
+                    shutil.rmtree(root_path)
 
             features: dict = {
                 "observation.state": {
