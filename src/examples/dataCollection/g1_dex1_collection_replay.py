@@ -21,6 +21,9 @@ LeRobot state（11 维，见 g1_dex1_lerobot_storage.py）与回放字段对应:
     python g1_dex1_collection_replay.py --episode 3
     python g1_dex1_collection_replay.py --episode episode_000003
 
+    # 指定多集（逗号分隔，统一按文件编号从小到大播放）
+    python g1_dex1_collection_replay.py --episode 2,3,4
+
     # 指定数据集目录 / 循环回放
     python g1_dex1_collection_replay.py --lerobot_dataset ./dataset/g1_dex1
     python g1_dex1_collection_replay.py --loop
@@ -97,22 +100,31 @@ def list_episodes(dataset_path: str) -> list[str]:
     return sorted(glob.glob(pattern))
 
 
-def select_episode(episodes: list[str], selector: str) -> list[str]:
-    """按序号或文件名前缀筛选单集。"""
-    if selector.isdigit():
-        idx = int(selector)
-        if 0 <= idx < len(episodes):
-            return [episodes[idx]]
-        raise ValueError(f"序号 {idx} 超出范围, 共 {len(episodes)} 集")
+def select_episodes(episodes: list[str], selector: str) -> list[str]:
+    """按序号或文件名前缀筛选，支持逗号分隔的多集（如 2,3,4）。
 
-    matched = [
-        p for p in episodes if os.path.basename(p).startswith(selector)
-    ]
-    if len(matched) == 1:
-        return matched
-    if len(matched) > 1:
-        raise ValueError(f"前缀 {selector} 匹配到 {len(matched)} 集, 请给出更长的前缀")
-    raise ValueError(f"未找到匹配 {selector} 的集")
+    返回结果统一按文件编号排序，与 --episode 的书写顺序无关。
+    """
+    picked: set[str] = set()
+    for token in (t.strip() for t in selector.split(",")):
+        if not token:
+            continue
+        if token.isdigit():
+            idx = int(token)
+            if not 0 <= idx < len(episodes):
+                raise ValueError(f"序号 {idx} 超出范围, 共 {len(episodes)} 集")
+            picked.add(episodes[idx])
+        else:
+            matched = [
+                p for p in episodes if os.path.basename(p).startswith(token)
+            ]
+            if not matched:
+                raise ValueError(f"未找到匹配 {token} 的集")
+            picked.update(matched)
+
+    if not picked:
+        raise ValueError("未指定有效集")
+    return [p for p in episodes if p in picked]
 
 
 def read_states(parquet_path: str) -> np.ndarray:
@@ -267,7 +279,7 @@ def main():
     )
     parser.add_argument(
         "--episode", default=None,
-        help="只回放指定集: 序号(从0开始) 或 parquet 文件名前缀; 缺省回放全部",
+        help="只回放指定集: 序号从0开始或文件名前缀, 逗号分隔可多选(如 2,3,4); 缺省回放全部",
     )
     parser.add_argument(
         "--loop", action="store_true", help="循环回放（缺省播完所有集后退出）",
@@ -309,7 +321,7 @@ def main():
         return
     if args.episode is not None:
         try:
-            episodes = select_episode(episodes, args.episode)
+            episodes = select_episodes(episodes, args.episode)
         except ValueError as e:
             orca_logger.error(str(e))
             print(str(e), flush=True)

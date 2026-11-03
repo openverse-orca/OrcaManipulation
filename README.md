@@ -162,6 +162,10 @@ python g1_dex1_collection_replay.py \
 python g1_dex1_collection_replay.py \
     --agent_name g1_pick_usda --episode 0
 
+# 指定多集：逗号分隔，统一按文件编号从小到大播放
+python g1_dex1_collection_replay.py \
+    --agent_name g1_pick_usda --episode 2,3,4
+
 # 指定数据集目录 / 循环回放
 python g1_dex1_collection_replay.py \
     --lerobot_dataset dataset/g1_dex1 --loop
@@ -175,7 +179,7 @@ python g1_dex1_collection_replay.py \
 - 左臂/左手不参与回放（数据不含左臂），由 `pin_all_joints` 锁在停靠姿态，且不再挂左手控制器，避免电机与钉住约束互扯
 - 按数据集 `fps` 与控制周期（`time_step × frame_skip`）自动换算每帧的插值周期数
 - LeRobot 数据集不含物体/场景状态与 `initial_joint_qpos`，每集使用场景初始状态
-- `--episode` 支持序号或文件名前缀；不给则按 episode 顺序播放全部
+- `--episode` 支持序号、文件名前缀，可用逗号指定多集（如 `2,3,4`），一律按文件编号从小到大播放；不给则按 episode 顺序播放全部
 - 日志写入 `src/examples/dataCollection/logs/g1_dex1_replay.log`
 
 ## 六、说明
