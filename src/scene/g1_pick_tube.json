@@ -12,9 +12,9 @@
     },
     "viewport_camera_transform": {
         "position": [
-            0.040391456335783005,
-            -0.07028193771839142,
-            1.074450969696045
+            2.3689122200012207,
+            0.440120130777359,
+            4.961501121520996
         ],
         "rotation": [
             0.5469778350573656,
@@ -1508,6 +1508,21 @@
                                     "type": "float"
                                 },
                                 {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "IsRecording",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
                                     "name": "Enable",
                                     "value": true,
                                     "type": "bool"
@@ -1568,6 +1583,21 @@
                             "type_id": "{CA85BDD5-C631-4C52-853C-06D654AE7E4D}",
                             "type_index": 0,
                             "property_overrides": [
+                                {
+                                    "name": "ColorCamera",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "UseNvEnc",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "IsRecording",
+                                    "value": true,
+                                    "type": "bool"
+                                },
                                 {
                                     "name": "Enable",
                                     "value": true,

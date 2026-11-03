@@ -599,12 +599,20 @@ def _rewrite_episode_table(
     return length
 
 
+def _purge_image_cache(root) -> None:
+    """删除写盘过程中残留的 images/ 临时图像目录（本项目只产出视频）。"""
+    img_dir = Path(root) / "images"
+    if img_dir.exists():
+        shutil.rmtree(img_dir, ignore_errors=True)
+
+
 def _reconcile_dataset(root: Path) -> None:
     """让 meta 与磁盘实际文件对齐：缺失集丢弃，剩余集按采集顺序重编号。
 
     判定完整：该集 parquet 与每一路 observation.images.* mp4 都存在且非空
     （lerobot 构造数据集时正是这样逐集断言的）。
     """
+    _purge_image_cache(root)
     meta_dir = root / "meta"
     info_path = meta_dir / "info.json"
     episodes_path = meta_dir / "episodes.jsonl"
@@ -1033,6 +1041,7 @@ class LeRobotDatasetWriter:
         _log.info(f"✓  [LeRobot] Episode {ep_idx} 已保存")
         # mp4 已存在故跳过编码；ep0 需调用以写 info.json（update_video_info）
         self._dataset.encode_episode_videos(ep_idx)
+        _purge_image_cache(self._dataset.root)
         self._saved_episodes += 1
         self._frame_idx = 0
         return ep_idx
@@ -1042,6 +1051,7 @@ class LeRobotDatasetWriter:
         if self._stats_writer is not None:
             self._stats_writer.drop_pending()
         self._nvenc_enc.discard_episode()
+        _purge_image_cache(self._dataset.root)
         self._dataset.clear_episode_buffer()
         self._dataset.episode_buffer = self._dataset.create_episode_buffer()
         self._frame_idx = 0
