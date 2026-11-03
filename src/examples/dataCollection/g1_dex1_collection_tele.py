@@ -1101,6 +1101,22 @@ def main():
 
     threading.Thread(target=_grip_monitor, daemon=True).start()
 
+    # PICO 连接状态监测：终端实时提示，方便确认手柄是否已接入
+    def _pico_link_state() -> bool:
+        pj = pico_joystick_device.pico_joystick
+        return bool(pj.clients) and pj.current_key_state is not None
+
+    _pico_state = {"connected": _pico_link_state()}
+
+    def _pico_status_monitor():
+        while not monitor_stop.wait(1.0):
+            try:
+                _pico_state["connected"] = _pico_link_state()
+            except Exception:
+                _pico_state["connected"] = False
+
+    threading.Thread(target=_pico_status_monitor, daemon=True).start()
+
     print("", flush=True)
     print("=" * 60, flush=True)
     print("  【操作按键】（与 SouthGrid 一致）", flush=True)
@@ -1131,22 +1147,42 @@ def main():
     print(f"  数据输出    {lerobot_out}", flush=True)
     print("=" * 60, flush=True)
     print("", flush=True)
-    # 提示文字用短 showtime 并定时续期：脚本退出后停止续期，
-    # 文字会在 showtime 时长内自动消失，不依赖清空文本（lua 会忽略空/纯空格）
-    hint_text = "左Grip×1=开始 左Grip×2=保存 右Grip=丢弃重置 左右Grip同按=退出"
-    hint_stop = threading.Event()
+    # 两行提示互相独立，由主线程在 render 之后刷新：
+    #   actor 3（左上）= PICO 连接状态，红/绿常驻
+    #   actor 1（中间）= 采集状态（按左Grip开始采集 / 数据采集中）
+    # showtime=3 + 每 0.3s 续期：脚本在跑就不间断，退出后 3 秒内消失。
+    # 注意 orca_gym 的 set_ui_text 内部会 run_until_complete，
+    # 只能主线程调用，放后台线程会与 env.render() 抢事件循环。
+    _ui_last_refresh = [0.0]
 
-    def _keep_hint() -> None:
-        while not hint_stop.is_set():
-            try:
-                scene_manager.show_ui_message(
-                    1, hint_text, "0x00ff00", showtime=1
-                )
-            except Exception:
-                return
-            hint_stop.wait(0.5)
+    def _ui_tick() -> None:
+        now = time.perf_counter()
+        if now - _ui_last_refresh[0] < 0.3:
+            return
+        _ui_last_refresh[0] = now
+        connected = _pico_state["connected"]
+        tsc = data_collection_manager.task_status_controller
+        recording = tsc is not None and tsc.current_status == TaskStatus.RUNNING
+        try:
+            scene_manager.show_ui_message(
+                3,
+                "PICO 已连接" if connected else "PICO 未连接，请检查 PICO 遥操作",
+                "0x00ff00" if connected else "0xff0000",
+                showtime=3,
+            )
+        except Exception:
+            pass
+        try:
+            scene_manager.show_ui_message(
+                1,
+                "数据采集中" if recording else "按左Grip开始采集",
+                "0x00ff00" if recording else "0xffff00",
+                showtime=3,
+            )
+        except Exception:
+            pass
 
-    threading.Thread(target=_keep_hint, daemon=True).start()
+    data_collection_manager.ui_tick_callback = _ui_tick
 
     # 每集 reset → update_scene → 重新钉住 → run_episode。钉住逻辑不改。
     writer = None
@@ -1250,7 +1286,6 @@ def main():
         except Exception:
             pass
     finally:
-        hint_stop.set()
         monitor_stop.set()
         if writer is not None:
             try:

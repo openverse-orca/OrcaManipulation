@@ -76,6 +76,9 @@ class DataCollectionManager:
         self._saving = False
         self._mode = self.DataCollectionMode.TELECONTROL
         self._shutdown_requested = False
+        # 主线程 UI 刷新回调：orca_gym 的 set_ui_text 内部会 run_until_complete，
+        # 只能在主线程（render 之后）调用，不能放到后台线程
+        self.ui_tick_callback = None
         self._original_sigint = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, self._sigint_handler)
 
@@ -512,6 +515,13 @@ class DataCollectionManager:
             action = self.run_controllers()
             obs, reward, terminated, truncated, info = self.env.step(action)
             self.env.render()
+
+            # 主线程 UI 刷新（set_ui_text 内部 run_until_complete，只能主线程调用）
+            if self.ui_tick_callback is not None:
+                try:
+                    self.ui_tick_callback()
+                except Exception:
+                    pass
 
             if self.task_status_controller is not None:
                 task_status = self.task_status_controller.run_controller()

@@ -35,7 +35,6 @@ import json
 import math
 import os
 import sys
-import threading
 import time
 import traceback
 import types
@@ -453,18 +452,18 @@ def main():
 
     # ── 回放主循环（每集 reset → update_scene 载入数据 → 重新钉住 → run_episode）──
     # 不用 manager.run(): 与采集相同, reset/spawn 会清除 equality 钉住导致倒地。
-    # 「回放中...」用短 showtime 定时续期：脚本退出后停止续期，文字 1 秒内自动消失
-    hint_stop = threading.Event()
+    # 「回放中...」由主线程每 0.3s 续期（set_ui_text 内部 run_until_complete，
+    # 不能放后台线程），showtime=3，脚本退出后 3 秒内自动消失。
+    _ui_last_refresh = [0.0]
 
-    def _keep_hint() -> None:
-        while not hint_stop.is_set():
-            try:
-                scene_manager.show_ui_message(1, "回放中...", "0x00bfff", showtime=1)
-            except Exception:
-                return
-            hint_stop.wait(0.5)
+    def _ui_tick() -> None:
+        now = time.perf_counter()
+        if now - _ui_last_refresh[0] < 0.3:
+            return
+        _ui_last_refresh[0] = now
+        scene_manager.show_ui_message(1, "回放中...", "0x00bfff", showtime=3)
 
-    threading.Thread(target=_keep_hint, daemon=True).start()
+    data_collection_manager.ui_tick_callback = _ui_tick
 
     orca_logger.info("进入回放主循环")
     played = 0
@@ -493,7 +492,6 @@ def main():
     except KeyboardInterrupt:
         orca_logger.info("KeyboardInterrupt，停止回放")
     finally:
-        hint_stop.set()
         orca_logger.info(f"回放结束，共 {played} 集")
         try:
             env.reset()
