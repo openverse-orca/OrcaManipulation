@@ -107,17 +107,8 @@ python -u g1_dex1_collection_tele.py \
 |---|---|---|
 | `--agent_name` | `g1_dex1` | 必须与场景中机器人对象前缀一致（本场景为 `g1_pick_usda`） |
 | `--num_episodes` | `0`（不限） | 采集条数，`10` 即采 10 集后自动退出 |
-| `--resume` | - | 兼容旧命令；现在**默认追加**，已有数据不会被清空 |
 | `--pos_scale` | `1.0` | 手柄位移→末端位移比例，精细操作建议 0.3~0.8 |
-| `--osc_kp` | `300` | 任务空间刚度 |
-| `--pos_deadzone` | `0.003` | 静止死区，手抖可调大 |
-| `--ema_alpha` | `0.35` | 输入低通系数 |
-| `--cameras` | `head,wrist_r` | 录制相机 |
-| `--no_cameras` | - | 只存 11 维 state/action，不写图像 |
 | `--lerobot_out` | `dataset/g1_dex1` | LeRobot 数据集目录 |
-| `--fps` | `20` | 写入数据集的帧率 |
-| `--frame_skip` | `5` | 每个控制周期的物理步数 |
-| `--time_step` | `0.001` | 物理步长 |
 
 ### 按键映射
 
