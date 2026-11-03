@@ -1131,15 +1131,22 @@ def main():
     print(f"  数据输出    {lerobot_out}", flush=True)
     print("=" * 60, flush=True)
     print("", flush=True)
-    try:
-        scene_manager.show_ui_message(
-            1,
-            "左Grip×1=开始 左Grip×2=保存 右Grip=丢弃重置 左右Grip同按=退出",
-            "0x00ff00",
-            showtime=0,
-        )
-    except Exception:
-        pass
+    # 提示文字用短 showtime 并定时续期：脚本退出后停止续期，
+    # 文字会在 showtime 时长内自动消失，不依赖清空文本（lua 会忽略空/纯空格）
+    hint_text = "左Grip×1=开始 左Grip×2=保存 右Grip=丢弃重置 左右Grip同按=退出"
+    hint_stop = threading.Event()
+
+    def _keep_hint() -> None:
+        while not hint_stop.is_set():
+            try:
+                scene_manager.show_ui_message(
+                    1, hint_text, "0x00ff00", showtime=1
+                )
+            except Exception:
+                return
+            hint_stop.wait(0.5)
+
+    threading.Thread(target=_keep_hint, daemon=True).start()
 
     # 每集 reset → update_scene → 重新钉住 → run_episode。钉住逻辑不改。
     writer = None
@@ -1243,6 +1250,7 @@ def main():
         except Exception:
             pass
     finally:
+        hint_stop.set()
         monitor_stop.set()
         if writer is not None:
             try:
@@ -1252,12 +1260,6 @@ def main():
             except Exception:
                 pass
         close_cameras(cameras)
-        try:
-            # 清掉画面上常驻的操作提示：lua 侧会忽略空文本，
-            # 这里用空格 + showtime=1 让文字到点自动消失
-            scene_manager.show_ui_message(1, " ", "0x00ff00", showtime=1)
-        except Exception:
-            pass
         try:
             env.reset()
             time.sleep(0.1)

@@ -35,6 +35,7 @@ import json
 import math
 import os
 import sys
+import threading
 import time
 import traceback
 import types
@@ -452,6 +453,19 @@ def main():
 
     # ── 回放主循环（每集 reset → update_scene 载入数据 → 重新钉住 → run_episode）──
     # 不用 manager.run(): 与采集相同, reset/spawn 会清除 equality 钉住导致倒地。
+    # 「回放中...」用短 showtime 定时续期：脚本退出后停止续期，文字 1 秒内自动消失
+    hint_stop = threading.Event()
+
+    def _keep_hint() -> None:
+        while not hint_stop.is_set():
+            try:
+                scene_manager.show_ui_message(1, "回放中...", "0x00bfff", showtime=1)
+            except Exception:
+                return
+            hint_stop.wait(0.5)
+
+    threading.Thread(target=_keep_hint, daemon=True).start()
+
     orca_logger.info("进入回放主循环")
     played = 0
     try:
@@ -479,13 +493,8 @@ def main():
     except KeyboardInterrupt:
         orca_logger.info("KeyboardInterrupt，停止回放")
     finally:
+        hint_stop.set()
         orca_logger.info(f"回放结束，共 {played} 集")
-        try:
-            # 清掉画面上常驻的「回放中...」提示：lua 侧会忽略空文本，
-            # 这里用空格 + showtime=1 让文字到点自动消失
-            scene_manager.show_ui_message(1, " ", "0x00bfff", showtime=1)
-        except Exception:
-            pass
         try:
             env.reset()
             time.sleep(0.1)

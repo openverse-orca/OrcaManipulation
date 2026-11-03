@@ -292,7 +292,7 @@ class DataCollectionManager:
         if self.scene_manager is not None:
             self.scene_manager.spawn_scene()
             self.scene_manager.show_ui_message(
-                1, "回放中...", "0x00bfff", showtime=0
+                1, "回放中...", "0x00bfff", showtime=1
             )
             task_info = self.device.get_task_info()
             scene_info = self.device.get_scene_info()
@@ -346,7 +346,7 @@ class DataCollectionManager:
                     )
                 # self.scene_manager.show_ui_message(1, replay_msg, "0x00bfff", showtime=0)
                 self.scene_manager.show_ui_message(
-                    1, "回放中...", "0x00bfff", showtime=0
+                    1, "回放中...", "0x00bfff", showtime=1
                 )
                 task_info = self.device.get_task_info()
                 scene_info = self.device.get_scene_info()
