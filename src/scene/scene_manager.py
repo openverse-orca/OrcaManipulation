@@ -15,7 +15,7 @@ orca_log = OrcaLog.get_instance()
 
 class SceneManager:
     def __init__(self, grpc_addr: str, config: dict = {}, env: OrcaGymLocalEnv = None, init_env_callback = None):
-        self._scene = OrcaGymScene(grpc_addr)
+        self._scene = OrcaGymScene(grpc_addr, "127.0.0.1:50151")
         self._config = config
         self._config_check()
         self._init_env_callback = init_env_callback
@@ -23,6 +23,9 @@ class SceneManager:
         self._first_spawn_actor = True
         self._light_random_cycle = self._config.get("light", {}).get("random", {}).get("cycle", 20)
         self._pending_light_infos = {}
+        self._spawned_light_names = []
+        # 已有 actor/灯光属性随机化前的基线（惰性拍取，restore/close 时回写复原）
+        self._existing_property_baseline = {}
 
         self.env = env
         self.scene_info = {}
@@ -186,22 +189,23 @@ class SceneManager:
                 self.set_actor_qpos(joint_name, [100000, 100000, 1, 1, 0, 0, 0])
 
     def spawn_scene(self):
-        #将所有的actor加入到场景中
-        if self.is_update_light():
+        first_spawn = self._first_spawn_actor
+        if first_spawn:
+            # actor 会进导出 XML：首建必须 publish 才能进入仿真
             self.publish_scene_without_init_env()
+            self._first_spawn_actor = False
             self.spawn_actors()
-            self.spawn_lights()
             self.publish_scene()
+
+        if self.is_update_light():
+            # 灯光不进导出 XML 列表：add/delete/属性写入经 edit 通道即时生效，无需 publish
+            self.spawn_lights()
             self.apply_light_info()
             self.set_actor_material()
-            self._first_spawn_actor = False
-        if self._first_spawn_actor:
-            self.publish_scene_without_init_env()
-            self._first_spawn_actor = False
-            self.spawn_actors()
-            self.publish_scene()
+        elif first_spawn:
             self.set_actor_material()
-            
+
+        self.randomize_existing_scene()
         self._random_count += 1
 
     def spawn_actors(self):
@@ -225,8 +229,8 @@ class SceneManager:
 
 
     def set_actor_material(self):
-        random_material = self._config.get("actor", {}).get("random", {}).get("material", False) 
-        orca_log.info(f"random_material is {random_material}")    
+        random_material = self._config.get("actor", {}).get("random", {}).get("material", False)
+        orca_log.info(f"random_material is {random_material}")
         if not random_material:
             return
         actor_names = self._config.get("actor", {}).get("names", [])
@@ -234,6 +238,69 @@ class SceneManager:
             actor_name = actor_names[i]
             base_color = MaterialInfo(get_random_material())
             self._scene.set_material_info(actor_name, base_color)
+
+    def randomize_existing_scene(self):
+        """对场景中已有 actor/灯光做属性随机化（材质、灯光颜色/强度）。
+
+        属性写入经 edit 通道即时生效、不进导出 XML，无需 publish；
+        每个 episode 随 spawn_scene 节拍调用一次。首次写入前惰性拍取
+        基线，供 restore_scene/close 复原。
+        """
+        baseline = self._existing_property_baseline
+
+        existing_actor_config = self._config.get("actor", {}).get("existing", {})
+        existing_actor_names = existing_actor_config.get("names", [])
+        if existing_actor_config.get("random", {}).get("material", False):
+            for actor_name in existing_actor_names:
+                try:
+                    material_baseline = baseline.setdefault("material", {})
+                    if actor_name not in material_baseline:
+                        material_baseline[actor_name] = self._scene.get_material_info(actor_name)
+                    self._scene.set_material_info(actor_name, MaterialInfo(get_random_material()))
+                    orca_log.info(f"randomize existing actor material: {actor_name}")
+                except Exception as e:
+                    orca_log.warning(f"randomize material on existing actor '{actor_name}' failed: {e}")
+
+        existing_light_config = self._config.get("light", {}).get("existing", {})
+        existing_light_names = existing_light_config.get("names", [])
+        light_random = existing_light_config.get("random", {})
+        intensity_range = light_random.get("intensity", None)
+        color_range = light_random.get("color", None)
+        if existing_light_names and (intensity_range is not None or color_range is not None):
+            for light_name in existing_light_names:
+                try:
+                    light_baseline = baseline.setdefault("light", {})
+                    if light_name not in light_baseline:
+                        light_baseline[light_name] = self._scene.get_light_info(light_name)
+                    intensity, color = get_random_light_info(
+                        intensity_range if intensity_range is not None else [1.0, 1.0],
+                        color_range,
+                    )
+                    self._scene.set_light_info(light_name, LightInfo(color, intensity))
+                    orca_log.info(
+                        f"randomize existing light info: {light_name}, intensity={intensity}, color={color}"
+                    )
+                except Exception as e:
+                    orca_log.warning(f"randomize info on existing light '{light_name}' failed: {e}")
+
+    def restore_existing_properties(self):
+        """把随机化过的已有 actor 材质/灯光属性回写到基线（尽力而为）。
+
+        未拍取过基线时为 no-op；单条失败记 warning 不阻断其余复原。
+        """
+        baseline = self._existing_property_baseline
+        for actor_name, material_info in baseline.get("material", {}).items():
+            try:
+                self._scene.set_material_info(actor_name, material_info)
+                orca_log.info(f"restore existing actor material: {actor_name}")
+            except Exception as e:
+                orca_log.warning(f"restore material on existing actor '{actor_name}' failed: {e}")
+        for light_name, light_info in baseline.get("light", {}).items():
+            try:
+                self._scene.set_light_info(light_name, light_info)
+                orca_log.info(f"restore existing light info: {light_name}")
+            except Exception as e:
+                orca_log.warning(f"restore info on existing light '{light_name}' failed: {e}")
 
     def is_update_light(self):
         light_config = self._config.get("light", {})
@@ -247,6 +314,15 @@ class SceneManager:
         if self._random_count % self._light_random_cycle == 0:
             return True
         return False
+
+    def _delete_spawned_lights(self):
+        """删除上一轮随机生成的灯光 actor（灯光不进导出 XML，delete 即时生效）。"""
+        for light_name in self._spawned_light_names:
+            try:
+                self._scene.delete_actor(light_name)
+            except Exception as e:
+                orca_log.warning(f"delete light actor '{light_name}' failed: {e}")
+        self._spawned_light_names = []
 
     def spawn_lights(self):
         light_config = self._config.get("light", {})
@@ -262,15 +338,17 @@ class SceneManager:
         if not (is_random_position or is_random_rotation or intensity_range is not None or color_range is not None):
             return
 
+        self._delete_spawned_lights()
+
         light_random_nums = light_random.get("nums")
         light_random_bound_position = light_random.get("bound_position", [[0, 0], [0, 0], [0, 0]])
         bound_rotation = light_random.get("bound_rotation", [[0, 0], [0, 0], [0, 0]])
         if is_random_position or is_random_rotation:
             light_random_center = light_random.get("center")
-            bound_position = [[light_random_center[0] + light_random_bound_position[0][0], light_random_center[0] + light_random_bound_position[0][1]], 
-                              [light_random_center[1] + light_random_bound_position[1][0], light_random_center[1] + light_random_bound_position[1][1]], 
+            bound_position = [[light_random_center[0] + light_random_bound_position[0][0], light_random_center[0] + light_random_bound_position[0][1]],
+                              [light_random_center[1] + light_random_bound_position[1][0], light_random_center[1] + light_random_bound_position[1][1]],
                               [light_random_center[2] + light_random_bound_position[2][0], light_random_center[2] + light_random_bound_position[2][1]]]
-       
+
         self._pending_light_infos = {}
         light_index = choose_random_indices(len(light_names), light_random_nums)
         for i in light_index:
@@ -281,6 +359,7 @@ class SceneManager:
                 self.add_light(light_name, light_spawnable_path, transform[:3], transform[3:])
             else:
                 self.add_light(light_name, light_spawnable_path, [100000, 100000, 1], [0, 0, 0, 1])
+            self._spawned_light_names.append(light_name)
 
             if intensity_range is not None or color_range is not None:
                 intensity, color = get_random_light_info(
@@ -317,6 +396,28 @@ class SceneManager:
     def add_light(self, light_name: str, asset_path: str, position: np.ndarray, rotation: np.ndarray, scale: float = 1.0):
         actor = Actor(light_name, asset_path, position, rotation, scale)
         self._scene.add_actor(actor)
+
+    def restore_scene(self) -> None:
+        """回退到本管理器创建时的场景基线（删除本次运行加入的 actor/灯光）。
+
+        基线由 OrcaGymScene 在首个拓扑变更前自动捕获；restore 按当前场景树
+        做 diff 还原。注意：SimState 为 RUNNING 时会被本地门拦截
+        （SceneSimStateError），退出路径请改走 close(auto_restore=True)。
+        已有 actor/灯光的材质/灯光属性基线由本管理器拍取，随 restore 一并复原。
+        """
+        self._scene.restore_scene()
+        self.restore_existing_properties()
+
+    def close(self, auto_restore: bool = True) -> None:
+        """退出清理：恢复场景基线并关闭 mjc/edit 通道。
+
+        auto_restore=True（默认）时无视 RUNNING 门控强制恢复（尽力而为，
+        失败记日志不阻断通道清理），保证退出后引擎场景回到脚本运行前状态。
+        属性复原（材质/灯光）须在通道关闭前执行。
+        """
+        if auto_restore:
+            self.restore_existing_properties()
+        self._scene.close(auto_restore=auto_restore)
 
     def get_scene_data(self,scriptname: str,scenestage:str)-> dict:
         self._scene.get_rundata(scriptname,scenestage)

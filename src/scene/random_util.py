@@ -32,7 +32,8 @@ def choose_random_indices(nums: int, nums_range: list[int])-> list[int]:
     return np.random.choice(range(nums), pick_nums, replace=False)
 
 def get_random_material() -> np.array:
-    return np.array([np.random.uniform(0, 255), np.random.uniform(0, 255), np.random.uniform(0, 255), np.random.uniform(0, 1)])
+    # edit 通道 base_color 契约为 0.0~1.0（legacy mjc 0~255 量纲已废弃）
+    return np.array([np.random.uniform(0, 1), np.random.uniform(0, 1), np.random.uniform(0, 1), np.random.uniform(0, 1)])
  
 
 def get_random_light_info(intensity_range: list, color_range: list = None) -> tuple:

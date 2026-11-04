@@ -33,7 +33,7 @@ actor:
   # 如果范围相等，则表示关节是固定的
   random:
     qpos: true
-    material: false
+    material: true
     nums: [1, 3]
     # 6自由度关节的随机范围
     six_dof:
@@ -49,6 +49,13 @@ actor:
     # one_dof:
     #   center: [0, 0, 0]
     #   bound: [-1, 1]
+  # existing 是场景中已有 actor 的随机化配置（属性经 edit 通道即时生效，无需 publish）
+  # actor.existing.name 是场景中已有物体的名字
+  # actor.existing.random.material: 是否对已有物体随机材质
+  existing:
+    names: ["basket"]
+    random:
+      material: true
 
 
 # light是场景中的灯光
@@ -71,6 +78,15 @@ light:
     color: [[0.5, 1.0], [0.5, 1.0], [0.5, 1.0]]
     nums: [4, 6]
     cycle: 1
+  # existing 是场景中已有灯光的随机化配置（属性经 edit 通道即时生效，无需 publish）
+  # light.existing.name 是场景中已有灯光的名字
+  # light.existing.random.intensity: 灯光强度随机范围 [min, max]
+  # light.existing.random.color: 灯光颜色各分量随机范围 [[min,max],[min,max],[min,max]]，取值 0.0~1.0
+  existing:
+    names: ["spotlight"]
+    random:
+      intensity: [50, 100]
+      color: [[0.5, 1.0], [0.5, 1.0], [0.5, 1.0]]
 
 # task是任务的配置，参数根据任务类型不同而不同
 task:
