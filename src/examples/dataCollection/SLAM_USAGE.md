@@ -9,8 +9,8 @@
 
 | 进程 | 脚本 | 作用 |
 |---|---|---|
-| 遥操作/仿真 | `g1_omnipicker_collection_tele.py` | 驱动仿真与遥操作；自动拉起里程计桥接子进程 |
-| 里程计桥接 | `ros2_odom_bridge.py` | 由 tele 脚本自动启动，无需手动运行；发布 `/odom` 和 TF `odom → base_scan`（freejoint 真值位姿） |
+| 遥操作/仿真 | `g1_omnipicker_collection_tele.py` | 驱动仿真与遥操作；加 `--odom` 时拉起里程计桥接子进程 |
+| 里程计桥接 | `ros2_odom_bridge.py` | 由 tele 脚本以 `--odom` 启动时自动拉起，无需手动运行；发布 `/odom` 和 TF `odom → base_scan`（freejoint 真值位姿） |
 | LiDAR 桥接 | `g1_lidar_ros2_bridge.py` | 查询 gRPC 点云（世界系），变换到机器人基座系后发布 `/point_cloud`、`/scan` |
 | rtabmap | ROS2 launch | 订阅 `/odom` + `/point_cloud` 建图，发布 TF `map → odom` |
 
@@ -29,12 +29,12 @@ TF 树：`map → odom → base_scan`（`odom → base_scan` 由里程计桥接�
 
 ### 1. 启动遥操作（终端 1）
 
-会同时启动仿真、里程计桥接（自动）：
+`--odom` 开启 ROS2 里程计发布（rtabmap 方案需要；不加则完全不启用 ROS 相关逻辑）：
 
 ```bash
 conda activate orcalab9
 cd <仓库路径>/src/examples/dataCollection
-python g1_omnipicker_collection_tele.py --level default
+python g1_omnipicker_collection_tele.py --level default --odom
 ```
 
 ### 2. 启动 LiDAR 桥接（终端 2）

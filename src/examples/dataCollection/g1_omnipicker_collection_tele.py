@@ -45,6 +45,8 @@ orca_logger = get_orca_logger(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--level", type=str, default="default", help="场景的名称")
+    parser.add_argument("--odom", action="store_true",
+                        help="发布 freejoint 里程计到 ROS2 (/odom + TF), 供 rtabmap 建图使用; 不加则完全不启用 ROS 相关逻辑")
     args = parser.parse_args()
 
     level = args.level
@@ -95,17 +97,20 @@ def main():
     )
     data_storage.set_video_path("video")
 
-    orca_logger.info("Creating ROS2 odometry publisher")
-    # child_frame_id 使用 base_scan 与 demo.py 的点云 frame 一致,
-    # 使 rtabmap 的 TF 链 map->odom->base_scan 直接连通 (雷达安装偏移忽略不计,
-    # 如需精确, 可改回 base_link 并补 base_link->base_scan 静态 TF)
-    odom_publisher = FreeJointOdomPublisher(child_frame_id="base_scan")
+    odom_publisher = None
+    if args.odom:
+        orca_logger.info("Creating ROS2 odometry publisher")
+        # child_frame_id 使用 base_scan 与 demo.py 的点云 frame 一致,
+        # 使 rtabmap 的 TF 链 map->odom->base_scan 直接连通 (雷达安装偏移忽略不计,
+        # 如需精确, 可改回 base_link 并补 base_link->base_scan 静态 TF)
+        odom_publisher = FreeJointOdomPublisher(child_frame_id="base_scan")
 
     # 透传 obs_callback 的同时发布 freejoint 里程计 (每次 env.step 都会调用)
     _base_obs_callback = data_storage.obs_callback
 
     def obs_callback_with_odom(env):
-        odom_publisher.publish_env_freejoint(env)
+        if odom_publisher is not None:
+            odom_publisher.publish_env_freejoint(env)
         return _base_obs_callback(env)
 
     orca_logger.info("Creating data collection manager")
@@ -229,7 +234,8 @@ def main():
 
     data_collection_manager.run()
 
-    odom_publisher.close()
+    if odom_publisher is not None:
+        odom_publisher.close()
 
 
 if __name__ == "__main__":

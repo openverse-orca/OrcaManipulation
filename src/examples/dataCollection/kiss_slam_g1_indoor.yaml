@@ -1,0 +1,36 @@
+# KISS-SLAM 室内配置 — g1_omnipicker LiDAR (3600 bins x 16 层, 仿真)
+# 依据: 雷达 max_range=100m, 机器人底盘速度较慢, 室内仓储场景尺度
+out_dir: slam_output
+
+odometry:
+  preprocessing:
+    max_range: 30.0        # 室内场景, 裁掉远处点提高配准稳健性
+    min_range: 0.5        # 跳过贴身点 (机器人自身)
+    deskew: false          # 仿真点云为瞬时快照, 无运动畸变, 必须关闭
+  registration:
+    max_num_iterations: 100
+    convergence_criterion: 0.0001
+  mapping:
+    voxel_size: 0.25      # 室内尺度 (默认 1.0 为户外车载尺度)
+    max_points_per_voxel: 20
+
+local_mapper:
+  voxel_size: 0.25
+  splitting_distance: 5.0   # 每 5m 生成一个局部地图节点 (默认 100m 户外)
+
+loop_closer:
+  overlap_threshold: 0.4
+  detector:
+    density_map_resolution: 0.25
+    density_threshold: 0.05
+    hamming_distance_threshold: 50
+    inliers_threshold: 5
+
+occupancy_mapper:
+  resolution: 0.25
+  max_range: 30.0
+  z_min: 0.1
+  z_max: 0.5
+
+pose_graph_optimizer:
+  max_iterations: 10
