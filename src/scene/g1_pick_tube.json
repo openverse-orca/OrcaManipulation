@@ -12,15 +12,15 @@
     },
     "viewport_camera_transform": {
         "position": [
-            2.3689122200012207,
-            0.440120130777359,
-            4.961501121520996
+            -0.10047018527984619,
+            0.4889557659626007,
+            1.4450353384017944
         ],
         "rotation": [
-            0.5469778350573656,
-            -0.3061999774030939,
-            -0.3805883645402434,
-            0.6798597786094459
+            0.03334293896689964,
+            -0.013254129366276013,
+            0.36914917933720787,
+            -0.9286772635692433
         ]
     },
     "actors": [
@@ -1608,6 +1608,100 @@
                     ]
                 }
             ]
+        },
+        {
+            "name": "ceiling_recessed_spotlight_1",
+            "path": "/ceiling_recessed_spotlight_1",
+            "type": "AssetActor",
+            "transform": {
+                "position": [
+                    0.04532475024461746,
+                    0.2494533807039261,
+                    3.1737568378448486
+                ],
+                "rotation": [
+                    0.00336035031054415,
+                    0.7070987667223025,
+                    0.707098826326946,
+                    0.0033603500777135116
+                ],
+                "scale": 1.0
+            },
+            "asset_path": "assets/e071469a36d3c8aa/default_project/prefabs/spotlight",
+            "entity_overrides": [
+                {
+                    "entity_path": [],
+                    "group_overrids": [
+                        {
+                            "type_id": "{22B10178-39B6-4C12-BB37-77DB45FDD3B6}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "rotate.x",
+                                    "value": 180.0,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "rotate.y",
+                                    "value": 0.5445701479911804,
+                                    "type": "float"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "entity_path": [
+                        {
+                            "name": "SpotLight",
+                            "index": 0
+                        }
+                    ],
+                    "group_overrids": [
+                        {
+                            "type_id": "{744B3961-6242-4461-983F-2817D9D29C30}",
+                            "type_index": 0,
+                            "property_overrides": [
+                                {
+                                    "name": "Intensity",
+                                    "value": 150.0,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "AttenuationRadius",
+                                    "value": 10.0,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "EnableShutters",
+                                    "value": true,
+                                    "type": "bool"
+                                },
+                                {
+                                    "name": "InnerShutterAngle",
+                                    "value": 15.390000343322754,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "OuterShutterAngle",
+                                    "value": 40.77000045776367,
+                                    "type": "float"
+                                },
+                                {
+                                    "name": "ShadowmapMaxSize",
+                                    "value": "512",
+                                    "type": "enum"
+                                },
+                                {
+                                    "name": "ShadowFilterMethod",
+                                    "value": "Pcf",
+                                    "type": "enum"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "package_references": [
@@ -1620,6 +1714,12 @@
         {
             "name": "宇树G1试管夹取机器人",
             "tech_name": "g1_dex_tube",
+            "author": "Orca",
+            "project_name": "default_project"
+        },
+        {
+            "name": "run_light_night",
+            "tech_name": "run_light_night",
             "author": "Orca",
             "project_name": "default_project"
         }

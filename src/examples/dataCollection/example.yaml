@@ -60,18 +60,29 @@ data_collection:
 
 # light是场景中的灯光
 # 参数和actor含义类似
+# 灯必须先由脚本 add_actor 加入场景并 publish，之后才能用 SetLightInfo 改颜色；
+# 编辑器里加进场景 JSON 的灯不在这张 actor 表里，代码改不了。
+# prefab 路径参考 OrcaPlayground: examples/embodied/replicator/run_lights.py
 light:
-  names: ["spotlight1"]
-  spawnable: ["prefabs/light"]
+  names: ["replay_spotlight"]
+  spawnable: ["assets/e071469a36d3c8aa/default_project/prefabs/spotlight"]
   random:
+    # 位置固定：只在首帧 spawn 一次，之后每集只改颜色
     position: false
     rotation: false
-    center: [0, 0, 0]
-    bound_position: [[-1, 1], [-1, 1], [0, 2]]
-    bound_rotation: [[0, 3.14159], [0, 3.14159], [0, 3.14159]]
+    # 灯的位置：机器人上方约 2.6m
+    center: [0.02, -0.03, 2.60]
+    # 固定朝下（0 表示不倾斜）
+    max_tilt: 0.0
+    # 缩放越大，光斑覆盖越宽
+    scale: 1.5
     nums: [1, 1]
-    # 控制多少个任务后更新灯光
-    cycle: 20  
+    cycle: 20
+    # 颜色按顺序循环：品红 → 纯红 → 纯绿 → 纯蓝 → 关灯
+    color: true
+    palette: [[1.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]]
+    # 官方示例取值 520~980；这里单盏灯需要压过场景已有白光，取更高值
+    intensity: 3500.0
 
 # task是任务的配置，参数根据任务类型不同而不同
 # task:

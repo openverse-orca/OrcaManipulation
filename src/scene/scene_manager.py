@@ -9,9 +9,41 @@ import numpy as np
 from orca_gym.environment import OrcaGymLocalEnv
 from orca_gym.scene.orca_gym_scene import Actor, MaterialInfo, LightInfo, OrcaGymScene
 from orca_gym.log import OrcaLog
-from scene.random_util import choose_random_indices, get_random_qpos, get_random_transform, get_random_material
+from scene.random_util import get_random_qpos, get_random_material
 
 orca_log = OrcaLog.get_instance()
+
+# 灯光随机颜色候选：暖白 / 冷白 / 暖橙 / 淡紫
+DEFAULT_LIGHT_COLORS = [
+    (1.00, 0.92, 0.80),
+    (0.75, 0.88, 1.00),
+    (1.00, 0.70, 0.45),
+    (0.85, 0.78, 1.00),
+]
+
+
+def _random_downward_quat(max_tilt_rad: float = 0.35) -> np.ndarray:
+    '''返回让聚光灯局部 -Z 轴大致朝世界 -Z 的 wxyz 四元数，带随机倾斜。
+
+    spotlight prefab 的光轴沿局部 -Z，因此朝下即接近单位四元数；
+    max_tilt_rad 为 0 时完全竖直朝下，大于 0 时叠加随机倾斜。
+    '''
+    local_axis = np.array([0.0, 0.0, -1.0])
+    world_down = np.array([0.0, 0.0, -1.0])
+
+    tangent = np.random.normal(size=3)
+    tangent -= float(np.dot(tangent, world_down)) * world_down
+    norm = np.linalg.norm(tangent)
+    tangent = np.array([1.0, 0.0, 0.0]) if norm < 1e-6 else tangent / norm
+
+    tilt = float(np.random.uniform(0.0, max_tilt_rad))
+    target = np.cos(tilt) * world_down + np.sin(tilt) * tangent
+    target /= np.linalg.norm(target)
+
+    dot = float(np.clip(np.dot(local_axis, target), -1.0, 1.0))
+    cross = np.cross(local_axis, target)
+    quat = np.array([1.0 + dot, cross[0], cross[1], cross[2]])
+    return quat / np.linalg.norm(quat)
 
 class SceneManager:
     def __init__(self, grpc_addr: str, config: dict = {}, env: OrcaGymLocalEnv = None, init_env_callback = None):
@@ -22,6 +54,16 @@ class SceneManager:
         self._random_count = 0
         self._first_spawn_actor = True
         self._light_random_cycle = self._config.get("light", {}).get("random", {}).get("cycle", 20)
+
+        # 灯光颜色随机配置。灯必须是场景里已注册的 actor（由场景 JSON 的 actors 加载），
+        # 才能通过 SetLightInfo 修改颜色；找不到时置位熔断标志，后续不再尝试。
+        light_random = self._config.get("light", {}).get("random", {})
+        self._light_color_enabled = light_random.get("color", False)
+        self._light_palette = light_random.get("palette") or DEFAULT_LIGHT_COLORS
+        self._light_intensity = float(light_random.get("intensity", 1.0))
+        self._lights_unavailable = False
+        # 颜色按 palette 顺序循环，而不是随机抽取
+        self._light_color_index = 0
 
         self.env = env
         self.scene_info = {}
@@ -148,21 +190,48 @@ class SceneManager:
 
     def spawn_scene(self):
         #将所有的actor加入到场景中
-        if self.is_update_light():
+        # 首帧必须建场景；之后每 cycle 个任务重建一次（重新随机灯的位置与角度）
+        if self._first_spawn_actor or self.is_update_light():
             self.publish_scene_without_init_env()
+            self._first_spawn_actor = False
             self.spawn_actors()
             self.spawn_lights()
             self.publish_scene()
             self.set_actor_material()
-            self._first_spawn_actor = False
-        if self._first_spawn_actor:
-            self.publish_scene_without_init_env()
-            self._first_spawn_actor = False
-            self.spawn_actors()
-            self.publish_scene()
-            self.set_actor_material()
-            
+
+        # 颜色每个任务都随机一次。灯已在上一轮 publish 时注册进 actor 表，
+        # 这里只需 SetLightInfo，不必重建场景。
+        if self._light_color_enabled and not self._lights_unavailable:
+            self.apply_light_colors()
+
         self._random_count += 1
+
+    def apply_light_colors(self):
+        '''给已 spawn 的灯随机换一种颜色。
+
+        SetLightInfo 只认通过 AddActor 注册的灯，因此必须先调用 spawn_lights
+        并 publish 过场景；任一盏失败即熔断，避免每个任务都刷错误日志。
+        '''
+        light_names = self._config.get("light", {}).get("names", [])
+        if not light_names:
+            return
+        for light_name in light_names:
+            color = np.array(
+                self._light_palette[self._light_color_index % len(self._light_palette)],
+                dtype=float,
+            )
+            self._light_color_index += 1
+            try:
+                self._scene.set_light_info(
+                    light_name, LightInfo(color, self._light_intensity)
+                )
+                orca_log.info(
+                    f"light {light_name} color -> {np.round(color, 2).tolist()}"
+                )
+            except Exception as error:
+                orca_log.warning(f"设置灯光 {light_name} 颜色失败，后续跳过: {error}")
+                self._lights_unavailable = True
+                return
 
     def spawn_actors(self):
         actor_names = self._config.get("actor", {}).get("names", [])
@@ -207,31 +276,36 @@ class SceneManager:
         return False
 
     def spawn_lights(self):
+        '''在 center 指定的位置 spawn 聚光灯，光轴朝下。
+
+        参考 OrcaPlayground examples/embodied/replicator/run_lights.py：
+        灯必须先 add_actor 再 publish_scene，之后才能用 SetLightInfo 改颜色。
+        场景 JSON 里由编辑器添加的灯不在这张 actor 表里，改不了。
+        '''
         light_config = self._config.get("light", {})
         light_names = light_config.get("names", [])
-        light_spawnable = light_config.get("spawnable", [])
-
-        light_random = light_config.get("random", {})
-        is_random_position = light_random.get("position", False)
-        is_random_rotation = light_random.get("rotation", False)
-
-        if not (is_random_position or is_random_rotation):
+        light_spawnables = light_config.get("spawnable", [])
+        if not light_names:
             return
 
-        light_random_nums = light_random.get("nums")
-        light_random_center = light_random.get("center")
-        light_random_bound_position = light_random.get("bound_position", [[0, 0], [0, 0], [0, 0]])
-        bound_rotation = light_random.get("bound_rotation", [[0, 0], [0, 0], [0, 0]])
-        bound_position = [[light_random_center[0] + light_random_bound_position[0][0], light_random_center[0] + light_random_bound_position[0][1]], 
-                          [light_random_center[1] + light_random_bound_position[1][0], light_random_center[1] + light_random_bound_position[1][1]], 
-                          [light_random_center[2] + light_random_bound_position[2][0], light_random_center[2] + light_random_bound_position[2][1]]]
-       
-        light_index = choose_random_indices(len(light_names), light_random_nums)
-        for i in light_index:
-            light_name = light_names[i]
-            light_spawnable = light_spawnable[i]
-            transform = get_random_transform(bound_position, bound_rotation)
-            self.add_light(light_name, light_spawnable, transform[:3], transform[3:])
+        light_random = light_config.get("random", {})
+        center = light_random.get("center", [0.0, 0.0, 2.4])
+        bound_position = light_random.get("bound_position", [[0, 0], [0, 0], [0, 0]])
+        max_tilt = float(light_random.get("max_tilt", 0.35))
+        scale = float(light_random.get("scale", 1.0))
+
+        for i, light_name in enumerate(light_names):
+            position = np.array([
+                center[0] + np.random.uniform(bound_position[0][0], bound_position[0][1]),
+                center[1] + np.random.uniform(bound_position[1][0], bound_position[1][1]),
+                center[2] + np.random.uniform(bound_position[2][0], bound_position[2][1]),
+            ])
+            rotation = _random_downward_quat(max_tilt)
+            orca_log.info(
+                f"spawn light: {light_name}, {light_spawnables[i]}, "
+                f"pos={np.round(position, 2).tolist()}"
+            )
+            self.add_actor(light_name, light_spawnables[i], position, rotation, scale)
 
     def publish_scene_without_init_env(self):
         self._scene.publish_scene()    
@@ -398,10 +472,8 @@ class SceneManager:
         
         if light_random is not None:
             is_random_position = light_random.get("position", False)
-            is_random_rotation = light_random.get("rotation", False)
             light_random_center = light_random.get("center", None)            
             light_random_bound_position = light_random.get("bound_position", None)
-            light_random_bound_rotation = light_random.get("bound_rotation", None)
             light_random_nums = light_random.get("nums", [0, 0])   
             light_random_cycle = light_random.get("cycle", 20)
 
@@ -415,17 +487,6 @@ class SceneManager:
                                     bound_position: [[-1, 1], [-1, 1], [0, 2]]
                                 ''')
                 raise ValueError("light.random.bound_position is not set")
-
-            if is_random_rotation and light_random_bound_rotation is None:
-                orca_log.error("light.random.bound_rotation is not set")
-                orca_log.error('''example:
-                                light:
-                                  random:
-                                    center: [0, 0, 0]
-                                    rotation: true
-                                    bound_rotation: [[0, 3.14159], [0, 3.14159], [0, 3.14159]]
-                                ''')
-                raise ValueError("light.random.bound_rotation is not set")
 
             if light_random_center is None:
                 orca_log.error("light.random.center is not set")

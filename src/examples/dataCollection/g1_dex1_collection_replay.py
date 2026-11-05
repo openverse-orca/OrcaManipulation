@@ -282,7 +282,16 @@ def main():
         help="只回放指定集: 序号从0开始或文件名前缀, 逗号分隔可多选(如 2,3,4); 缺省回放全部",
     )
     parser.add_argument(
-        "--loop", action="store_true", help="循环回放（缺省播完所有集后退出）",
+        "--loop",
+        action="store_true",
+        default=True,
+        help="循环回放（默认开启）：播完全部集后从头再来",
+    )
+    parser.add_argument(
+        "--no-loop",
+        dest="loop",
+        action="store_false",
+        help="关闭循环，播完全部集后退出",
     )
     parser.add_argument(
         "--frame_skip", type=int, default=5, help="每控制周期的物理子步数（与采集一致）"
