@@ -55,7 +55,7 @@ class SceneManager:
         self._first_spawn_actor = True
         self._light_random_cycle = self._config.get("light", {}).get("random", {}).get("cycle", 20)
 
-        # 灯光颜色随机配置。灯必须是场景里已注册的 actor（由场景 JSON 的 actors 加载），
+        # 灯光颜色配置。灯由 spawn_lights() 通过 AddActor 加入场景并 publish 后
         # 才能通过 SetLightInfo 修改颜色；找不到时置位熔断标志，后续不再尝试。
         light_random = self._config.get("light", {}).get("random", {})
         self._light_color_enabled = light_random.get("color", False)
