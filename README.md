@@ -19,8 +19,9 @@
     ├── envs/dataCollection/     # 仿真环境封装
     ├── examples/dataCollection/
     │   ├── g1_dex1_collection_tele.py    # 遥操作采集
-    │   ├── g1_dex1_collection_replay.py  # 数据集回放
-    │   └── dataset/g1_dex1/              # 内置 9 条可回放示例数据（LeRobot v2.1）
+    │   ├── g1_dex1_collection_replay.py      # 数据集回放
+    │   ├── g1_dex1_collection_replay_aug.py  # 回放并生成增强数据集
+    │   └── dataset/g1_dex1/                  # 内置 9 条可回放示例数据（LeRobot v2.1）
     ├── scene/                   # 场景与 actor 管理
     │   ├── scene_manager.py
     │   └── g1_pick_tube.json    # 场景文件（关卡 + actor + 相机录制开关）
@@ -181,6 +182,35 @@ python g1_dex1_collection_replay.py \
 - LeRobot 数据集不含物体/场景状态与 `initial_joint_qpos`，每集使用场景初始状态
 - `--episode` 支持序号、文件名前缀，可用逗号指定多集（如 `2,3,4`），一律按文件编号从小到大播放；不给则按 episode 顺序播放全部
 - 日志写入 `src/examples/dataCollection/logs/g1_dex1_replay.log`
+
+### 回放并生成增强数据集
+
+`g1_dex1_collection_replay_aug.py` 在纯回放的基础上，把机器人实际执行的状态与相机画面按集写入一个新数据集，用于借助灯光随机化扩充训练数据。
+
+```bash
+cd src/examples/dataCollection
+
+# 回放全部集并写入增强数据集（默认循环，Ctrl+C 停止）
+python g1_dex1_collection_replay_aug.py
+
+# 先小范围验证：只回放第 0 集，播完退出
+python g1_dex1_collection_replay_aug.py --episode 0 --no-loop
+```
+
+说明：
+
+- 增强数据写入 `dataset/g1_dex1_aug`，与采集数据集 `dataset/g1_dex1` 完全分开，不会覆盖原始数据
+- 每回放一集，场景灯光颜色按 `example.yaml` 中 `light.random.palette` 的顺序切换（默认品红 → 纯红 → 纯绿 → 纯蓝 → 关灯），因此同一源数据回放一轮就得到一组不同光照的样本
+- 相机可让机器人视角与采集一致（默认 `head,wrist_r`）；相机不可用时本次不落盘，避免生成缺少视频字段的残缺 schema
+- 相关参数：
+
+| 参数 | 默认 | 说明 |
+| --- | --- | --- |
+| `--aug_out` | `dataset/g1_dex1_aug` | 增强数据集输出目录 |
+| `--aug_cameras` | `head,wrist_r` | 录制相机，逗号分隔；留空只写 state/action |
+| `--no_aug` | 关闭 | 只回放，不写数据集 |
+
+- 日志写入 `src/examples/dataCollection/logs/g1_dex1_replay_aug.log`
 
 ## 六、说明
 
