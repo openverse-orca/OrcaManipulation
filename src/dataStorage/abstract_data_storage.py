@@ -228,6 +228,17 @@ class AbstractDataStorage(metaclass=abc.ABCMeta):
         """
         return self._robot_profile.obs_callback(env)
 
+    def set_arm_controllers(self, controllers: list) -> None:
+        """注入臂控制器引用（委托给 profile，供 obs_callback 落盘命令目标字段）。"""
+        self._robot_profile.set_arm_controllers(controllers)
+
+    def get_collected_frame_count(self) -> int:
+        """当前 episode 已采集帧数（在 save_data / clear_data 之前读取）。
+
+        用于保存前的最短帧数校验，过滤误触发产生的截断单元。
+        """
+        return len(self.data.get("time_step", []))
+
     # --- 格式相关接口（子类必须实现） ---
 
     @abc.abstractmethod

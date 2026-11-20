@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
+    from controllers.controller_arm import ControllerArm
     from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
 
 
@@ -79,3 +80,11 @@ class RobotProfile(abc.ABC):
     def state_names(self) -> list[str]:
         """LeRobot state 列名。"""
         ...
+
+    def set_arm_controllers(self, controllers: list["ControllerArm"]) -> None:
+        """注入臂控制器引用（默认无操作）。
+
+        供 ``obs_callback`` 读取控制器 B 系命令目标、落盘
+        ``/action/end/target_*`` 命令字段；仅需命令字段的型号子类覆写。
+        """
+        return None

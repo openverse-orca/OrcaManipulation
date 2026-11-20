@@ -21,6 +21,10 @@ from dataStorage.abstract_data_storage import AbstractDataStorage
 from sensor.touch_sensor_visualizer import TouchSensorVisualizer
 orca_logger = OrcaLog.get_instance()
 
+# 成功 episode 的最短采集帧数（50Hz 下 2 秒）。
+# 低于此值视为误触发产生的截断单元（如 60 帧废数据），丢弃不落盘
+MIN_EPISODE_FRAMES = 100
+
 
 def _parse_grpc_host_port(addr: str):
     """'localhost:50051' -> ('localhost', 50051)；解析失败回退默认。"""
@@ -431,15 +435,24 @@ class DataCollectionManager:
                     break
                 if self.data_storage is not None:
                     if task_is_success:
-                        orca_logger.info("Task Success!")
-                        task_info = self.task.get_task_info()
-                        scene_info = self.scene_manager.get_scene_info()
-                        self.data_storage.save_data(
-                            env=self.env,
-                            task_info=task_info,
-                            scene_info=scene_info,
-                            task_description=self.task.get_task_description(),
-                        )
+                        # 最短帧数校验：过滤误触发截断单元（如 60 帧废数据）
+                        frame_count = self.data_storage.get_collected_frame_count()
+                        if frame_count < MIN_EPISODE_FRAMES:
+                            self.data_storage.clear_data()
+                            orca_logger.warning(
+                                f"Episode discarded: only {frame_count} frames "
+                                f"(< {MIN_EPISODE_FRAMES}), likely a truncated unit"
+                            )
+                        else:
+                            orca_logger.info("Task Success!")
+                            task_info = self.task.get_task_info()
+                            scene_info = self.scene_manager.get_scene_info()
+                            self.data_storage.save_data(
+                                env=self.env,
+                                task_info=task_info,
+                                scene_info=scene_info,
+                                task_description=self.task.get_task_description(),
+                            )
                     else:
                         self.data_storage.clear_data()
                         orca_logger.info("Task Failed!")

@@ -33,6 +33,11 @@ class ControllerArm(AbstractController):
         self.action = np.zeros(6, dtype=np.float32)
         self.action[0:3] = self.initial_ee_pos
         self.action[3:6] = R.from_quat(self.initial_ee_quat[[1, 2, 3, 0]]).as_rotvec()
+        # B 系命令目标镜像：供数据存储侧落盘 /action/end/target_*（命令值）。
+        # 数据集里的 /action/end/position 是观测值，回放追踪观测轨迹会叠加
+        # 一次跟踪滞后；存命令目标让回放直接复现录制时的 OSC 命令序列
+        self.goal_pos_B: np.ndarray = self.initial_ee_pos_B.copy()
+        self.goal_quat_B: np.ndarray = self.initial_ee_quat_B[[1, 2, 3, 0]].copy()
 
     @override
     def reset(self):
@@ -48,6 +53,11 @@ class ControllerArm(AbstractController):
         self.action = np.zeros(6, dtype=np.float32)
         self.action[0:3] = self.initial_ee_pos
         self.action[3:6] = R.from_quat(self.initial_ee_quat[[1, 2, 3, 0]]).as_rotvec()
+        # B 系命令目标镜像：供数据存储侧落盘 /action/end/target_*（命令值）。
+        # 数据集里的 /action/end/position 是观测值，回放追踪观测轨迹会叠加
+        # 一次跟踪滞后；存命令目标让回放直接复现录制时的 OSC 命令序列
+        self.goal_pos_B: np.ndarray = self.initial_ee_pos_B.copy()
+        self.goal_quat_B: np.ndarray = self.initial_ee_quat_B[[1, 2, 3, 0]].copy()
 
         # update() must be called before reset_goal() to ensure joint_pos / ee_pos
         # reflect the current physics state (after mj_forward), not stale values.
@@ -92,6 +102,9 @@ class ControllerArm(AbstractController):
         goal_pos = base_body_rot.apply(goal_pos_B) + base_body_xpos
 
         self.action = np.concatenate([goal_pos, goal_rot.as_rotvec()])
+        # 镜像 B 系命令目标（xyzw），供存储侧落盘
+        self.goal_pos_B = np.asarray(goal_pos_B, dtype=np.float64)
+        self.goal_quat_B = goal_rot_B.as_quat()
 
     def update_action_position(self, position: np.array):
         '''
@@ -99,6 +112,8 @@ class ControllerArm(AbstractController):
         @param:
             position: 位置
         '''
+        # 输入即 B 系目标，先镜像再转世界系
+        self.goal_pos_B = np.array(position, dtype=np.float64).flatten()
         base_body_xpos, _, base_body_xquat = self.env.get_body_xpos_xmat_xquat([self.base_link])
         base_body_rot = R.from_quat(base_body_xquat[[1, 2, 3, 0]])
         position = base_body_rot.apply(position) + base_body_xpos
@@ -110,6 +125,7 @@ class ControllerArm(AbstractController):
         @param:
             quat: 四元数
         '''
+        self.goal_quat_B = np.array(quat, dtype=np.float64).flatten()
         _, _, base_body_xquat = self.env.get_body_xpos_xmat_xquat([self.base_link])
         base_body_rot = R.from_quat(base_body_xquat[[1, 2, 3, 0]])
         ee_rot = base_body_rot * R.from_quat(quat)

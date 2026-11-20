@@ -524,6 +524,10 @@ class LerobotDataStorage(AbstractDataStorage):
             return self._lr_writer.episode_frame_count
         return 0
 
+    def get_collected_frame_count(self) -> int:
+        """当前集已采集帧数（LeRobot 从 episode_buffer 实时计数）。"""
+        return self.buffered_frame_count
+
     # -- 配置注入 --
 
     def configure_lerobot(

@@ -210,7 +210,12 @@ class DataDevice(AbstractDevice):
             data = data[part]
         data[parts[-1]] = value
 
-    def bind_dataset_event(self, dataset_path: str, index: tuple[int, int], event: Callable[[np.array], None]):
+    def bind_dataset_event(
+        self,
+        dataset_path: str,
+        index: tuple[int, int],
+        event: Callable[[np.array], None],
+    ):
         '''
         @description: 绑定数据集事件
         @param:
