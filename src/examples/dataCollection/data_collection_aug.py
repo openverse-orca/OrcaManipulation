@@ -17,6 +17,7 @@ from scene.scene_config_util import create_task, load_scene_config, should_use_e
 from orca_gym.log.orca_log import get_orca_logger, OrcaLog
 import numpy as np
 from dataCollectionManager.data_collection_manager import DataCollectionManager
+from dataCollectionManager.episode_callbacks import InitialStateRestoreCallback
 from controllers import controllers
 from devices.Interpolator.abstract_interpolator import OpenLoongInterpolator
 
@@ -98,7 +99,10 @@ def main():
         device=data_device,
         scene_manager=scene_manager,
         data_storage=data_storage,
-        frame_skip=5,
+        # 源数据以 frame_skip=20（50Hz）录制；回放须同节拍消费数据帧，
+        # 否则相当于按录制速度的 4 倍快放（此前 frame_skip=5 即此问题，
+        # 已实测对照验证：fs5 增广单元时长为源单元的 1/4）
+        frame_skip=20,
     )
     env = data_collection_manager.env
     env.reset()
@@ -145,6 +149,15 @@ def main():
         orca_logger.info("Creating pick place task")
     data_collection_manager.set_task(create_task(env, config, task_config))
     controllers.add_task_status_openloong_data_controller(data_collection_manager, env, data_device, agent_conf.base_body)
+
+    # 恢复录制首帧机器人初始关节角，消除增广回放从默认位形扫掠导致的
+    # 开头碰撞污染（与 data_collection_replay.py 共用同一回调）
+    data_collection_manager.register_episode_callback(
+        InitialStateRestoreCallback(
+            env, data_device,
+            {"l_arm": agent_conf.l_arm, "r_arm": agent_conf.r_arm},
+        )
+    )
 
     data_collection_manager.run()
 

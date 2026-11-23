@@ -30,6 +30,12 @@ class DataDevice(AbstractDevice):
         self.dataset_cursor = {}
         self.task_status_event : Callable[[bool], None] = None
         self.update_task_status = False
+
+        # 绑定路径 → 回退路径（bind_dataset_event 可选配置）及每单元生效的
+        # 实际读取路径映射（load_data 时按数据字段探测）
+        self._path_fallback: dict[str, str] = {}
+        self._effective_path: dict[str, str] = {}
+        self._fallback_warned: set[str] = set()
         
         self.unit_datasets_path = []
         self.data = None
@@ -49,7 +55,7 @@ class DataDevice(AbstractDevice):
         '''
         end = False
         for dataset_path, events in self.dataset_event.items():
-            data = self.get_data(dataset_path)
+            data = self.get_data(self._effective_path.get(dataset_path, dataset_path))
             cursor = self.dataset_cursor.get(dataset_path, 0)
             if cursor >= len(data):
                 self.update_task_status = True
@@ -84,6 +90,36 @@ class DataDevice(AbstractDevice):
         for part in dataset_path.strip('/').split('/'):
             data = data[part]
         return data
+
+    def _path_exists(self, dataset_path: str) -> bool:
+        '''检查当前数据单元是否包含指定路径的字段'''
+        data = self.data
+        for part in dataset_path.strip('/').split('/'):
+            if not isinstance(data, dict) or part not in data:
+                return False
+            data = data[part]
+        return True
+
+    def _refresh_effective_paths(self):
+        '''按当前数据单元实际字段刷新绑定路径的读取映射。
+
+        绑定路径缺失且配置了回退路径时改读回退路径（游标仍按绑定路径
+        计数），用于兼容不含命令目标字段的旧数据集；每会话仅告警一次。
+        '''
+        for dataset_path in self.dataset_event:
+            fallback = self._path_fallback.get(dataset_path)
+            if (fallback is not None and not self._path_exists(dataset_path)
+                    and self._path_exists(fallback)):
+                self._effective_path[dataset_path] = fallback
+                if dataset_path not in self._fallback_warned:
+                    self._fallback_warned.add(dataset_path)
+                    orca_logger.warning(
+                        f"Dataset path '{dataset_path}' missing in unit, "
+                        f"falling back to '{fallback}' (legacy dataset: replay "
+                        f"tracks recorded trajectory instead of command targets)"
+                    )
+            else:
+                self._effective_path[dataset_path] = dataset_path
 
     def get_task_info(self) -> dict:
         '''
@@ -159,6 +195,8 @@ class DataDevice(AbstractDevice):
         if self.interpolator is not None:
             self._apply_interpolation()
 
+        # 先按实际字段解析读取路径（含旧数据回退），再重置回放游标
+        self._refresh_effective_paths()
         # 每次加载新数据单元后重置回放游标，避免使用 pop(0) 造成 O(n) 开销
         self.dataset_cursor = {dataset_path: 0 for dataset_path in self.dataset_event.keys()}
         self.update_task_status = True
@@ -210,17 +248,28 @@ class DataDevice(AbstractDevice):
             data = data[part]
         data[parts[-1]] = value
 
-    def bind_dataset_event(self, dataset_path: str, index: tuple[int, int], event: Callable[[np.array], None]):
+    def bind_dataset_event(
+        self,
+        dataset_path: str,
+        index: tuple[int, int],
+        event: Callable[[np.array], None],
+        fallback_path: str | None = None,
+    ):
         '''
         @description: 绑定数据集事件
         @param:
             dataset_path: 数据集在hdf5文件中的路径
             event: 事件
             index: 需要数据在数据集中的索引,[first:second]
+            fallback_path: 可选回退路径。数据单元缺少 dataset_path 字段
+                （如不含命令目标字段的旧数据集）时，改读该路径喂同一事件，
+                保证旧数据回放兼容而非直接 KeyError 崩溃
         '''
         if dataset_path not in self.dataset_event:
             self.dataset_event[dataset_path] = []
         self.dataset_event[dataset_path].append([index, event])
+        if fallback_path is not None:
+            self._path_fallback[dataset_path] = fallback_path
 
     def bind_task_status_event(self, event: Callable[[bool], None]):
         '''

@@ -212,11 +212,16 @@ class SceneManager:
         actor_names = self._config.get("actor", {}).get("names", [])
         actor_spawnables = self._config.get("actor", {}).get("spawnable", [])
         joints_dof = self._config.get("actor", {}).get("joints_dof", [])
+        # 回放等场景可能已含同名 actor（已进快照基线），存在则跳过，避免 EditServiceError 中断流程
+        existing_actor_paths = set(self._scene.get_actors())
         # 初始位置为无穷远
         for i in range(len(actor_names)):
             dof = joints_dof[i]
             actor_name = actor_names[i]
             actor_spawnable = actor_spawnables[i]
+            if f"/{actor_name}" in existing_actor_paths:
+                orca_log.warning(f"actor '{actor_name}' already exists in scene, skip spawning")
+                continue
             orca_log.info(f"spawn actor: {actor_name}, {actor_spawnable}")
             if dof == 6:
                 self.add_actor(actor_name, actor_spawnable, [100000, 100000, 1], [0, 0, 0, 1])
@@ -340,6 +345,11 @@ class SceneManager:
 
         self._delete_spawned_lights()
 
+        # 关卡自带同名灯光（如 spotlight）直接跳过，避免 EditServiceError 中断流程；
+        # 跳过的灯光不进 _spawned_light_names/_pending_light_infos，保持原位原属性，
+        # 保证退出复原语义（原属性基线仅覆盖 light.existing 配置项）
+        existing_actor_paths = set(self._scene.get_actors())
+
         light_random_nums = light_random.get("nums")
         light_random_bound_position = light_random.get("bound_position", [[0, 0], [0, 0], [0, 0]])
         bound_rotation = light_random.get("bound_rotation", [[0, 0], [0, 0], [0, 0]])
@@ -354,6 +364,9 @@ class SceneManager:
         for i in light_index:
             light_name = light_names[i]
             light_spawnable_path = light_spawnable[i]
+            if f"/{light_name}" in existing_actor_paths:
+                orca_log.warning(f"light '{light_name}' already exists in scene, skip spawning")
+                continue
             if is_random_position or is_random_rotation:
                 transform = get_random_transform(bound_position, bound_rotation)
                 self.add_light(light_name, light_spawnable_path, transform[:3], transform[3:])

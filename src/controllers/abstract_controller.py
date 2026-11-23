@@ -1,4 +1,5 @@
 import abc
+import numpy as np
 from orca_gym.environment import OrcaGymLocalEnv
 from orca_gym.log import OrcaLog
 
@@ -32,6 +33,15 @@ class AbstractController(metaclass=abc.ABCMeta):
     def reset(self):
         """每个 episode 开始时调用，用于同步控制器内部状态到当前物理状态。"""
         pass
+
+    def get_command_snapshot(self) -> dict[str, np.ndarray] | None:
+        """当前步命令目标快照（键为数据集路径，值为命令值数组）。
+
+        默认 None（无命令字段的控制器）。必须在 run_controller 之后、
+        下一次 device.update 之前读取——此刻快照正是产生本步 action
+        的命令，与随后 env.step 产出的观测同帧配对。
+        """
+        return None
 
     @abc.abstractmethod
     def run_controller(self)-> dict[int, float]:

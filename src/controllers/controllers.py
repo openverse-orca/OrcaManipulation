@@ -75,17 +75,18 @@ def create_arm_ik_controller(env: OrcaGymLocalEnv,
     controller.set_initial_control(arm_config["neutral_joint_values"])
     return ControllerArm(env, ctrl_name, init_ctrl, base_body, controller)
 
-def add_arm_osc_pico_controller(data_collection_manager: DataCollectionManager, 
-                env: OrcaGymLocalEnv, 
-                arm_config: dict, 
-                base_body: str, 
+def add_arm_osc_pico_controller(data_collection_manager: DataCollectionManager,
+                env: OrcaGymLocalEnv,
+                arm_config: dict,
+                base_body: str,
                 device: PicoJoystickDevice,
-                key: PicoJoystickKey):
+                key: PicoJoystickKey) -> ControllerArm:
     ctrl_name = [env.actuator(motor_name) for motor_name in arm_config["motors_names"]]
     init_ctrl = {name: init_val for name, init_val in zip(ctrl_name, arm_config["motors_init_ctrl"])}
     arm_osc_controller = create_arm_osc_controller(env, arm_config, base_body, ctrl_name, init_ctrl)
     device.bind_transform_event(key, arm_osc_controller.update_goal)
     data_collection_manager.add_controller(arm_osc_controller)
+    return arm_osc_controller
 
 
 def add_arm_ik_data_controller(data_collection_manager: DataCollectionManager,
@@ -115,12 +116,20 @@ def add_arm_osc_openloong_data_controller(data_collection_manager: DataCollectio
     ctrl_name = [env.actuator(motor_name) for motor_name in arm_config["motors_names"]]
     init_ctrl = {name: init_val for name, init_val in zip(ctrl_name, arm_config["motors_init_ctrl"])}
     arm_osc_controller = create_arm_osc_controller(env, arm_config, base_body, ctrl_name, init_ctrl)
+    # 回放固定消费命令目标字段（target_*）：复现录制时的 OSC 命令序列，
+    # 消除观测值（position/orientation，仅作诊断对照）带来的跟踪滞后；
+    # 旧数据集无命令字段时经 fallback_path 自动回退为末端轨迹跟踪。
+    # 夹爪 motor 本身是命令值，同样直接复用
     if left_arm:
-        device.bind_dataset_event("/action/end/position", (0, 3), arm_osc_controller.update_action_position)
-        device.bind_dataset_event("/action/end/orientation", (0, 4), arm_osc_controller.update_action_axisangle)
+        device.bind_dataset_event("/action/end/target_position", (0, 3), arm_osc_controller.update_action_position,
+                                  fallback_path="/action/end/position")
+        device.bind_dataset_event("/action/end/target_orientation", (0, 4), arm_osc_controller.update_action_axisangle,
+                                  fallback_path="/action/end/orientation")
     else:
-        device.bind_dataset_event("/action/end/position", (3, 6), arm_osc_controller.update_action_position)
-        device.bind_dataset_event("/action/end/orientation", (4, 8), arm_osc_controller.update_action_axisangle)
+        device.bind_dataset_event("/action/end/target_position", (3, 6), arm_osc_controller.update_action_position,
+                                  fallback_path="/action/end/position")
+        device.bind_dataset_event("/action/end/target_orientation", (4, 8), arm_osc_controller.update_action_axisangle,
+                                  fallback_path="/action/end/orientation")
     data_collection_manager.add_controller(arm_osc_controller)
 
 

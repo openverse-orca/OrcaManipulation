@@ -142,10 +142,12 @@ def main():
     
     orca_logger.info("Creating left arm controller")
     controllers.add_arm_osc_pico_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, pico_joystick_device, PicoJoystickKey.L_TRANSFORM)
-    
+
     orca_logger.info("Creating right arm controller")
     controllers.add_arm_osc_pico_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, pico_joystick_device, PicoJoystickKey.R_TRANSFORM)
-    
+
+    # /action/end/target_* 命令字段由 manager 在 run_controllers 后自动采集落盘，
+    # 此处无需（也不再）向 data_storage 注入控制器引用
     if should_use_empty_task(config, task_config):
         orca_logger.info("Collect-only mode: using EmptyTask (no success check).")
     else:
