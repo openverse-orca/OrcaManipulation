@@ -7,17 +7,12 @@
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 
 from conf import openloong_conf
 from dataStorage.abstract_data_storage import Hdf5DataStorage
 from dataStorage.robot_profile import RobotProfile
 from orca_gym.environment.orca_gym_local_env import OrcaGymLocalEnv
-
-if TYPE_CHECKING:
-    from controllers.controller_arm import ControllerArm
 
 
 # ---------------------------------------------------------------------------
@@ -51,12 +46,6 @@ class OpenLoongRobotProfile(RobotProfile):
     def __init__(self):
         self._l_grip_max = float(openloong_conf.gripper_l["actuator_ranges"][0][1])
         self._r_grip_max = float(openloong_conf.gripper_r["actuator_ranges"][0][1])
-        # 臂控制器引用（set_arm_controllers 注入），obs_callback 读取其 B 系命令目标
-        self._arm_controllers: list["ControllerArm"] = []
-
-    def set_arm_controllers(self, controllers: list["ControllerArm"]) -> None:
-        """注入左右臂控制器（顺序：左、右），供 obs_callback 落盘命令目标。"""
-        self._arm_controllers = list(controllers)
 
     def obs_callback(self, env: OrcaGymLocalEnv) -> dict:
         """采集 OpenLoong 观测数据。
@@ -100,14 +89,6 @@ class OpenLoongRobotProfile(RobotProfile):
         obs["/action/effector/motor"] = np.array([gripper_motor_values], dtype=np.float32).flatten()
         obs["/action/end/position"] = np.array([ee_site_pos_quat[ee_site_name]["xpos"] for ee_site_name in ee_site_names], dtype=np.float32)
         obs["/action/end/orientation"] = np.array([ee_site_pos_quat[ee_site_name]["xquat"][[1, 2, 3, 0]] for ee_site_name in ee_site_names], dtype=np.float32)
-        # 命令目标（B 系，xyzw）：回放追踪命令序列可消除观测值带来的跟踪滞后。
-        # obs_callback 在 env.step 内调用，此刻 controller 的 goal 正是产生
-        # 当前帧 state 的命令，与观测字段天然同帧对齐
-        if self._arm_controllers:
-            obs["/action/end/target_position"] = np.array(
-                [c.goal_pos_B for c in self._arm_controllers], dtype=np.float32)
-            obs["/action/end/target_orientation"] = np.array(
-                [c.goal_quat_B for c in self._arm_controllers], dtype=np.float32)
         return obs
 
     @property

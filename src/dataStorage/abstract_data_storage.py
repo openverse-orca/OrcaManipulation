@@ -228,10 +228,6 @@ class AbstractDataStorage(metaclass=abc.ABCMeta):
         """
         return self._robot_profile.obs_callback(env)
 
-    def set_arm_controllers(self, controllers: list) -> None:
-        """注入臂控制器引用（委托给 profile，供 obs_callback 落盘命令目标字段）。"""
-        self._robot_profile.set_arm_controllers(controllers)
-
     def get_collected_frame_count(self) -> int:
         """当前 episode 已采集帧数（在 save_data / clear_data 之前读取）。
 
@@ -334,8 +330,16 @@ class Hdf5DataStorage(AbstractDataStorage):
 
         return group.create_dataset(dataset_name, data=data, **kwargs)
 
-    def collection_data(self, data: dict, env: OrcaGymLocalEnv, **kwargs):
-        """按 key 追加到 ``self.data[key]`` 列表，追加 ``env.data.time``。"""
+    def collection_data(self, data: dict, env: OrcaGymLocalEnv,
+                        command_targets: dict | None = None, **kwargs):
+        """按 key 追加到 ``self.data[key]`` 列表，追加 ``env.data.time``。
+
+        ``command_targets`` 为数采管理器在 run_controllers 后采集的命令目标
+        快照（键为数据集路径，如 ``/action/end/target_position``），与 obs
+        同帧追加落盘；为 None 时行为与原先完全一致。
+        """
+        if command_targets:
+            data = {**data, **command_targets}
         for key, value in data.items():
             if key not in self.data:
                 self.data[key] = []

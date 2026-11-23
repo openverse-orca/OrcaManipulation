@@ -69,7 +69,18 @@ class ControllerArm(AbstractController):
         self.controller.set_goal(self.action)
         ctrl = self.controller.run_controller()
         return {self.ctrl_index[i]: ctrl[i] for i in range(len(self.ctrl_index))}
-    
+
+    @override
+    def get_command_snapshot(self) -> dict[str, np.ndarray] | None:
+        """B 系命令目标快照（xyzw）：供数采管理器落盘 /action/end/target_*。
+
+        回放复现命令序列可消除观测值（position/orientation）带来的跟踪滞后。
+        """
+        return {
+            "/action/end/target_position": np.asarray(self.goal_pos_B, dtype=np.float32),
+            "/action/end/target_orientation": np.asarray(self.goal_quat_B, dtype=np.float32),
+        }
+
     def get_osc_debug_snapshot(self) -> dict[str, np.ndarray | float]:
         """
         返回当前 OSC 目标与末端 site 世界系位姿及误差，供 CLOTH_DEBUG_OSC 宏步诊断。

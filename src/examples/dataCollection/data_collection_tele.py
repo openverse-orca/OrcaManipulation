@@ -141,15 +141,13 @@ def main():
     controllers.add_gripper_2f85_pico_controller(data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body, pico_joystick_device, [PicoJoystickKey.A, PicoJoystickKey.B, PicoJoystickKey.R_TRIGGER])
     
     orca_logger.info("Creating left arm controller")
-    l_arm_controller = controllers.add_arm_osc_pico_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, pico_joystick_device, PicoJoystickKey.L_TRANSFORM)
+    controllers.add_arm_osc_pico_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, pico_joystick_device, PicoJoystickKey.L_TRANSFORM)
 
     orca_logger.info("Creating right arm controller")
-    r_arm_controller = controllers.add_arm_osc_pico_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, pico_joystick_device, PicoJoystickKey.R_TRANSFORM)
+    controllers.add_arm_osc_pico_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, pico_joystick_device, PicoJoystickKey.R_TRANSFORM)
 
-    # 注入臂控制器：obs_callback 据此落盘 /action/end/target_*（B 系命令目标），
-    # 回放追踪命令序列可消除观测值带来的跟踪滞后
-    data_storage.set_arm_controllers([l_arm_controller, r_arm_controller])
-    
+    # /action/end/target_* 命令字段由 manager 在 run_controllers 后自动采集落盘，
+    # 此处无需（也不再）向 data_storage 注入控制器引用
     if should_use_empty_task(config, task_config):
         orca_logger.info("Collect-only mode: using EmptyTask (no success check).")
     else:

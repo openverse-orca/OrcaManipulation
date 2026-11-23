@@ -139,6 +139,7 @@ class DataCollectionManager:
                 data_storage: AbstractDataStorage | None = None,
                 episode_callbacks: list[EpisodeLifecycleCallback] | None = None,
                 render_fps: int = 30,
+                min_episode_frames: int = MIN_EPISODE_FRAMES,
                 **kwargs):
         self._mjc_agent_prefix = mjc_agent_prefix
         self.device = device
@@ -170,6 +171,10 @@ class DataCollectionManager:
 
         # Episode 生命周期回调列表（可扩展，不修改核心流程）
         self._episode_callbacks: list[EpisodeLifecycleCallback] = list(episode_callbacks) if episode_callbacks else []
+
+        # 成功 episode 的最短采集帧数（50Hz 下 2 秒）；低于此值视为误触发
+        # 截断单元，丢弃不落盘。可按场景/帧率调整
+        self._min_episode_frames = min_episode_frames
 
         self.simulate_index = -1
         self.env.set_sync_render(True)
@@ -437,11 +442,11 @@ class DataCollectionManager:
                     if task_is_success:
                         # 最短帧数校验：过滤误触发截断单元（如 60 帧废数据）
                         frame_count = self.data_storage.get_collected_frame_count()
-                        if frame_count < MIN_EPISODE_FRAMES:
+                        if frame_count < self._min_episode_frames:
                             self.data_storage.clear_data()
                             orca_logger.warning(
                                 f"Episode discarded: only {frame_count} frames "
-                                f"(< {MIN_EPISODE_FRAMES}), likely a truncated unit"
+                                f"(< {self._min_episode_frames}), likely a truncated unit"
                             )
                         else:
                             orca_logger.info("Task Success!")
@@ -542,6 +547,10 @@ class DataCollectionManager:
             self._notify_callbacks("on_step_begin")
 
             action = self.run_controllers()
+            # 命令快照必须在 run_controllers 之后采集：此刻控制器镜像正是
+            # 产生本步 action 的命令，与随后 env.step 产出的观测同帧配对。
+            # 采集点固定在此处即契约——重构时不得移到 device.update 之前
+            command_targets = self._collect_command_targets()
             should_step = self._query_physics_step_allowed()
             if should_step:
                 obs, reward, terminated, truncated, info = self.env.step(action)
@@ -556,7 +565,7 @@ class DataCollectionManager:
             # 请求 IDR 关键帧，使该帧作为视频段起点（配合 save_streaming 的
             # 前向截断，保证 MP4 第一帧为关键帧，避免开头花屏）
             should_end, task_is_success, data_recording_started = self._handle_task_status(
-                obs, data_recording_started, terminated, truncated
+                obs, command_targets, data_recording_started, terminated, truncated
             )
 
             request_idr = self._consume_idr_request()
@@ -635,8 +644,30 @@ class DataCollectionManager:
             return True
         return False
 
+    def _collect_command_targets(self) -> dict[str, np.ndarray] | None:
+        """聚合各控制器的命令目标快照（run_controllers 之后调用）。
+
+        同 key 多控制器按注册序堆叠（如左/右臂 → (2, 3)），与数据集
+        /action/end/target_* 的布局约定一致；无任何控制器提供时返回 None。
+        """
+        merged: dict[str, list[np.ndarray]] = {}
+        for controller in self.controllers:
+            snapshot = controller.get_command_snapshot()
+            if snapshot is None:
+                continue
+            for key, value in snapshot.items():
+                merged.setdefault(key, []).append(np.asarray(value))
+        if not merged:
+            return None
+        return {key: np.stack(values) for key, values in merged.items()}
+
     def _handle_task_status(
-        self, obs: dict, data_recording_started: bool, terminated: bool, truncated: bool
+        self,
+        obs: dict,
+        command_targets: dict[str, np.ndarray] | None,
+        data_recording_started: bool,
+        terminated: bool,
+        truncated: bool,
     ) -> tuple[bool, bool, bool]:
         """处理任务状态，返回（是否结束, 任务是否成功, 数据记录是否已开始）。
 
@@ -653,12 +684,22 @@ class DataCollectionManager:
             return should_end, task_is_success, data_recording_started
 
         if task_status == TaskStatus.RUNNING:
-            data_recording_started = self._handle_task_running(obs, data_recording_started)
+            data_recording_started = self._handle_task_running(
+                obs, command_targets, data_recording_started
+            )
 
         return False, False, data_recording_started
 
-    def _handle_task_running(self, obs: dict, data_recording_started: bool) -> bool:
+    def _handle_task_running(
+        self, obs: dict, command_targets: dict[str, np.ndarray] | None, data_recording_started: bool
+    ) -> bool:
         """处理任务运行状态：首次进入时启动记录，持续采集数据。
+
+        Args:
+            obs: 当前步观测（env.step 内采样的纯 env 状态）
+            command_targets: 管理器在 run_controllers 后采集的命令目标快照，
+                与 obs 同帧配对落盘（/action/end/target_*）
+            data_recording_started: 是否已开始记录
 
         Returns:
             更新后的 data_recording_started 标志
@@ -677,7 +718,8 @@ class DataCollectionManager:
 
         if self.data_storage is not None:
             self.data_storage.collection_data(
-                obs, self.env, simulate_index=self.simulate_index
+                obs, self.env, simulate_index=self.simulate_index,
+                command_targets=command_targets,
             )
 
         return data_recording_started

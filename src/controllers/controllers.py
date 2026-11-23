@@ -118,13 +118,18 @@ def add_arm_osc_openloong_data_controller(data_collection_manager: DataCollectio
     arm_osc_controller = create_arm_osc_controller(env, arm_config, base_body, ctrl_name, init_ctrl)
     # 回放固定消费命令目标字段（target_*）：复现录制时的 OSC 命令序列，
     # 消除观测值（position/orientation，仅作诊断对照）带来的跟踪滞后；
+    # 旧数据集无命令字段时经 fallback_path 自动回退为末端轨迹跟踪。
     # 夹爪 motor 本身是命令值，同样直接复用
     if left_arm:
-        device.bind_dataset_event("/action/end/target_position", (0, 3), arm_osc_controller.update_action_position)
-        device.bind_dataset_event("/action/end/target_orientation", (0, 4), arm_osc_controller.update_action_axisangle)
+        device.bind_dataset_event("/action/end/target_position", (0, 3), arm_osc_controller.update_action_position,
+                                  fallback_path="/action/end/position")
+        device.bind_dataset_event("/action/end/target_orientation", (0, 4), arm_osc_controller.update_action_axisangle,
+                                  fallback_path="/action/end/orientation")
     else:
-        device.bind_dataset_event("/action/end/target_position", (3, 6), arm_osc_controller.update_action_position)
-        device.bind_dataset_event("/action/end/target_orientation", (4, 8), arm_osc_controller.update_action_axisangle)
+        device.bind_dataset_event("/action/end/target_position", (3, 6), arm_osc_controller.update_action_position,
+                                  fallback_path="/action/end/position")
+        device.bind_dataset_event("/action/end/target_orientation", (4, 8), arm_osc_controller.update_action_axisangle,
+                                  fallback_path="/action/end/orientation")
     data_collection_manager.add_controller(arm_osc_controller)
 
 
