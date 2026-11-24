@@ -165,86 +165,94 @@ def main():
     scene_manager = SceneManager(orcagym_addr, config=config)
 
 
-    def obs_callback(env) -> dict:
-        return {"replay": np.zeros(env.nu, dtype=np.float32)}
+    try:
+        def obs_callback(env) -> dict:
+            return {"replay": np.zeros(env.nu, dtype=np.float32)}
 
-    orca_logger.info("Creating data collection manager")
-    data_collection_manager = DataCollectionManager(
-        agent_name=agent_name,
-        env_name=env_name,
-        entry_point=ENTRY_POINT,
-        default_joint_values=default_joint_values,
-        obs_callback=obs_callback,
-        env_index=env_index,
-        device=data_device,
-        scene_manager=scene_manager,
-        data_storage=None,
-        # 与采集侧 data_collection_tele.py 对齐：0.001*20=0.02s/帧（50Hz）。
-        # 回放每循环消耗一帧录制数据，frame_skip 偏小会使节拍失配导致快放
-        frame_skip=20,
-    )
-    env = data_collection_manager.env
-    env.reset()
-
-    data_collection_manager.mode = DataCollectionManager.DataCollectionMode.AUGMENTATION
-    data_collection_manager.save_video = True
-
-    if replay_mode == "osc":
-        orca_logger.info("Disabling position controller")
-        data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
-        controllers.add_arm_osc_openloong_data_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, data_device, left_arm=True)
-        controllers.add_arm_osc_openloong_data_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, data_device, left_arm=False)
-    elif replay_mode == "ik":
-        controllers.add_arm_ik_data_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, data_device, left_arm=True)
-        controllers.add_arm_ik_data_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, data_device, left_arm=False)
-    elif replay_mode == "position":
-        controllers.add_arm_position_data_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, data_device, left_arm=True)
-        controllers.add_arm_position_data_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, data_device, left_arm=False)
-    else:
-        raise ValueError(f"Invalid replay mode: {replay_mode}")
-
-    if agent_name == "openloong":
-        orca_logger.info("Creating left gripper controller")
-        controllers.add_gripper_2f85_openloong_data_controller(data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body, data_device, left_gripper=True)
-
-        orca_logger.info("Creating right gripper controller")
-        controllers.add_gripper_2f85_openloong_data_controller(data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body, data_device, left_gripper=False)
-    elif agent_name == "tiangong2":
-        orca_logger.info("Creating left gripper controller")
-        controllers.add_gripper_hand_data_controller(data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body, data_device, left_gripper=True)
-
-        orca_logger.info("Creating right gripper controller")
-        controllers.add_gripper_hand_data_controller(data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body, data_device, left_gripper=False)
-    else:
-        raise ValueError(f"Invalid agent name: {agent_name}")
-
-    if should_use_empty_task(config, task_config):
-        orca_logger.info("Collect-only mode: using EmptyTask.")
-    else:
-        orca_logger.info("Creating pick place task")
-    data_collection_manager.set_task(create_task(env, config, task_config))
-    controllers.add_task_status_openloong_data_controller(data_collection_manager, env, data_device, agent_conf.base_body)
-
-    agent_conf_dict = {
-        "l_arm": agent_conf.l_arm,
-        "r_arm": agent_conf.r_arm,
-        "gripper_l": agent_conf.gripper_l,
-        "gripper_r": agent_conf.gripper_r,
-    }
-    # 恢复录制首帧机器人初始关节角，消除从默认位形扫掠导致的碰撞
-    data_collection_manager.register_episode_callback(
-        InitialStateRestoreCallback(env, data_device, agent_conf_dict)
-    )
-
-    if args.record_diag:
-        diag_recorder = ReplayDiagRecorder(
-            env, data_collection_manager, data_device, agent_conf_dict, agent_name,
-            os.path.join(log_dir, "replay_diag"),
+        orca_logger.info("Creating data collection manager")
+        data_collection_manager = DataCollectionManager(
+            agent_name=agent_name,
+            env_name=env_name,
+            entry_point=ENTRY_POINT,
+            default_joint_values=default_joint_values,
+            obs_callback=obs_callback,
+            env_index=env_index,
+            device=data_device,
+            scene_manager=scene_manager,
+            data_storage=None,
+            # 与采集侧 data_collection_tele.py 对齐：0.001*20=0.02s/帧（50Hz）。
+            # 回放每循环消耗一帧录制数据，frame_skip 偏小会使节拍失配导致快放
+            frame_skip=20,
         )
-        data_collection_manager.register_episode_callback(diag_recorder)
-        orca_logger.info(f"Replay diag recording enabled, output dir: {os.path.join(log_dir, 'replay_diag')}")
+        env = data_collection_manager.env
+        env.reset()
 
-    data_collection_manager.run()
+        data_collection_manager.mode = DataCollectionManager.DataCollectionMode.AUGMENTATION
+        data_collection_manager.save_video = True
+
+        if replay_mode == "osc":
+            orca_logger.info("Disabling position controller")
+            data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
+            controllers.add_arm_osc_openloong_data_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, data_device, left_arm=True)
+            controllers.add_arm_osc_openloong_data_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, data_device, left_arm=False)
+        elif replay_mode == "ik":
+            controllers.add_arm_ik_data_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, data_device, left_arm=True)
+            controllers.add_arm_ik_data_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, data_device, left_arm=False)
+        elif replay_mode == "position":
+            controllers.add_arm_position_data_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, data_device, left_arm=True)
+            controllers.add_arm_position_data_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, data_device, left_arm=False)
+        else:
+            raise ValueError(f"Invalid replay mode: {replay_mode}")
+
+        if agent_name == "openloong":
+            orca_logger.info("Creating left gripper controller")
+            controllers.add_gripper_2f85_openloong_data_controller(data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body, data_device, left_gripper=True)
+
+            orca_logger.info("Creating right gripper controller")
+            controllers.add_gripper_2f85_openloong_data_controller(data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body, data_device, left_gripper=False)
+        elif agent_name == "tiangong2":
+            orca_logger.info("Creating left gripper controller")
+            controllers.add_gripper_hand_data_controller(data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body, data_device, left_gripper=True)
+
+            orca_logger.info("Creating right gripper controller")
+            controllers.add_gripper_hand_data_controller(data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body, data_device, left_gripper=False)
+        else:
+            raise ValueError(f"Invalid agent name: {agent_name}")
+
+        if should_use_empty_task(config, task_config):
+            orca_logger.info("Collect-only mode: using EmptyTask.")
+        else:
+            orca_logger.info("Creating pick place task")
+        data_collection_manager.set_task(create_task(env, config, task_config))
+        controllers.add_task_status_openloong_data_controller(data_collection_manager, env, data_device, agent_conf.base_body)
+
+        agent_conf_dict = {
+            "l_arm": agent_conf.l_arm,
+            "r_arm": agent_conf.r_arm,
+            "gripper_l": agent_conf.gripper_l,
+            "gripper_r": agent_conf.gripper_r,
+        }
+        # 恢复录制首帧机器人初始关节角，消除从默认位形扫掠导致的碰撞
+        data_collection_manager.register_episode_callback(
+            InitialStateRestoreCallback(env, data_device, agent_conf_dict)
+        )
+
+        if args.record_diag:
+            diag_recorder = ReplayDiagRecorder(
+                env, data_collection_manager, data_device, agent_conf_dict, agent_name,
+                os.path.join(log_dir, "replay_diag"),
+            )
+            data_collection_manager.register_episode_callback(diag_recorder)
+            orca_logger.info(f"Replay diag recording enabled, output dir: {os.path.join(log_dir, 'replay_diag')}")
+
+        data_collection_manager.run()
+    finally:
+        # os._exit 会绕过一切清理钩子，退出前尽力清场；残留会留在常驻引擎进程
+        # 并跨会话累积（下次进入由 spawn_scene 的残留清场兜底）
+        try:
+            scene_manager.cleanup_spawned()
+        except Exception as e:
+            orca_logger.warning(f"Scene cleanup on exit failed: {e}")
 
 if __name__ == "__main__":
     try:
