@@ -188,9 +188,46 @@ class SceneManager:
             if dof == 6:
                 self.set_actor_qpos(joint_name, [100000, 100000, 1, 1, 0, 0, 0])
 
+    def _cleanup_residual_spawns(self) -> None:
+        """删除场景中与 spawn 配置名单同名的残留实体（actor/灯光，存在即删）。
+
+        os._exit/kill 等退出路径绕过一切清理钩子时，名单内实体会残留在
+        常驻引擎进程并冻结上一会话的随机位姿；spawn 前删净可让位姿按本次
+        配置重新随机，且垃圾不跨会话累积。单条失败记 warning 不阻断，
+        spawn_actors/spawn_lights 的 skip 逻辑为清场失败的兜底。
+        """
+        residual_names = (
+            self._config.get("actor", {}).get("names", [])
+            + self._config.get("light", {}).get("names", [])
+        )
+        if not residual_names:
+            return
+        existing_paths = set(self._scene.get_actors())
+        for name in residual_names:
+            if f"/{name}" not in existing_paths:
+                continue
+            try:
+                self._scene.delete_actor(f"/{name}")
+                orca_log.warning(f"deleted residual '{name}' left by a previous session")
+            except Exception as e:
+                orca_log.warning(f"delete residual '{name}' failed: {e}")
+
+    def cleanup_spawned(self) -> None:
+        """退出清场（尽力而为）：删除名单内全部实体并复原已有属性基线。
+
+        与 close(auto_restore=True) 的基线复原语义不同：场景快照基线在
+        创建时惰性捕获、可能已含历史残留，restore 会把本次删除的残留
+        补建回来；故退出清场走"只删名单"语义，确保引擎回到脚本运行前
+        的干净状态。供退出路径在进程结束前调用，异常由调用方兜底。
+        """
+        self._cleanup_residual_spawns()
+        self.restore_existing_properties()
+
     def spawn_scene(self):
         first_spawn = self._first_spawn_actor
         if first_spawn:
+            # 历史会话异常退出会让名单内实体残留在常驻引擎（见方法 docstring）
+            self._cleanup_residual_spawns()
             # actor 会进导出 XML：首建必须 publish 才能进入仿真
             self.publish_scene_without_init_env()
             self._first_spawn_actor = False
@@ -212,7 +249,7 @@ class SceneManager:
         actor_names = self._config.get("actor", {}).get("names", [])
         actor_spawnables = self._config.get("actor", {}).get("spawnable", [])
         joints_dof = self._config.get("actor", {}).get("joints_dof", [])
-        # 回放等场景可能已含同名 actor（已进快照基线），存在则跳过，避免 EditServiceError 中断流程
+        # 残留清场失败的兜底：同名实体仍在则跳过，避免 EditServiceError 中断流程
         existing_actor_paths = set(self._scene.get_actors())
         # 初始位置为无穷远
         for i in range(len(actor_names)):
@@ -345,7 +382,7 @@ class SceneManager:
 
         self._delete_spawned_lights()
 
-        # 关卡自带同名灯光（如 spotlight）直接跳过，避免 EditServiceError 中断流程；
+        # 残留清场失败的兜底：同名灯光仍在则跳过，避免 EditServiceError 中断流程；
         # 跳过的灯光不进 _spawned_light_names/_pending_light_infos，保持原位原属性，
         # 保证退出复原语义（原属性基线仅覆盖 light.existing 配置项）
         existing_actor_paths = set(self._scene.get_actors())

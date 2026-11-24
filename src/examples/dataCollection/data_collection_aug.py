@@ -86,80 +86,88 @@ def main():
     config = load_scene_config(base_dir, task_config)
     scene_manager = SceneManager(orcagym_addr, config=config)
 
-    data_storage.set_video_path("video")
+    try:
+        data_storage.set_video_path("video")
 
-    orca_logger.info("Creating data collection manager")
-    data_collection_manager = DataCollectionManager(
-        agent_name=agent_name,
-        env_name=env_name,
-        entry_point=ENTRY_POINT,
-        default_joint_values=default_joint_values,
-        obs_callback=data_storage.obs_callback,
-        env_index=env_index,
-        device=data_device,
-        scene_manager=scene_manager,
-        data_storage=data_storage,
-        # 源数据以 frame_skip=20（50Hz）录制；回放须同节拍消费数据帧，
-        # 否则相当于按录制速度的 4 倍快放（此前 frame_skip=5 即此问题，
-        # 已实测对照验证：fs5 增广单元时长为源单元的 1/4）
-        frame_skip=20,
-    )
-    env = data_collection_manager.env
-    env.reset()
-    data_collection_manager.render_fps = 30
-
-    cameras_conf = getattr(agent_conf, "cameras_conf", None)
-    if cameras_conf:
-        orca_logger.info("Setting up cameras (client PyAV remux)")
-        data_storage.setup_cameras(env, cameras_conf, show_viewer=True)
-    else:
-        orca_logger.warning(f"agent_conf '{agent_name}' 缺少 cameras_conf，跳过相机配置（视频不会保存）")
-
-    data_collection_manager.mode = DataCollectionManager.DataCollectionMode.AUGMENTATION
-    data_collection_manager.save_video = True
-
-    orca_logger.info("Disabling position controller")
-    # data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
-
-    orca_logger.info("Creating left arm controller")
-    controllers.add_arm_ik_data_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, data_device, left_arm=True)
-
-    orca_logger.info("Creating right arm controller")
-    controllers.add_arm_ik_data_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, data_device, left_arm=False)
-
-    if agent_name == "openloong":
-        orca_logger.info("Creating left gripper controller")
-        controllers.add_gripper_2f85_openloong_data_controller(data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body, data_device, left_gripper=True)
-
-        orca_logger.info("Creating right gripper controller")
-        controllers.add_gripper_2f85_openloong_data_controller(data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body, data_device, left_gripper=False)
-    elif agent_name == "tiangong2":
-        orca_logger.info("Creating left gripper controller")
-        controllers.add_gripper_hand_data_controller(data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body, data_device, left_gripper=True)
-
-        orca_logger.info("Creating right gripper controller")
-        controllers.add_gripper_hand_data_controller(data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body, data_device, left_gripper=False)
-    else:
-        raise ValueError(f"Invalid agent name: {agent_name}")
-
-    # 须与采集任务一致：collect_only 等模式下 EmptyTask 写入的 task_info 为空，PickPlaceTask 无法还原目标物体
-    if should_use_empty_task(config, task_config):
-        orca_logger.info("Collect-only mode: using EmptyTask.")
-    else:
-        orca_logger.info("Creating pick place task")
-    data_collection_manager.set_task(create_task(env, config, task_config))
-    controllers.add_task_status_openloong_data_controller(data_collection_manager, env, data_device, agent_conf.base_body)
-
-    # 恢复录制首帧机器人初始关节角，消除增广回放从默认位形扫掠导致的
-    # 开头碰撞污染（与 data_collection_replay.py 共用同一回调）
-    data_collection_manager.register_episode_callback(
-        InitialStateRestoreCallback(
-            env, data_device,
-            {"l_arm": agent_conf.l_arm, "r_arm": agent_conf.r_arm},
+        orca_logger.info("Creating data collection manager")
+        data_collection_manager = DataCollectionManager(
+            agent_name=agent_name,
+            env_name=env_name,
+            entry_point=ENTRY_POINT,
+            default_joint_values=default_joint_values,
+            obs_callback=data_storage.obs_callback,
+            env_index=env_index,
+            device=data_device,
+            scene_manager=scene_manager,
+            data_storage=data_storage,
+            # 源数据以 frame_skip=20（50Hz）录制；回放须同节拍消费数据帧，
+            # 否则相当于按录制速度的 4 倍快放（此前 frame_skip=5 即此问题，
+            # 已实测对照验证：fs5 增广单元时长为源单元的 1/4）
+            frame_skip=20,
         )
-    )
+        env = data_collection_manager.env
+        env.reset()
+        data_collection_manager.render_fps = 30
 
-    data_collection_manager.run()
+        cameras_conf = getattr(agent_conf, "cameras_conf", None)
+        if cameras_conf:
+            orca_logger.info("Setting up cameras (client PyAV remux)")
+            data_storage.setup_cameras(env, cameras_conf, show_viewer=True)
+        else:
+            orca_logger.warning(f"agent_conf '{agent_name}' 缺少 cameras_conf，跳过相机配置（视频不会保存）")
+
+        data_collection_manager.mode = DataCollectionManager.DataCollectionMode.AUGMENTATION
+        data_collection_manager.save_video = True
+
+        orca_logger.info("Disabling position controller")
+        # data_collection_manager.set_disable_actuator_group([agent_conf.positions_group])
+
+        orca_logger.info("Creating left arm controller")
+        controllers.add_arm_ik_data_controller(data_collection_manager, env, agent_conf.l_arm, agent_conf.base_body, data_device, left_arm=True)
+
+        orca_logger.info("Creating right arm controller")
+        controllers.add_arm_ik_data_controller(data_collection_manager, env, agent_conf.r_arm, agent_conf.base_body, data_device, left_arm=False)
+
+        if agent_name == "openloong":
+            orca_logger.info("Creating left gripper controller")
+            controllers.add_gripper_2f85_openloong_data_controller(data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body, data_device, left_gripper=True)
+
+            orca_logger.info("Creating right gripper controller")
+            controllers.add_gripper_2f85_openloong_data_controller(data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body, data_device, left_gripper=False)
+        elif agent_name == "tiangong2":
+            orca_logger.info("Creating left gripper controller")
+            controllers.add_gripper_hand_data_controller(data_collection_manager, env, agent_conf.gripper_l, agent_conf.base_body, data_device, left_gripper=True)
+
+            orca_logger.info("Creating right gripper controller")
+            controllers.add_gripper_hand_data_controller(data_collection_manager, env, agent_conf.gripper_r, agent_conf.base_body, data_device, left_gripper=False)
+        else:
+            raise ValueError(f"Invalid agent name: {agent_name}")
+
+        # 须与采集任务一致：collect_only 等模式下 EmptyTask 写入的 task_info 为空，PickPlaceTask 无法还原目标物体
+        if should_use_empty_task(config, task_config):
+            orca_logger.info("Collect-only mode: using EmptyTask.")
+        else:
+            orca_logger.info("Creating pick place task")
+        data_collection_manager.set_task(create_task(env, config, task_config))
+        controllers.add_task_status_openloong_data_controller(data_collection_manager, env, data_device, agent_conf.base_body)
+
+        # 恢复录制首帧机器人初始关节角，消除增广回放从默认位形扫掠导致的
+        # 开头碰撞污染（与 data_collection_replay.py 共用同一回调）
+        data_collection_manager.register_episode_callback(
+            InitialStateRestoreCallback(
+                env, data_device,
+                {"l_arm": agent_conf.l_arm, "r_arm": agent_conf.r_arm},
+            )
+        )
+
+        data_collection_manager.run()
+    finally:
+        # os._exit 会绕过一切清理钩子，退出前尽力清场；残留会留在常驻引擎进程
+        # 并跨会话累积（下次进入由 spawn_scene 的残留清场兜底）
+        try:
+            scene_manager.cleanup_spawned()
+        except Exception as e:
+            orca_logger.warning(f"Scene cleanup on exit failed: {e}")
 
 if __name__ == "__main__":
     try:
